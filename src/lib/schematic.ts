@@ -557,6 +557,7 @@ function legacyBlockStateName(id: number, metadata = 0): string {
     [73, 'minecraft:redstone_ore'],
     [98, 'minecraft:stone_bricks'],
     [133, 'minecraft:emerald_block'],
+    [138, 'minecraft:beacon'],
     [155, 'minecraft:quartz_block'],
     [159, 'minecraft:terracotta'],
     [160, 'minecraft:glass_pane'],

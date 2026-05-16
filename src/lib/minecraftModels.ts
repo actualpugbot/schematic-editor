@@ -127,6 +127,11 @@ export async function resolveBlockParts(stateKey: string): Promise<ResolvedBlock
 
 async function resolveBlockPartsUncached(stateKey: string): Promise<ResolvedBlockPart[]> {
   const state = parseBlockStateKey(stateKey);
+  const modelOverrideParts = syntheticBlockParts(state.id, state.properties, { x: 0, y: 0 });
+  if (modelOverrideParts.length > 0) {
+    return modelOverrideParts;
+  }
+
   const blockstate = await loadBlockstate(state.id);
   if (!blockstate) {
     return [fallbackPart(state.id, { x: 0, y: 0 })];
@@ -449,10 +454,61 @@ function syntheticBlockParts(
   properties: Record<string, string>,
   variantRotation: { x: number; y: number },
 ): ResolvedBlockPart[] {
+  const beaconParts = syntheticBeaconParts(id, properties, variantRotation);
+  if (beaconParts.length > 0) return beaconParts;
+
   const movingPistonParts = syntheticMovingPistonParts(id, properties, variantRotation);
   if (movingPistonParts.length > 0) return movingPistonParts;
 
   return [];
+}
+
+function syntheticBeaconParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (id !== 'minecraft:beacon') return [];
+
+  const glass = syntheticCuboidPart(
+    id,
+    properties,
+    'beacon-glass',
+    [0, 0, 0],
+    [16, 16, 16],
+    'minecraft:block/glass',
+    variantRotation,
+    {
+      down: true,
+      up: true,
+      north: true,
+      south: true,
+      west: true,
+      east: true,
+    },
+  );
+
+  const base = syntheticCuboidPart(
+    id,
+    properties,
+    'beacon-base',
+    [2, 0.1, 2],
+    [14, 3, 14],
+    'minecraft:block/obsidian',
+    variantRotation,
+  );
+
+  const core = syntheticCuboidPart(
+    id,
+    properties,
+    'beacon-core',
+    [3, 3, 3],
+    [13, 14, 13],
+    'minecraft:block/beacon',
+    variantRotation,
+  );
+
+  return [glass, base, core];
 }
 
 function specialBlockEntityParts(
@@ -764,6 +820,7 @@ function syntheticCuboidPart(
   to: [number, number, number],
   textures: string | Record<ModelFaceName, string | null>,
   variantRotation: { x: number; y: number },
+  faceTranslucencies?: Record<ModelFaceName, boolean>,
 ): ResolvedBlockPart {
   const faceTextures = typeof textures === 'string' ? cubeTextures(textures) : textures;
 
@@ -809,7 +866,7 @@ function syntheticCuboidPart(
       west: null,
       east: null,
     },
-    faceTranslucencies: {
+    faceTranslucencies: faceTranslucencies ?? {
       down: false,
       up: false,
       north: false,
