@@ -32,6 +32,14 @@ interface InternalViewerProps extends Viewer3DProps {
 }
 
 const faceOrder: ModelFaceName[] = ['east', 'west', 'up', 'down', 'south', 'north'];
+const faceOffsets: Record<ModelFaceName, [number, number, number]> = {
+  down: [0, -1, 0],
+  up: [0, 1, 0],
+  north: [0, 0, -1],
+  south: [0, 0, 1],
+  west: [-1, 0, 0],
+  east: [1, 0, 0],
+};
 const geometryCache = new Map<string, THREE.BufferGeometry>();
 const materialCache = new Map<string, THREE.Material>();
 const textureLoader = new THREE.TextureLoader();
@@ -303,18 +311,22 @@ async function createBlockMeshes(blocks: VoxelBlock[]): Promise<THREE.InstancedM
     {
       part: ResolvedBlockPart;
       fallbackColor: number;
+      hiddenFaces: Set<ModelFaceName>;
       blocks: VoxelBlock[];
     }
   >();
   const states = Array.from(new Set(blocks.map((block) => block.stateKey)));
   const resolvedStates = await Promise.all(states.map(async (state) => [state, await resolveBlockParts(state)] as const));
   const partsByState = new Map(resolvedStates);
+  const occupiedBlocks = new Set(blocks.map(blockPositionKey));
 
   for (const block of blocks) {
     const parts = partsByState.get(block.stateKey) ?? [];
 
     for (const part of parts) {
-      const key = part.isFallback ? `${part.key}::${block.color}` : part.key;
+      const hiddenFaces = hiddenFacesForPart(block, part, occupiedBlocks);
+      const hiddenFaceKey = hiddenFaceCacheKey(hiddenFaces);
+      const key = `${part.isFallback ? `${part.key}::${block.color}` : part.key}::hidden:${hiddenFaceKey}`;
       const group = groups.get(key);
 
       if (group) {
@@ -323,6 +335,7 @@ async function createBlockMeshes(blocks: VoxelBlock[]): Promise<THREE.InstancedM
         groups.set(key, {
           part,
           fallbackColor: block.color,
+          hiddenFaces,
           blocks: [block],
         });
       }
@@ -334,7 +347,7 @@ async function createBlockMeshes(blocks: VoxelBlock[]): Promise<THREE.InstancedM
 
   for (const group of groups.values()) {
     const geometry = geometryForPart(group.part);
-    const materials = materialsForPart(group.part, group.fallbackColor);
+    const materials = materialsForPart(group.part, group.fallbackColor, group.hiddenFaces);
     const mesh = new THREE.InstancedMesh(geometry, materials, group.blocks.length);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -359,6 +372,55 @@ async function createBlockMeshes(blocks: VoxelBlock[]): Promise<THREE.InstancedM
   }
 
   return meshes;
+}
+
+function blockPositionKey(block: VoxelBlock): string {
+  return `${block.x},${block.y},${block.z}`;
+}
+
+function hiddenFacesForPart(
+  block: VoxelBlock,
+  part: ResolvedBlockPart,
+  occupiedBlocks: Set<string>,
+): Set<ModelFaceName> {
+  const hiddenFaces = new Set<ModelFaceName>();
+
+  for (const face of faceOrder) {
+    const cullface = part.faceCullfaces[face];
+    if (!cullface) continue;
+
+    const [x, y, z] = faceOffsets[rotatedFace(cullface, part)];
+    if (occupiedBlocks.has(`${block.x + x},${block.y + y},${block.z + z}`)) {
+      hiddenFaces.add(face);
+    }
+  }
+
+  return hiddenFaces;
+}
+
+function hiddenFaceCacheKey(hiddenFaces: Set<ModelFaceName>): string {
+  return faceOrder.filter((face) => hiddenFaces.has(face)).join(',') || 'none';
+}
+
+function rotatedFace(face: ModelFaceName, part: ResolvedBlockPart): ModelFaceName {
+  const [x, y, z] = faceOffsets[face];
+  const vector = new THREE.Vector3(x, y, z);
+  vector.applyEuler(
+    new THREE.Euler(
+      THREE.MathUtils.degToRad(part.variantRotation.x),
+      THREE.MathUtils.degToRad(variantYRotation(part)),
+      0,
+    ),
+  );
+
+  const axis = new THREE.Vector3(Math.round(vector.x), Math.round(vector.y), Math.round(vector.z));
+  for (const [candidate, offset] of Object.entries(faceOffsets) as Array<[ModelFaceName, [number, number, number]]>) {
+    if (axis.x === offset[0] && axis.y === offset[1] && axis.z === offset[2]) {
+      return candidate;
+    }
+  }
+
+  return face;
 }
 
 function createSelectionBox(): THREE.LineSegments {
@@ -489,8 +551,14 @@ function rotateUvCorners(corners: Array<[number, number]>, degrees: number): Arr
   return rotated;
 }
 
-function materialsForPart(part: ResolvedBlockPart, fallbackColor: number): THREE.Material[] {
+function materialsForPart(
+  part: ResolvedBlockPart,
+  fallbackColor: number,
+  hiddenFaces = new Set<ModelFaceName>(),
+): THREE.Material[] {
   return faceOrder.map((face) => {
+    if (hiddenFaces.has(face)) return hiddenMaterial;
+
     const textureId = part.faceTextures[face];
     if (!textureId) {
       return part.isFallback ? colorMaterial(fallbackColor) : hiddenMaterial;

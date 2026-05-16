@@ -21,6 +21,7 @@ export interface ResolvedBlockPart {
   faceTints: Record<ModelFaceName, number | null>;
   faceUvs: Record<ModelFaceName, ModelFaceUv | null>;
   faceRotations: Record<ModelFaceName, number>;
+  faceCullfaces: Record<ModelFaceName, ModelFaceName | null>;
 }
 
 interface BlockstateJson {
@@ -76,6 +77,7 @@ interface ModelFace {
   texture?: TextureReference;
   rotation?: number;
   tintindex?: number;
+  cullface?: ModelFaceName;
 }
 
 type TextureReference =
@@ -156,6 +158,7 @@ async function resolveBlockPartsUncached(stateKey: string): Promise<ResolvedBloc
         faceTints: faceTints(element),
         faceUvs: faceUvs(element),
         faceRotations: faceRotations(element),
+        faceCullfaces: faceCullfaces(element),
       });
     }
   }
@@ -334,6 +337,19 @@ function faceRotations(element: ModelElement): Record<ModelFaceName, number> {
   };
 }
 
+function faceCullfaces(element: ModelElement): Record<ModelFaceName, ModelFaceName | null> {
+  const faces = element.faces ?? {};
+
+  return {
+    down: faces.down?.cullface ?? null,
+    up: faces.up?.cullface ?? null,
+    north: faces.north?.cullface ?? null,
+    south: faces.south?.cullface ?? null,
+    west: faces.west?.cullface ?? null,
+    east: faces.east?.cullface ?? null,
+  };
+}
+
 function resolveTextureReference(value: string | null, textures: Record<string, string | null>): string | null {
   if (!value) return null;
   if (!value.startsWith('#')) return normalizeResourceId(value, 'block');
@@ -418,6 +434,14 @@ function fallbackPart(id: string, variantRotation: { x: number; y: number }): Re
       south: 0,
       west: 0,
       east: 0,
+    },
+    faceCullfaces: {
+      down: null,
+      up: null,
+      north: null,
+      south: null,
+      west: null,
+      east: null,
     },
   };
 }
