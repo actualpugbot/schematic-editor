@@ -40,6 +40,14 @@ const faceOffsets: Record<ModelFaceName, [number, number, number]> = {
   west: [-1, 0, 0],
   east: [1, 0, 0],
 };
+const oppositeFaces: Record<ModelFaceName, ModelFaceName> = {
+  down: 'up',
+  up: 'down',
+  north: 'south',
+  south: 'north',
+  west: 'east',
+  east: 'west',
+};
 const geometryCache = new Map<string, THREE.BufferGeometry>();
 const materialCache = new Map<string, THREE.Material>();
 const textureLoader = new THREE.TextureLoader();
@@ -318,13 +326,18 @@ async function createBlockMeshes(blocks: VoxelBlock[]): Promise<THREE.InstancedM
   const states = Array.from(new Set(blocks.map((block) => block.stateKey)));
   const resolvedStates = await Promise.all(states.map(async (state) => [state, await resolveBlockParts(state)] as const));
   const partsByState = new Map(resolvedStates);
-  const occupiedBlocks = new Set(blocks.map(blockPositionKey));
+  const occludingFacesByBlock = new Map<string, Set<ModelFaceName>>();
+
+  for (const block of blocks) {
+    const parts = partsByState.get(block.stateKey) ?? [];
+    occludingFacesByBlock.set(blockPositionKey(block), occludingFacesForParts(parts));
+  }
 
   for (const block of blocks) {
     const parts = partsByState.get(block.stateKey) ?? [];
 
     for (const part of parts) {
-      const hiddenFaces = hiddenFacesForPart(block, part, occupiedBlocks);
+      const hiddenFaces = hiddenFacesForPart(block, part, occludingFacesByBlock);
       const hiddenFaceKey = hiddenFaceCacheKey(hiddenFaces);
       const key = `${part.isFallback ? `${part.key}::${block.color}` : part.key}::hidden:${hiddenFaceKey}`;
       const group = groups.get(key);
@@ -354,7 +367,7 @@ async function createBlockMeshes(blocks: VoxelBlock[]): Promise<THREE.InstancedM
 
     const quaternion = new THREE.Quaternion().setFromEuler(
       new THREE.Euler(
-        THREE.MathUtils.degToRad(group.part.variantRotation.x),
+        THREE.MathUtils.degToRad(variantXRotation(group.part)),
         THREE.MathUtils.degToRad(variantYRotation(group.part)),
         0,
       ),
@@ -381,7 +394,7 @@ function blockPositionKey(block: VoxelBlock): string {
 function hiddenFacesForPart(
   block: VoxelBlock,
   part: ResolvedBlockPart,
-  occupiedBlocks: Set<string>,
+  occludingFacesByBlock: Map<string, Set<ModelFaceName>>,
 ): Set<ModelFaceName> {
   const hiddenFaces = new Set<ModelFaceName>();
 
@@ -389,13 +402,53 @@ function hiddenFacesForPart(
     const cullface = part.faceCullfaces[face];
     if (!cullface) continue;
 
-    const [x, y, z] = faceOffsets[rotatedFace(cullface, part)];
-    if (occupiedBlocks.has(`${block.x + x},${block.y + y},${block.z + z}`)) {
+    const worldCullface = rotatedFace(cullface, part);
+    const [x, y, z] = faceOffsets[worldCullface];
+    const neighborFaces = occludingFacesByBlock.get(`${block.x + x},${block.y + y},${block.z + z}`);
+    if (neighborFaces?.has(oppositeFaces[worldCullface])) {
       hiddenFaces.add(face);
     }
   }
 
   return hiddenFaces;
+}
+
+function occludingFacesForParts(parts: ResolvedBlockPart[]): Set<ModelFaceName> {
+  const faces = new Set<ModelFaceName>();
+
+  for (const part of parts) {
+    for (const face of faceOrder) {
+      if (part.faceTextures[face] && partFaceCoversBlockBoundary(part, face)) {
+        faces.add(rotatedFace(face, part));
+      }
+    }
+  }
+
+  return faces;
+}
+
+function partFaceCoversBlockBoundary(part: ResolvedBlockPart, face: ModelFaceName): boolean {
+  const [fromX, fromY, fromZ] = part.from;
+  const [toX, toY, toZ] = part.to;
+
+  switch (face) {
+    case 'down':
+      return fromY <= 0 && coversFullRange(fromX, toX) && coversFullRange(fromZ, toZ);
+    case 'up':
+      return toY >= 16 && coversFullRange(fromX, toX) && coversFullRange(fromZ, toZ);
+    case 'north':
+      return fromZ <= 0 && coversFullRange(fromX, toX) && coversFullRange(fromY, toY);
+    case 'south':
+      return toZ >= 16 && coversFullRange(fromX, toX) && coversFullRange(fromY, toY);
+    case 'west':
+      return fromX <= 0 && coversFullRange(fromZ, toZ) && coversFullRange(fromY, toY);
+    case 'east':
+      return toX >= 16 && coversFullRange(fromZ, toZ) && coversFullRange(fromY, toY);
+  }
+}
+
+function coversFullRange(from: number, to: number): boolean {
+  return from <= 0 && to >= 16;
 }
 
 function hiddenFaceCacheKey(hiddenFaces: Set<ModelFaceName>): string {
@@ -407,7 +460,7 @@ function rotatedFace(face: ModelFaceName, part: ResolvedBlockPart): ModelFaceNam
   const vector = new THREE.Vector3(x, y, z);
   vector.applyEuler(
     new THREE.Euler(
-      THREE.MathUtils.degToRad(part.variantRotation.x),
+      THREE.MathUtils.degToRad(variantXRotation(part)),
       THREE.MathUtils.degToRad(variantYRotation(part)),
       0,
     ),
@@ -624,12 +677,12 @@ function redstoneWireColor(powerValue: string | undefined): number {
   );
 }
 
-function variantYRotation(part: ResolvedBlockPart): number {
-  if (part.blockId === 'minecraft:redstone_wire') {
-    return -part.variantRotation.y;
-  }
+function variantXRotation(part: ResolvedBlockPart): number {
+  return -part.variantRotation.x;
+}
 
-  return part.variantRotation.y;
+function variantYRotation(part: ResolvedBlockPart): number {
+  return -part.variantRotation.y;
 }
 
 function colorMaterial(color: number): THREE.Material {
