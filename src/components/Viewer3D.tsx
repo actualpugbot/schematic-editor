@@ -299,13 +299,29 @@ export function Viewer3D(props: InternalViewerProps) {
       return;
     }
 
-    selectionBox.position.set(
-      block.x - (props.model.dimensions.width - 1) / 2,
-      block.y,
-      block.z - (props.model.dimensions.length - 1) / 2,
-    );
-    selectionBox.visible = true;
-  }, [props.hiddenMaterialIds, props.model, props.selectedBlock, props.singleLayer, props.visibleLayer]);
+    let cancelled = false;
+    selectionBox.visible = false;
+
+    void createSelectionBoxGeometry(block, filteredBlocks).then((geometry) => {
+      if (cancelled) {
+        geometry.dispose();
+        return;
+      }
+
+      selectionBox.geometry.dispose();
+      selectionBox.geometry = geometry;
+      selectionBox.position.set(
+        block.x - (props.model!.dimensions.width - 1) / 2,
+        block.y,
+        block.z - (props.model!.dimensions.length - 1) / 2,
+      );
+      selectionBox.visible = true;
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [filteredBlocks, props.hiddenMaterialIds, props.model, props.selectedBlock, props.singleLayer, props.visibleLayer]);
 
   useEffect(() => {
     const camera = cameraRef.current;
@@ -569,10 +585,10 @@ function rotatedFace(face: ModelFaceName, part: ResolvedBlockPart): ModelFaceNam
 }
 
 function createSelectionBox(): THREE.LineSegments {
-  const geometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.08, 1.08, 1.08));
+  const geometry = createSelectionEdgesGeometry(new Set(faceOrder));
   const material = new THREE.LineBasicMaterial({
     color: 0xf7c948,
-    depthTest: false,
+    depthTest: true,
     transparent: true,
     opacity: 0.95,
   });
@@ -580,6 +596,85 @@ function createSelectionBox(): THREE.LineSegments {
   box.renderOrder = 20;
   box.visible = false;
   return box;
+}
+
+async function createSelectionBoxGeometry(
+  selectedBlock: VoxelBlock,
+  visibleBlocks: VoxelBlock[],
+): Promise<THREE.BufferGeometry> {
+  const visibleFaces = await visibleBoundaryFacesForBlock(selectedBlock, visibleBlocks);
+  return createSelectionEdgesGeometry(visibleFaces);
+}
+
+async function visibleBoundaryFacesForBlock(
+  selectedBlock: VoxelBlock,
+  visibleBlocks: VoxelBlock[],
+): Promise<Set<ModelFaceName>> {
+  const states = Array.from(new Set(visibleBlocks.map((block) => block.stateKey)));
+  const resolvedStates = await Promise.all(states.map(async (state) => [state, await resolveBlockParts(state)] as const));
+  const partsByState = new Map(resolvedStates);
+  const occludingFacesByBlock = new Map<string, Set<ModelFaceName>>();
+  const partsByBlock = new Map<string, ResolvedBlockPart[]>();
+
+  for (const block of visibleBlocks) {
+    const parts = partsByState.get(block.stateKey) ?? [];
+    const key = blockPositionKey(block);
+    partsByBlock.set(key, parts);
+    occludingFacesByBlock.set(key, occludingFacesForParts(parts));
+  }
+
+  const visibleFaces = new Set<ModelFaceName>(faceOrder);
+
+  for (const face of faceOrder) {
+    const [x, y, z] = faceOffsets[face];
+    const neighborKey = `${selectedBlock.x + x},${selectedBlock.y + y},${selectedBlock.z + z}`;
+    const neighborFaces = occludingFacesByBlock.get(neighborKey);
+    if (neighborFaces?.has(oppositeFaces[face])) {
+      visibleFaces.delete(face);
+      continue;
+    }
+
+    const selectedParts = partsByState.get(selectedBlock.stateKey) ?? [];
+    const neighborParts = partsByBlock.get(neighborKey) ?? [];
+    if (selectedParts.some((part) => waterNeighborHidesFace(part, face, face, neighborParts))) {
+      visibleFaces.delete(face);
+    }
+  }
+
+  return visibleFaces;
+}
+
+function createSelectionEdgesGeometry(visibleFaces: Set<ModelFaceName>): THREE.BufferGeometry {
+  const halfSize = 0.54;
+  const vertices: number[] = [];
+  const edges: Array<{
+    from: [number, number, number];
+    to: [number, number, number];
+    faces: [ModelFaceName, ModelFaceName];
+  }> = [
+    { from: [-halfSize, -halfSize, -halfSize], to: [halfSize, -halfSize, -halfSize], faces: ['down', 'north'] },
+    { from: [halfSize, -halfSize, -halfSize], to: [halfSize, -halfSize, halfSize], faces: ['down', 'east'] },
+    { from: [halfSize, -halfSize, halfSize], to: [-halfSize, -halfSize, halfSize], faces: ['down', 'south'] },
+    { from: [-halfSize, -halfSize, halfSize], to: [-halfSize, -halfSize, -halfSize], faces: ['down', 'west'] },
+    { from: [-halfSize, halfSize, -halfSize], to: [halfSize, halfSize, -halfSize], faces: ['up', 'north'] },
+    { from: [halfSize, halfSize, -halfSize], to: [halfSize, halfSize, halfSize], faces: ['up', 'east'] },
+    { from: [halfSize, halfSize, halfSize], to: [-halfSize, halfSize, halfSize], faces: ['up', 'south'] },
+    { from: [-halfSize, halfSize, halfSize], to: [-halfSize, halfSize, -halfSize], faces: ['up', 'west'] },
+    { from: [-halfSize, -halfSize, -halfSize], to: [-halfSize, halfSize, -halfSize], faces: ['west', 'north'] },
+    { from: [halfSize, -halfSize, -halfSize], to: [halfSize, halfSize, -halfSize], faces: ['east', 'north'] },
+    { from: [halfSize, -halfSize, halfSize], to: [halfSize, halfSize, halfSize], faces: ['east', 'south'] },
+    { from: [-halfSize, -halfSize, halfSize], to: [-halfSize, halfSize, halfSize], faces: ['west', 'south'] },
+  ];
+
+  for (const edge of edges) {
+    const [faceA, faceB] = edge.faces;
+    if (!visibleFaces.has(faceA) && !visibleFaces.has(faceB)) continue;
+    vertices.push(...edge.from, ...edge.to);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  return geometry;
 }
 
 function pickBlock(
