@@ -923,7 +923,10 @@ function textureMaterial(textureId: string, tintColor: number | null, shade: boo
   texture.wrapT = THREE.ClampToEdgeWrapping;
   const beaconCore = isBeaconCoreTexture(textureId);
   const water = isWaterTexture(textureId);
+  const glass = isGlassTexture(textureId);
   const opacity = translucent ? translucentTextureOpacity(textureId) : 1;
+  const depthWrite = !translucent || glass;
+  const side = glass ? THREE.FrontSide : THREE.DoubleSide;
 
   const material = shade
     ? new THREE.MeshStandardMaterial({
@@ -936,8 +939,8 @@ function textureMaterial(textureId: string, tintColor: number | null, shade: boo
         transparent: translucent,
         opacity,
         alphaTest: water ? 0.02 : 0.08,
-        depthWrite: !translucent,
-        side: THREE.DoubleSide,
+        depthWrite,
+        side,
       })
     : new THREE.MeshBasicMaterial({
         map: texture,
@@ -945,8 +948,8 @@ function textureMaterial(textureId: string, tintColor: number | null, shade: boo
         transparent: translucent,
         opacity,
         alphaTest: 0.08,
-        depthWrite: !translucent,
-        side: THREE.DoubleSide,
+        depthWrite,
+        side,
         toneMapped: false,
       });
   materialCache.set(key, material);
@@ -969,12 +972,17 @@ function isWaterTexture(textureId: string): boolean {
   return textureId.replace(/^minecraft:/, '').startsWith('block/water_');
 }
 
+function isGlassTexture(textureId: string): boolean {
+  const path = textureId.replace(/^minecraft:/, '');
+  return path === 'block/glass' || /(^|\/).+_stained_glass(_pane_top)?$/.test(path) || path === 'block/tinted_glass';
+}
+
 function translucentTextureOpacity(textureId: string): number {
   const path = textureId.replace(/^minecraft:/, '');
   if (path.startsWith('block/water_')) {
     return 0.54;
   }
-  if (path === 'block/glass' || path.endsWith('_stained_glass') || path === 'block/tinted_glass') {
+  if (isGlassTexture(textureId)) {
     return 0.58;
   }
   return 0.72;
