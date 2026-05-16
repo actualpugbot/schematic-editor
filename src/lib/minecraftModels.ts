@@ -11,6 +11,7 @@ export interface ResolvedBlockPart {
   blockProperties: Record<string, string>;
   from: [number, number, number];
   to: [number, number, number];
+  textureSize?: [number, number];
   shade: boolean;
   isFallback?: boolean;
   elementRotation?: ModelElementRotation;
@@ -141,6 +142,15 @@ async function resolveBlockPartsUncached(stateKey: string): Promise<ResolvedBloc
   for (const variant of variants) {
     const model = await resolveModel(variant.model);
     if (!model || model.elements.length === 0) {
+      const blockEntityParts = specialBlockEntityParts(state.id, state.properties, {
+        x: variant.x ?? 0,
+        y: variant.y ?? 0,
+      });
+      if (blockEntityParts.length > 0) {
+        parts.push(...blockEntityParts);
+        continue;
+      }
+
       const syntheticParts = syntheticBlockParts(state.id, state.properties, { x: variant.x ?? 0, y: variant.y ?? 0 });
       if (syntheticParts.length > 0) {
         parts.push(...syntheticParts);
@@ -163,6 +173,7 @@ async function resolveBlockPartsUncached(stateKey: string): Promise<ResolvedBloc
         blockProperties: state.properties,
         from: element.from,
         to: element.to,
+        textureSize: [16, 16],
         shade: element.shade ?? true,
         elementRotation: element.rotation,
         variantRotation: {
@@ -441,7 +452,15 @@ function syntheticBlockParts(
   const movingPistonParts = syntheticMovingPistonParts(id, properties, variantRotation);
   if (movingPistonParts.length > 0) return movingPistonParts;
 
-  const chestParts = syntheticChestParts(id, properties, variantRotation);
+  return [];
+}
+
+function specialBlockEntityParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  const chestParts = chestBlockEntityParts(id, properties, variantRotation);
   if (chestParts.length > 0) return chestParts;
 
   return [];
@@ -531,31 +550,23 @@ function pistonFacingYRotation(facing: string | undefined): number {
   }
 }
 
-function syntheticChestParts(
+function chestBlockEntityParts(
   id: string,
   properties: Record<string, string>,
   variantRotation: { x: number; y: number },
 ): ResolvedBlockPart[] {
   if (!isChestBlock(id)) return [];
 
+  const chestType = id === 'minecraft:ender_chest' ? 'single' : chestTypeFromProperties(properties);
   const chestRotation = {
     x: variantRotation.x,
     y: variantRotation.y + chestFacingRotation(properties.facing),
   };
-  const palette = chestPalette(id);
+  const texture = chestTexture(id, chestType);
 
-  return [
-    syntheticCuboidPart(id, properties, `chest-base:${palette.bodyKey}`, [2, 0, 2], [14, 9, 14], palette.body, chestRotation),
-    syntheticCuboidPart(id, properties, `chest-lid:${palette.bodyKey}`, [1.5, 9.25, 1.5], [14.5, 14, 14.5], palette.body, chestRotation),
-    syntheticCuboidPart(id, properties, `chest-base-front-trim:${palette.trim}`, [1.25, 0.25, 0.75], [14.75, 2, 2.25], palette.trim, chestRotation),
-    syntheticCuboidPart(id, properties, `chest-base-back-trim:${palette.trim}`, [1.25, 0.25, 13.75], [14.75, 2, 15.25], palette.trim, chestRotation),
-    syntheticCuboidPart(id, properties, `chest-seam:${palette.trim}`, [1, 8.25, 0.75], [15, 10.25, 2.25], palette.trim, chestRotation),
-    syntheticCuboidPart(id, properties, `chest-lid-front-trim:${palette.trim}`, [1, 12.75, 0.75], [15, 14.5, 2.25], palette.trim, chestRotation),
-    syntheticCuboidPart(id, properties, `chest-lid-back-trim:${palette.trim}`, [1, 12.75, 13.75], [15, 14.5, 15.25], palette.trim, chestRotation),
-    syntheticCuboidPart(id, properties, `chest-left-edge:${palette.trim}`, [0.75, 0.25, 1], [2.25, 13.75, 2.5], palette.trim, chestRotation),
-    syntheticCuboidPart(id, properties, `chest-right-edge:${palette.trim}`, [13.75, 0.25, 1], [15.25, 13.75, 2.5], palette.trim, chestRotation),
-    syntheticCuboidPart(id, properties, `chest-latch:${palette.latch}`, [6.5, 4.5, 0.35], [9.5, 8.5, 1.55], palette.latch, chestRotation),
-  ];
+  return chestCuboids(chestType).map((cuboid) =>
+    blockEntityCuboidPart(id, properties, `chest:${chestType}:${cuboid.name}:${texture}`, cuboid, texture, chestRotation),
+  );
 }
 
 function isChestBlock(id: string): boolean {
@@ -563,81 +574,178 @@ function isChestBlock(id: string): boolean {
   return /(^|_)chest$/.test(path);
 }
 
+type ChestType = 'single' | 'left' | 'right';
+
+interface BlockEntityCuboid {
+  name: string;
+  from: [number, number, number];
+  to: [number, number, number];
+  textureOrigin: [number, number];
+  hiddenFaces?: ModelFaceName[];
+}
+
+function chestTypeFromProperties(properties: Record<string, string>): ChestType {
+  return properties.type === 'left' || properties.type === 'right' ? properties.type : 'single';
+}
+
 function chestFacingRotation(facing: string | undefined): number {
   switch (facing) {
     case 'east':
-      return 90;
-    case 'south':
-      return 180;
-    case 'west':
       return 270;
+    case 'west':
+      return 90;
     case 'north':
+      return 180;
+    case 'south':
     default:
       return 0;
   }
 }
 
-interface SyntheticChestPalette {
-  bodyKey: string;
-  body: Record<ModelFaceName, string>;
-  trim: string;
-  latch: string;
-}
-
-function chestPalette(id: string): SyntheticChestPalette {
+function chestTexture(id: string, chestType: ChestType): string {
   const path = id.replace(/^minecraft:/, '');
-  const latch = path === 'trapped_chest' ? 'minecraft:block/redstone_block' : 'minecraft:block/gold_block';
 
-  if (path === 'ender_chest') {
-    return {
-      bodyKey: 'ender',
-      body: cubeTextures('minecraft:block/obsidian'),
-      trim: 'minecraft:block/purpur_block',
-      latch: 'minecraft:block/emerald_block',
-    };
+  if (path === 'ender_chest') return 'minecraft:entity/chest/ender';
+
+  const baseName = (() => {
+    if (path === 'trapped_chest') return 'trapped';
+    if (path.includes('oxidized_copper_chest')) return 'copper_oxidized';
+    if (path.includes('weathered_copper_chest')) return 'copper_weathered';
+    if (path.includes('exposed_copper_chest')) return 'copper_exposed';
+    if (path.includes('copper_chest')) return 'copper';
+    return 'normal';
+  })();
+
+  const suffix = chestType === 'single' ? '' : `_${chestType}`;
+  return `minecraft:entity/chest/${baseName}${suffix}`;
+}
+
+function chestCuboids(chestType: ChestType): BlockEntityCuboid[] {
+  if (chestType === 'left') {
+    return [
+      { name: 'bottom', from: [0, 0, 1], to: [15, 10, 15], textureOrigin: [0, 19], hiddenFaces: ['west'] },
+      { name: 'lid', from: [0, 9, 1], to: [15, 14, 15], textureOrigin: [0, 0], hiddenFaces: ['west'] },
+      { name: 'lock', from: [0, 7, 15], to: [1, 11, 16], textureOrigin: [0, 0], hiddenFaces: ['west'] },
+    ];
   }
 
-  if (path.includes('oxidized_copper_chest')) {
-    return copperChestPalette('minecraft:block/oxidized_copper', 'minecraft:block/oxidized_cut_copper', latch);
+  if (chestType === 'right') {
+    return [
+      { name: 'bottom', from: [1, 0, 1], to: [16, 10, 15], textureOrigin: [0, 19], hiddenFaces: ['east'] },
+      { name: 'lid', from: [1, 9, 1], to: [16, 14, 15], textureOrigin: [0, 0], hiddenFaces: ['east'] },
+      { name: 'lock', from: [15, 7, 15], to: [16, 11, 16], textureOrigin: [0, 0], hiddenFaces: ['east'] },
+    ];
   }
 
-  if (path.includes('weathered_copper_chest')) {
-    return copperChestPalette('minecraft:block/weathered_copper', 'minecraft:block/weathered_cut_copper', latch);
-  }
+  return [
+    { name: 'bottom', from: [1, 0, 1], to: [15, 10, 15], textureOrigin: [0, 19] },
+    { name: 'lid', from: [1, 9, 1], to: [15, 14, 15], textureOrigin: [0, 0] },
+    { name: 'lock', from: [7, 7, 15], to: [9, 11, 16], textureOrigin: [0, 0] },
+  ];
+}
 
-  if (path.includes('exposed_copper_chest')) {
-    return copperChestPalette('minecraft:block/exposed_copper', 'minecraft:block/exposed_cut_copper', latch);
-  }
+function blockEntityCuboidPart(
+  id: string,
+  properties: Record<string, string>,
+  key: string,
+  cuboid: BlockEntityCuboid,
+  texture: string,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart {
+  const width = cuboid.to[0] - cuboid.from[0];
+  const height = cuboid.to[1] - cuboid.from[1];
+  const depth = cuboid.to[2] - cuboid.from[2];
+  const hiddenFaces = new Set(cuboid.hiddenFaces ?? []);
+  const faceTextures = cubeTextures(texture);
 
-  if (path.includes('copper_chest')) {
-    return copperChestPalette('minecraft:block/copper_block', 'minecraft:block/cut_copper', latch);
+  for (const face of hiddenFaces) {
+    faceTextures[face] = null;
   }
 
   return {
-    bodyKey: 'wood',
-    body: {
-      down: 'minecraft:block/barrel_bottom',
-      up: 'minecraft:block/barrel_top',
-      north: 'minecraft:block/barrel_side',
-      south: 'minecraft:block/barrel_side',
-      west: 'minecraft:block/barrel_side',
-      east: 'minecraft:block/barrel_side',
+    key: `block-entity::${id}::${key}::${variantRotation.x}::${variantRotation.y}`,
+    blockId: id,
+    blockProperties: properties,
+    from: cuboid.from,
+    to: cuboid.to,
+    textureSize: [64, 64],
+    shade: true,
+    variantRotation,
+    faceTextures,
+    faceTints: {
+      down: null,
+      up: null,
+      north: null,
+      south: null,
+      west: null,
+      east: null,
     },
-    trim: 'minecraft:block/dark_oak_planks',
-    latch,
+    faceUvs: entityCubeUvs(cuboid.textureOrigin[0], cuboid.textureOrigin[1], width, height, depth, hiddenFaces),
+    faceRotations: {
+      down: 0,
+      up: 0,
+      north: 0,
+      south: 0,
+      west: 0,
+      east: 0,
+    },
+    faceCullfaces: {
+      down: null,
+      up: null,
+      north: null,
+      south: null,
+      west: null,
+      east: null,
+    },
+    faceTranslucencies: {
+      down: false,
+      up: false,
+      north: false,
+      south: false,
+      west: false,
+      east: false,
+    },
   };
 }
 
-function copperChestPalette(bodyTexture: string, trimTexture: string, latchTexture: string): SyntheticChestPalette {
+function entityCubeUvs(
+  textureX: number,
+  textureY: number,
+  width: number,
+  height: number,
+  depth: number,
+  hiddenFaces: Set<ModelFaceName>,
+): Record<ModelFaceName, ModelFaceUv | null> {
+  const u0 = textureX;
+  const u1 = textureX + depth;
+  const u2 = textureX + depth + width;
+  const u22 = textureX + depth + width + width;
+  const u3 = textureX + depth + width + depth;
+  const u4 = textureX + depth + width + depth + width;
+  const v0 = textureY;
+  const v1 = textureY + depth;
+  const v2 = textureY + depth + height;
+
+  const uvs: Record<ModelFaceName, ModelFaceUv> = {
+    down: [u1, v0, u2, v1],
+    up: [u2, v1, u22, v0],
+    west: [u1, v2, u0, v1],
+    north: [u2, v2, u1, v1],
+    east: [u3, v2, u2, v1],
+    south: [u4, v2, u3, v1],
+  };
+
   return {
-    bodyKey: bodyTexture,
-    body: cubeTextures(bodyTexture),
-    trim: trimTexture,
-    latch: latchTexture,
+    down: hiddenFaces.has('down') ? null : uvs.down,
+    up: hiddenFaces.has('up') ? null : uvs.up,
+    north: hiddenFaces.has('north') ? null : uvs.north,
+    south: hiddenFaces.has('south') ? null : uvs.south,
+    west: hiddenFaces.has('west') ? null : uvs.west,
+    east: hiddenFaces.has('east') ? null : uvs.east,
   };
 }
 
-function cubeTextures(texture: string): Record<ModelFaceName, string> {
+function cubeTextures(texture: string): Record<ModelFaceName, string | null> {
   return {
     down: texture,
     up: texture,
@@ -654,7 +762,7 @@ function syntheticCuboidPart(
   key: string,
   from: [number, number, number],
   to: [number, number, number],
-  textures: string | Record<ModelFaceName, string>,
+  textures: string | Record<ModelFaceName, string | null>,
   variantRotation: { x: number; y: number },
 ): ResolvedBlockPart {
   const faceTextures = typeof textures === 'string' ? cubeTextures(textures) : textures;
@@ -665,6 +773,7 @@ function syntheticCuboidPart(
     blockProperties: properties,
     from,
     to,
+    textureSize: [16, 16],
     shade: true,
     variantRotation,
     faceTextures,
@@ -727,6 +836,7 @@ function syntheticFluidPart(
     blockProperties: properties,
     from: [0, 0, 0],
     to: [16, surfaceHeight, 16],
+    textureSize: [16, 16],
     shade: true,
     variantRotation,
     faceTextures: {
@@ -787,6 +897,7 @@ function fallbackPart(id: string, variantRotation: { x: number; y: number }): Re
     blockProperties: {},
     from: [0, 0, 0],
     to: [16, 16, 16],
+    textureSize: [16, 16],
     shade: true,
     isFallback: true,
     variantRotation,

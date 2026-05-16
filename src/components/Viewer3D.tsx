@@ -601,11 +601,14 @@ function geometryForPart(part: ResolvedBlockPart): THREE.BufferGeometry {
   const uvKey = faceOrder
     .map((face) => `${face}:${part.faceUvs[face]?.join(',') ?? 'default'}:${part.faceRotations[face]}`)
     .join('|');
+  const textureSizeKey = part.textureSize?.join('x') ?? '16x16';
   const key = `${part.from.join(',')}::${part.to.join(',')}::${
     part.elementRotation
       ? `${part.elementRotation.axis}:${part.elementRotation.angle}:${part.elementRotation.origin.join(',')}`
       : 'none'
-  }::${uvKey}::faces:${part.isFallback ? 'fallback' : faceOrder.filter((face) => part.faceTextures[face]).join(',')}`;
+  }::${uvKey}::texture:${textureSizeKey}::faces:${
+    part.isFallback ? 'fallback' : faceOrder.filter((face) => part.faceTextures[face]).join(',')
+  }`;
   const cached = geometryCache.get(key);
   if (cached) return cached;
 
@@ -646,7 +649,10 @@ function createModelElementGeometry(part: ResolvedBlockPart): THREE.BufferGeomet
     if (!part.isFallback && !part.faceTextures[face]) continue;
 
     const facePositions = modelFacePositions(part, face);
-    const faceUvs = rotateUvCorners(uvToCorners(part.faceUvs[face] ?? defaultFaceUv(part, face)), part.faceRotations[face]);
+    const faceUvs = rotateUvCorners(
+      uvToCorners(part.faceUvs[face] ?? defaultFaceUv(part, face), part.textureSize),
+      part.faceRotations[face],
+    );
     const normal = faceOffsets[face];
 
     faceCornerOrder.forEach((cornerIndex) => {
@@ -743,12 +749,16 @@ function defaultFaceUv(part: ResolvedBlockPart, face: ModelFaceName): [number, n
   }
 }
 
-function uvToCorners(uv: [number, number, number, number]): Array<[number, number]> {
+function uvToCorners(
+  uv: [number, number, number, number],
+  textureSize: [number, number] = [16, 16],
+): Array<[number, number]> {
   const [u1, v1, u2, v2] = uv;
-  const left = u1 / 16;
-  const right = u2 / 16;
-  const top = 1 - v1 / 16;
-  const bottom = 1 - v2 / 16;
+  const [width, height] = textureSize;
+  const left = u1 / width;
+  const right = u2 / width;
+  const top = 1 - v1 / height;
+  const bottom = 1 - v2 / height;
 
   return [
     [left, top],

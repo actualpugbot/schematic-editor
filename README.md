@@ -22,4 +22,4 @@ Files are parsed in the browser; uploads are not sent to a server.
 
 ## Minecraft Assets
 
-The app serves vanilla blockstates, block models, and block textures from `public/minecraft-assets/`. These assets were copied from `~/dev/mc-datahub/workspace/versions/26.1.1/decompiled/client/assets/minecraft`.
+The app serves vanilla blockstates, block models, block textures, and chest block-entity textures from `public/minecraft-assets/`. These assets were copied from `~/dev/mc-datahub/workspace/versions/26.1.1/decompiled/client/assets/minecraft`.
