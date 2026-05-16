@@ -407,13 +407,7 @@ async function createBlockMeshes(blocks: VoxelBlock[]): Promise<THREE.InstancedM
     mesh.receiveShadow = true;
     mesh.renderOrder = partHasTranslucentFaces(group.part) ? 10 : 0;
 
-    const quaternion = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(
-        THREE.MathUtils.degToRad(variantXRotation(group.part)),
-        THREE.MathUtils.degToRad(variantYRotation(group.part)),
-        0,
-      ),
-    );
+    const quaternion = new THREE.Quaternion().setFromEuler(variantEuler(group.part));
     const scale = new THREE.Vector3(1, 1, 1);
 
     group.blocks.forEach((block, index) => {
@@ -572,13 +566,7 @@ function hiddenFaceCacheKey(hiddenFaces: Set<ModelFaceName>): string {
 function rotatedFace(face: ModelFaceName, part: ResolvedBlockPart): ModelFaceName {
   const [x, y, z] = faceOffsets[face];
   const vector = new THREE.Vector3(x, y, z);
-  vector.applyEuler(
-    new THREE.Euler(
-      THREE.MathUtils.degToRad(variantXRotation(part)),
-      THREE.MathUtils.degToRad(variantYRotation(part)),
-      0,
-    ),
-  );
+  vector.applyEuler(variantEuler(part));
 
   const axis = new THREE.Vector3(Math.round(vector.x), Math.round(vector.y), Math.round(vector.z));
   for (const [candidate, offset] of Object.entries(faceOffsets) as Array<[ModelFaceName, [number, number, number]]>) {
@@ -708,7 +696,12 @@ function pickBlock(
 
 function geometryForPart(part: ResolvedBlockPart): THREE.BufferGeometry {
   const uvKey = faceOrder
-    .map((face) => `${face}:${part.faceUvs[face]?.join(',') ?? 'default'}:${part.faceRotations[face]}:${uvLockRotation(part, face)}`)
+    .map(
+      (face) =>
+        `${face}:${part.faceUvs[face]?.join(',') ?? 'default'}:${part.faceRotations[face]}:${part.variantRotation.x}:${
+          part.variantRotation.y
+        }`,
+    )
     .join('|');
   const textureSizeKey = part.textureSize?.join('x') ?? '16x16';
   const key = `${part.from.join(',')}::${part.to.join(',')}::${
@@ -758,10 +751,10 @@ function createModelElementGeometry(part: ResolvedBlockPart): THREE.BufferGeomet
     if (!part.isFallback && !part.faceTextures[face]) continue;
 
     const facePositions = modelFacePositions(part, face);
-    const faceUvs = rotateUvCorners(
-      uvToCorners(part.faceUvs[face] ?? defaultFaceUv(part, face), part.textureSize),
-      part.faceRotations[face] + uvLockRotation(part, face),
-    );
+    const baseUvs = part.uvLock
+      ? uvLockedCorners(part, face, facePositions)
+      : uvToCorners(part.faceUvs[face] ?? defaultFaceUv(part, face), part.textureSize);
+    const faceUvs = rotateUvCorners(baseUvs, part.faceRotations[face]);
     const normal = faceOffsets[face];
 
     faceCornerOrder.forEach((cornerIndex) => {
@@ -888,21 +881,43 @@ function rotateUvCorners(corners: Array<[number, number]>, degrees: number): Arr
   return rotated;
 }
 
-function uvLockRotation(part: ResolvedBlockPart, face: ModelFaceName): number {
-  if (!part.uvLock) return 0;
+function uvLockedCorners(
+  part: ResolvedBlockPart,
+  face: ModelFaceName,
+  facePositions: Array<[number, number, number]>,
+): Array<[number, number]> {
+  const worldFace = rotatedFace(face, part);
+  const rotation = variantEuler(part);
+  const [textureWidth, textureHeight] = part.textureSize ?? [16, 16];
 
-  const x = normalizedQuarterRotation(part.variantRotation.x);
-  const y = normalizedQuarterRotation(part.variantRotation.y);
+  return facePositions.map(([x, y, z]) => {
+    const position = new THREE.Vector3(x, y, z).applyEuler(rotation);
+    const modelX = (position.x + 0.5) * 16;
+    const modelY = (position.y + 0.5) * 16;
+    const modelZ = (position.z + 0.5) * 16;
+    const [u, v] = uvLockedModelCoordinates(worldFace, modelX, modelY, modelZ);
 
-  if (face === 'up' || face === 'down') {
-    return y;
-  }
-
-  return x === 180 ? 180 : 0;
+    return [u / textureWidth, 1 - v / textureHeight];
+  });
 }
 
-function normalizedQuarterRotation(degrees: number): number {
-  return ((Math.round(degrees / 90) * 90) % 360 + 360) % 360;
+function uvLockedModelCoordinates(
+  face: ModelFaceName,
+  x: number,
+  y: number,
+  z: number,
+): [number, number] {
+  switch (face) {
+    case 'down':
+    case 'up':
+      return [x, z];
+    case 'north':
+    case 'south':
+      return [x, 16 - y];
+    case 'west':
+    case 'east':
+      return [z, 16 - y];
+  }
 }
 
 function materialsForPart(
@@ -1043,6 +1058,15 @@ function variantXRotation(part: ResolvedBlockPart): number {
 
 function variantYRotation(part: ResolvedBlockPart): number {
   return -part.variantRotation.y;
+}
+
+function variantEuler(part: ResolvedBlockPart): THREE.Euler {
+  return new THREE.Euler(
+    THREE.MathUtils.degToRad(variantXRotation(part)),
+    THREE.MathUtils.degToRad(variantYRotation(part)),
+    0,
+    'YXZ',
+  );
 }
 
 function colorMaterial(color: number): THREE.Material {
