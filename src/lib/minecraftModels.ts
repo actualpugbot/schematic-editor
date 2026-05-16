@@ -11,6 +11,7 @@ export interface ResolvedBlockPart {
   blockProperties: Record<string, string>;
   from: [number, number, number];
   to: [number, number, number];
+  shade: boolean;
   isFallback?: boolean;
   elementRotation?: ModelElementRotation;
   variantRotation: {
@@ -61,6 +62,7 @@ interface ResolvedModel {
 interface ModelElement {
   from: [number, number, number];
   to: [number, number, number];
+  shade?: boolean;
   rotation?: ModelElementRotation;
   faces?: Partial<Record<ModelFaceName, ModelFace>>;
 }
@@ -149,6 +151,7 @@ async function resolveBlockPartsUncached(stateKey: string): Promise<ResolvedBloc
         blockProperties: state.properties,
         from: element.from,
         to: element.to,
+        shade: element.shade ?? true,
         elementRotation: element.rotation,
         variantRotation: {
           x: variant.x ?? 0,
@@ -401,6 +404,7 @@ function fallbackPart(id: string, variantRotation: { x: number; y: number }): Re
     blockProperties: {},
     from: [0, 0, 0],
     to: [16, 16, 16],
+    shade: true,
     isFallback: true,
     variantRotation,
     faceTextures: {

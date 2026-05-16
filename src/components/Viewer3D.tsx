@@ -521,20 +521,11 @@ function geometryForPart(part: ResolvedBlockPart): THREE.BufferGeometry {
     part.elementRotation
       ? `${part.elementRotation.axis}:${part.elementRotation.angle}:${part.elementRotation.origin.join(',')}`
       : 'none'
-  }::${uvKey}`;
+  }::${uvKey}::faces:${part.isFallback ? 'fallback' : faceOrder.filter((face) => part.faceTextures[face]).join(',')}`;
   const cached = geometryCache.get(key);
   if (cached) return cached;
 
-  const width = Math.max(0.001, (part.to[0] - part.from[0]) / 16);
-  const height = Math.max(0.001, (part.to[1] - part.from[1]) / 16);
-  const depth = Math.max(0.001, (part.to[2] - part.from[2]) / 16);
-  const geometry = new THREE.BoxGeometry(width, height, depth);
-  applyFaceUvs(geometry, part);
-  geometry.translate(
-    (part.from[0] + part.to[0]) / 32 - 0.5,
-    (part.from[1] + part.to[1]) / 32 - 0.5,
-    (part.from[2] + part.to[2]) / 32 - 0.5,
-  );
+  const geometry = createModelElementGeometry(part);
 
   if (part.elementRotation) {
     const origin = new THREE.Vector3(
@@ -559,23 +550,113 @@ function geometryForPart(part: ResolvedBlockPart): THREE.BufferGeometry {
   return geometry;
 }
 
-function applyFaceUvs(geometry: THREE.BufferGeometry, part: ResolvedBlockPart) {
-  const uvAttribute = geometry.getAttribute('uv') as THREE.BufferAttribute | undefined;
-  if (!uvAttribute) return;
+function createModelElementGeometry(part: ResolvedBlockPart): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry();
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  let vertexCount = 0;
 
-  faceOrder.forEach((face, faceIndex) => {
-    const uv = part.faceUvs[face];
-    if (!uv) return;
+  for (const [materialIndex, face] of faceOrder.entries()) {
+    if (!part.isFallback && !part.faceTextures[face]) continue;
 
-    const corners = rotateUvCorners(uvToCorners(uv), part.faceRotations[face]);
-    const vertexOffset = faceIndex * 4;
+    const facePositions = modelFacePositions(part, face);
+    const faceUvs = rotateUvCorners(uvToCorners(part.faceUvs[face] ?? defaultFaceUv(part, face)), part.faceRotations[face]);
+    const normal = faceOffsets[face];
 
-    corners.forEach(([u, v], cornerIndex) => {
-      uvAttribute.setXY(vertexOffset + cornerIndex, u, v);
+    faceCornerOrder.forEach((cornerIndex) => {
+      const [x, y, z] = facePositions[cornerIndex];
+      const [u, v] = faceUvs[cornerIndex];
+      positions.push(x, y, z);
+      normals.push(normal[0], normal[1], normal[2]);
+      uvs.push(u, v);
     });
-  });
 
-  uvAttribute.needsUpdate = true;
+    indices.push(vertexCount, vertexCount + 2, vertexCount + 1, vertexCount + 2, vertexCount + 3, vertexCount + 1);
+    geometry.addGroup(indices.length - 6, 6, materialIndex);
+    vertexCount += 4;
+  }
+
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+const faceCornerOrder = [0, 1, 2, 3];
+
+function modelFacePositions(part: ResolvedBlockPart, face: ModelFaceName): Array<[number, number, number]> {
+  const x1 = part.from[0] / 16 - 0.5;
+  const y1 = part.from[1] / 16 - 0.5;
+  const z1 = part.from[2] / 16 - 0.5;
+  const x2 = part.to[0] / 16 - 0.5;
+  const y2 = part.to[1] / 16 - 0.5;
+  const z2 = part.to[2] / 16 - 0.5;
+
+  switch (face) {
+    case 'east':
+      return [
+        [x2, y2, z2],
+        [x2, y2, z1],
+        [x2, y1, z2],
+        [x2, y1, z1],
+      ];
+    case 'west':
+      return [
+        [x1, y2, z1],
+        [x1, y2, z2],
+        [x1, y1, z1],
+        [x1, y1, z2],
+      ];
+    case 'up':
+      return [
+        [x1, y2, z1],
+        [x2, y2, z1],
+        [x1, y2, z2],
+        [x2, y2, z2],
+      ];
+    case 'down':
+      return [
+        [x1, y1, z2],
+        [x2, y1, z2],
+        [x1, y1, z1],
+        [x2, y1, z1],
+      ];
+    case 'south':
+      return [
+        [x1, y2, z2],
+        [x2, y2, z2],
+        [x1, y1, z2],
+        [x2, y1, z2],
+      ];
+    case 'north':
+      return [
+        [x2, y2, z1],
+        [x1, y2, z1],
+        [x2, y1, z1],
+        [x1, y1, z1],
+      ];
+  }
+}
+
+function defaultFaceUv(part: ResolvedBlockPart, face: ModelFaceName): [number, number, number, number] {
+  const [fromX, fromY, fromZ] = part.from;
+  const [toX, toY, toZ] = part.to;
+
+  switch (face) {
+    case 'down':
+    case 'up':
+      return [fromX, fromZ, toX, toZ];
+    case 'north':
+    case 'south':
+      return [fromX, 16 - toY, toX, 16 - fromY];
+    case 'west':
+    case 'east':
+      return [fromZ, 16 - toY, toZ, 16 - fromY];
+  }
 }
 
 function uvToCorners(uv: [number, number, number, number]): Array<[number, number]> {
@@ -617,12 +698,12 @@ function materialsForPart(
       return part.isFallback ? colorMaterial(fallbackColor) : hiddenMaterial;
     }
 
-    return textureMaterial(textureId, tintColorForPart(textureId, part.faceTints[face], part));
+    return textureMaterial(textureId, tintColorForPart(textureId, part.faceTints[face], part), part.shade);
   });
 }
 
-function textureMaterial(textureId: string, tintColor: number | null): THREE.Material {
-  const key = `texture::${textureId}::${tintColor ?? 'none'}`;
+function textureMaterial(textureId: string, tintColor: number | null, shade: boolean): THREE.Material {
+  const key = `texture::${textureId}::${tintColor ?? 'none'}::shade:${shade}`;
   const cached = materialCache.get(key);
   if (cached) return cached;
 
@@ -633,15 +714,24 @@ function textureMaterial(textureId: string, tintColor: number | null): THREE.Mat
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
 
-  const material = new THREE.MeshStandardMaterial({
-    map: texture,
-    color: tintColor ?? 0xffffff,
-    roughness: 0.92,
-    metalness: 0.02,
-    transparent: true,
-    alphaTest: 0.08,
-    side: THREE.DoubleSide,
-  });
+  const material = shade
+    ? new THREE.MeshStandardMaterial({
+        map: texture,
+        color: tintColor ?? 0xffffff,
+        roughness: 0.92,
+        metalness: 0.02,
+        transparent: true,
+        alphaTest: 0.08,
+        side: THREE.DoubleSide,
+      })
+    : new THREE.MeshBasicMaterial({
+        map: texture,
+        color: tintColor ?? 0xffffff,
+        transparent: true,
+        alphaTest: 0.08,
+        side: THREE.DoubleSide,
+        toneMapped: false,
+      });
   materialCache.set(key, material);
   return material;
 }
