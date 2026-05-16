@@ -19,6 +19,8 @@ export interface ResolvedBlockPart {
   };
   faceTextures: Record<ModelFaceName, string | null>;
   faceTints: Record<ModelFaceName, number | null>;
+  faceUvs: Record<ModelFaceName, ModelFaceUv | null>;
+  faceRotations: Record<ModelFaceName, number>;
 }
 
 interface BlockstateJson {
@@ -70,7 +72,9 @@ export interface ModelElementRotation {
 }
 
 interface ModelFace {
+  uv?: ModelFaceUv;
   texture?: TextureReference;
+  rotation?: number;
   tintindex?: number;
 }
 
@@ -80,6 +84,7 @@ type TextureReference =
       sprite?: string;
       force_translucent?: boolean;
     };
+export type ModelFaceUv = [number, number, number, number];
 
 const assetRoot = '/minecraft-assets/assets/minecraft';
 const blockstateCache = new Map<string, Promise<BlockstateJson | null>>();
@@ -149,6 +154,8 @@ async function resolveBlockPartsUncached(stateKey: string): Promise<ResolvedBloc
         },
         faceTextures: faceTextures(element, model.textures),
         faceTints: faceTints(element),
+        faceUvs: faceUvs(element),
+        faceRotations: faceRotations(element),
       });
     }
   }
@@ -301,6 +308,32 @@ function faceTints(element: ModelElement): Record<ModelFaceName, number | null> 
   };
 }
 
+function faceUvs(element: ModelElement): Record<ModelFaceName, ModelFaceUv | null> {
+  const faces = element.faces ?? {};
+
+  return {
+    down: faces.down?.uv ?? null,
+    up: faces.up?.uv ?? null,
+    north: faces.north?.uv ?? null,
+    south: faces.south?.uv ?? null,
+    west: faces.west?.uv ?? null,
+    east: faces.east?.uv ?? null,
+  };
+}
+
+function faceRotations(element: ModelElement): Record<ModelFaceName, number> {
+  const faces = element.faces ?? {};
+
+  return {
+    down: faces.down?.rotation ?? 0,
+    up: faces.up?.rotation ?? 0,
+    north: faces.north?.rotation ?? 0,
+    south: faces.south?.rotation ?? 0,
+    west: faces.west?.rotation ?? 0,
+    east: faces.east?.rotation ?? 0,
+  };
+}
+
 function resolveTextureReference(value: string | null, textures: Record<string, string | null>): string | null {
   if (!value) return null;
   if (!value.startsWith('#')) return normalizeResourceId(value, 'block');
@@ -325,7 +358,9 @@ function partKey(
   const faceKey = Object.entries(faceTextures(element, textures))
     .map(([face, texture]) => {
       const tint = element.faces?.[face as ModelFaceName]?.tintindex ?? 'none';
-      return `${face}:${texture ?? 'fallback'}:${tint}`;
+      const uv = element.faces?.[face as ModelFaceName]?.uv?.join(',') ?? 'default';
+      const faceRotation = element.faces?.[face as ModelFaceName]?.rotation ?? 0;
+      return `${face}:${texture ?? 'fallback'}:${tint}:${uv}:${faceRotation}`;
     })
     .join('|');
   const rotation = element.rotation
@@ -367,6 +402,22 @@ function fallbackPart(id: string, variantRotation: { x: number; y: number }): Re
       south: null,
       west: null,
       east: null,
+    },
+    faceUvs: {
+      down: null,
+      up: null,
+      north: null,
+      south: null,
+      west: null,
+      east: null,
+    },
+    faceRotations: {
+      down: 0,
+      up: 0,
+      north: 0,
+      south: 0,
+      west: 0,
+      east: 0,
     },
   };
 }

@@ -196,6 +196,7 @@ function parseLegacySchematic(schematic: NbtCompound, fileName = 'Uploaded schem
   const dimensions = readDimensions(schematic);
   const blocksArray = asByteArray(schematic.Blocks);
   const addBlocksArray = asByteArray(schematic.AddBlocks);
+  const dataArray = asByteArray(schematic.Data);
   const blocks: VoxelBlock[] = [];
   const warnings: string[] = [];
   const totalBlocks = dimensions.width * dimensions.height * dimensions.length;
@@ -214,11 +215,12 @@ function parseLegacySchematic(schematic: NbtCompound, fileName = 'Uploaded schem
     const id = ((high << 8) | low) >>> 0;
     if (id === 0) continue;
 
+    const metadata = dataArray?.[index] ?? 0;
     const x = index % dimensions.width;
     const z = Math.floor(index / dimensions.width) % dimensions.length;
     const y = Math.floor(index / (dimensions.width * dimensions.length));
     const appearance = legacyBlockAppearance(id);
-    const name = legacyBlockStateName(id);
+    const name = legacyBlockStateName(id, metadata);
 
     blocks.push({
       x,
@@ -512,7 +514,20 @@ function decodePackedLongArray(longs: BigInt64Array, expectedLength: number, bit
   return values;
 }
 
-function legacyBlockStateName(id: number): string {
+function legacyBlockStateName(id: number, metadata = 0): string {
+  if (id === 29 || id === 33) {
+    const facing = legacyPistonFacing(metadata);
+    const extended = (metadata & 0x8) !== 0;
+    const block = id === 29 ? 'sticky_piston' : 'piston';
+    return `minecraft:${block}[extended=${extended},facing=${facing}]`;
+  }
+
+  if (id === 34) {
+    const facing = legacyPistonFacing(metadata);
+    const type = (metadata & 0x8) !== 0 ? 'sticky' : 'normal';
+    return `minecraft:piston_head[facing=${facing},short=false,type=${type}]`;
+  }
+
   const names = new Map<number, string>([
     [1, 'minecraft:stone'],
     [2, 'minecraft:grass_block'],
@@ -547,4 +562,23 @@ function legacyBlockStateName(id: number): string {
   ]);
 
   return names.get(id) ?? `minecraft:legacy_block_${id}`;
+}
+
+function legacyPistonFacing(metadata: number): string {
+  switch (metadata & 0x7) {
+    case 0:
+      return 'down';
+    case 1:
+      return 'up';
+    case 2:
+      return 'north';
+    case 3:
+      return 'south';
+    case 4:
+      return 'west';
+    case 5:
+      return 'east';
+    default:
+      return 'north';
+  }
 }

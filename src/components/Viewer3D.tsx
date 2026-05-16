@@ -399,11 +399,14 @@ function pickBlock(
 }
 
 function geometryForPart(part: ResolvedBlockPart): THREE.BufferGeometry {
+  const uvKey = faceOrder
+    .map((face) => `${face}:${part.faceUvs[face]?.join(',') ?? 'default'}:${part.faceRotations[face]}`)
+    .join('|');
   const key = `${part.from.join(',')}::${part.to.join(',')}::${
     part.elementRotation
       ? `${part.elementRotation.axis}:${part.elementRotation.angle}:${part.elementRotation.origin.join(',')}`
       : 'none'
-  }`;
+  }::${uvKey}`;
   const cached = geometryCache.get(key);
   if (cached) return cached;
 
@@ -411,6 +414,7 @@ function geometryForPart(part: ResolvedBlockPart): THREE.BufferGeometry {
   const height = Math.max(0.001, (part.to[1] - part.from[1]) / 16);
   const depth = Math.max(0.001, (part.to[2] - part.from[2]) / 16);
   const geometry = new THREE.BoxGeometry(width, height, depth);
+  applyFaceUvs(geometry, part);
   geometry.translate(
     (part.from[0] + part.to[0]) / 32 - 0.5,
     (part.from[1] + part.to[1]) / 32 - 0.5,
@@ -438,6 +442,51 @@ function geometryForPart(part: ResolvedBlockPart): THREE.BufferGeometry {
 
   geometryCache.set(key, geometry);
   return geometry;
+}
+
+function applyFaceUvs(geometry: THREE.BufferGeometry, part: ResolvedBlockPart) {
+  const uvAttribute = geometry.getAttribute('uv') as THREE.BufferAttribute | undefined;
+  if (!uvAttribute) return;
+
+  faceOrder.forEach((face, faceIndex) => {
+    const uv = part.faceUvs[face];
+    if (!uv) return;
+
+    const corners = rotateUvCorners(uvToCorners(uv), part.faceRotations[face]);
+    const vertexOffset = faceIndex * 4;
+
+    corners.forEach(([u, v], cornerIndex) => {
+      uvAttribute.setXY(vertexOffset + cornerIndex, u, v);
+    });
+  });
+
+  uvAttribute.needsUpdate = true;
+}
+
+function uvToCorners(uv: [number, number, number, number]): Array<[number, number]> {
+  const [u1, v1, u2, v2] = uv;
+  const left = u1 / 16;
+  const right = u2 / 16;
+  const top = 1 - v1 / 16;
+  const bottom = 1 - v2 / 16;
+
+  return [
+    [left, top],
+    [right, top],
+    [left, bottom],
+    [right, bottom],
+  ];
+}
+
+function rotateUvCorners(corners: Array<[number, number]>, degrees: number): Array<[number, number]> {
+  const turns = (((degrees % 360) + 360) % 360) / 90;
+  let rotated = corners;
+
+  for (let index = 0; index < turns; index += 1) {
+    rotated = [rotated[2], rotated[0], rotated[3], rotated[1]];
+  }
+
+  return rotated;
 }
 
 function materialsForPart(part: ResolvedBlockPart, fallbackColor: number): THREE.Material[] {
