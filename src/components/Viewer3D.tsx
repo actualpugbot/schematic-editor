@@ -329,19 +329,30 @@ async function createBlockMeshes(blocks: VoxelBlock[]): Promise<THREE.InstancedM
   const resolvedStates = await Promise.all(states.map(async (state) => [state, await resolveBlockParts(state)] as const));
   const partsByState = new Map(resolvedStates);
   const occludingFacesByBlock = new Map<string, Set<ModelFaceName>>();
+  const boundaryFacesByBlock = new Map<string, Set<ModelFaceName>>();
+  const translucentBoundaryFacesByBlock = new Map<string, Set<ModelFaceName>>();
   const partsByBlock = new Map<string, ResolvedBlockPart[]>();
 
   for (const block of blocks) {
     const parts = partsByState.get(block.stateKey) ?? [];
     partsByBlock.set(blockPositionKey(block), parts);
     occludingFacesByBlock.set(blockPositionKey(block), occludingFacesForParts(parts));
+    boundaryFacesByBlock.set(blockPositionKey(block), boundaryFacesForParts(parts));
+    translucentBoundaryFacesByBlock.set(blockPositionKey(block), boundaryFacesForParts(parts, true));
   }
 
   for (const block of blocks) {
     const parts = partsByState.get(block.stateKey) ?? [];
 
     for (const part of parts) {
-      const hiddenFaces = hiddenFacesForPart(block, part, occludingFacesByBlock, partsByBlock);
+      const hiddenFaces = hiddenFacesForPart(
+        block,
+        part,
+        occludingFacesByBlock,
+        boundaryFacesByBlock,
+        translucentBoundaryFacesByBlock,
+        partsByBlock,
+      );
       const hiddenFaceKey = hiddenFaceCacheKey(hiddenFaces);
       const key = `${part.isFallback ? `${part.key}::${block.color}` : part.key}::hidden:${hiddenFaceKey}`;
       const group = groups.get(key);
@@ -400,6 +411,8 @@ function hiddenFacesForPart(
   block: VoxelBlock,
   part: ResolvedBlockPart,
   occludingFacesByBlock: Map<string, Set<ModelFaceName>>,
+  boundaryFacesByBlock: Map<string, Set<ModelFaceName>>,
+  translucentBoundaryFacesByBlock: Map<string, Set<ModelFaceName>>,
   partsByBlock: Map<string, ResolvedBlockPart[]>,
 ): Set<ModelFaceName> {
   const hiddenFaces = new Set<ModelFaceName>();
@@ -419,6 +432,16 @@ function hiddenFacesForPart(
 
     const neighborFaces = occludingFacesByBlock.get(neighborKey);
     if (neighborFaces?.has(oppositeFaces[worldCullface])) {
+      hiddenFaces.add(face);
+      continue;
+    }
+
+    const neighborBoundaryFaces = boundaryFacesByBlock.get(neighborKey);
+    const neighborTranslucentBoundaryFaces = translucentBoundaryFacesByBlock.get(neighborKey);
+    if (
+      neighborBoundaryFaces?.has(oppositeFaces[worldCullface])
+      && coplanarBoundaryFaceShouldBeHidden(part, face, neighborTranslucentBoundaryFaces, oppositeFaces[worldCullface])
+    ) {
       hiddenFaces.add(face);
     }
   }
@@ -456,6 +479,36 @@ function occludingFacesForParts(parts: ResolvedBlockPart[]): Set<ModelFaceName> 
   }
 
   return faces;
+}
+
+function boundaryFacesForParts(parts: ResolvedBlockPart[], translucentOnly = false): Set<ModelFaceName> {
+  const faces = new Set<ModelFaceName>();
+
+  for (const part of parts) {
+    for (const face of faceOrder) {
+      if (
+        part.faceTextures[face]
+        && (!translucentOnly || part.faceTranslucencies[face])
+        && partFaceCoversBlockBoundary(part, face)
+      ) {
+        faces.add(rotatedFace(face, part));
+      }
+    }
+  }
+
+  return faces;
+}
+
+function coplanarBoundaryFaceShouldBeHidden(
+  part: ResolvedBlockPart,
+  face: ModelFaceName,
+  neighborTranslucentBoundaryFaces: Set<ModelFaceName> | undefined,
+  neighborFace: ModelFaceName,
+): boolean {
+  return (
+    Boolean(part.faceCullfaces[face])
+    && (part.faceTranslucencies[face] || Boolean(neighborTranslucentBoundaryFaces?.has(neighborFace)))
+  );
 }
 
 function partFaceCoversBlockBoundary(part: ResolvedBlockPart, face: ModelFaceName): boolean {
