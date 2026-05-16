@@ -708,14 +708,14 @@ function pickBlock(
 
 function geometryForPart(part: ResolvedBlockPart): THREE.BufferGeometry {
   const uvKey = faceOrder
-    .map((face) => `${face}:${part.faceUvs[face]?.join(',') ?? 'default'}:${part.faceRotations[face]}`)
+    .map((face) => `${face}:${part.faceUvs[face]?.join(',') ?? 'default'}:${part.faceRotations[face]}:${uvLockRotation(part, face)}`)
     .join('|');
   const textureSizeKey = part.textureSize?.join('x') ?? '16x16';
   const key = `${part.from.join(',')}::${part.to.join(',')}::${
     part.elementRotation
       ? `${part.elementRotation.axis}:${part.elementRotation.angle}:${part.elementRotation.origin.join(',')}`
       : 'none'
-  }::${uvKey}::texture:${textureSizeKey}::faces:${
+  }::${part.uvLock ? 'uvlock' : 'freeuv'}::${uvKey}::texture:${textureSizeKey}::faces:${
     part.isFallback ? 'fallback' : faceOrder.filter((face) => part.faceTextures[face]).join(',')
   }`;
   const cached = geometryCache.get(key);
@@ -760,7 +760,7 @@ function createModelElementGeometry(part: ResolvedBlockPart): THREE.BufferGeomet
     const facePositions = modelFacePositions(part, face);
     const faceUvs = rotateUvCorners(
       uvToCorners(part.faceUvs[face] ?? defaultFaceUv(part, face), part.textureSize),
-      part.faceRotations[face],
+      part.faceRotations[face] + uvLockRotation(part, face),
     );
     const normal = faceOffsets[face];
 
@@ -886,6 +886,23 @@ function rotateUvCorners(corners: Array<[number, number]>, degrees: number): Arr
   }
 
   return rotated;
+}
+
+function uvLockRotation(part: ResolvedBlockPart, face: ModelFaceName): number {
+  if (!part.uvLock) return 0;
+
+  const x = normalizedQuarterRotation(part.variantRotation.x);
+  const y = normalizedQuarterRotation(part.variantRotation.y);
+
+  if (face === 'up' || face === 'down') {
+    return y;
+  }
+
+  return x === 180 ? 180 : 0;
+}
+
+function normalizedQuarterRotation(degrees: number): number {
+  return ((Math.round(degrees / 90) * 90) % 360 + 360) % 360;
 }
 
 function materialsForPart(

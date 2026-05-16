@@ -15,6 +15,7 @@ export interface ResolvedBlockPart {
   shade: boolean;
   isFallback?: boolean;
   elementRotation?: ModelElementRotation;
+  uvLock: boolean;
   variantRotation: {
     x: number;
     y: number;
@@ -113,7 +114,23 @@ export function parseBlockStateKey(stateKey: string): BlockStateInfo {
     }
   }
 
-  return { id: normalizeResourceId(id), properties };
+  const normalizedId = normalizeResourceId(id);
+  return { id: normalizedId, properties: defaultBlockProperties(normalizedId, properties) };
+}
+
+function defaultBlockProperties(id: string, properties: Record<string, string>): Record<string, string> {
+  if (!isStairsBlock(id)) return properties;
+
+  return {
+    facing: 'east',
+    half: 'bottom',
+    shape: 'straight',
+    ...properties,
+  };
+}
+
+function isStairsBlock(id: string): boolean {
+  return id.replace(/^minecraft:/, '').endsWith('_stairs');
 }
 
 export async function resolveBlockParts(stateKey: string): Promise<ResolvedBlockPart[]> {
@@ -181,6 +198,7 @@ async function resolveBlockPartsUncached(stateKey: string): Promise<ResolvedBloc
         textureSize: [16, 16],
         shade: element.shade ?? true,
         elementRotation: element.rotation,
+        uvLock: variant.uvlock ?? false,
         variantRotation: {
           x: variant.x ?? 0,
           y: variant.y ?? 0,
@@ -445,6 +463,7 @@ function partKey(
     rotation,
     variant.x ?? 0,
     variant.y ?? 0,
+    variant.uvlock ? 'uvlock' : 'freeuv',
     faceKey,
   ].join('::');
 }
@@ -726,6 +745,7 @@ function blockEntityCuboidPart(
     to: cuboid.to,
     textureSize: [64, 64],
     shade: true,
+    uvLock: false,
     variantRotation,
     faceTextures,
     faceTints: {
@@ -832,6 +852,7 @@ function syntheticCuboidPart(
     to,
     textureSize: [16, 16],
     shade: true,
+    uvLock: false,
     variantRotation,
     faceTextures,
     faceTints: {
@@ -895,6 +916,7 @@ function syntheticFluidPart(
     to: [16, surfaceHeight, 16],
     textureSize: [16, 16],
     shade: true,
+    uvLock: false,
     variantRotation,
     faceTextures: {
       down: 'minecraft:block/water_still',
@@ -957,6 +979,7 @@ function fallbackPart(id: string, variantRotation: { x: number; y: number }): Re
     textureSize: [16, 16],
     shade: true,
     isFallback: true,
+    uvLock: false,
     variantRotation,
     faceTextures: {
       down: null,

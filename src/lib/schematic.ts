@@ -219,8 +219,8 @@ function parseLegacySchematic(schematic: NbtCompound, fileName = 'Uploaded schem
     const x = index % dimensions.width;
     const z = Math.floor(index / dimensions.width) % dimensions.length;
     const y = Math.floor(index / (dimensions.width * dimensions.length));
-    const appearance = legacyBlockAppearance(id);
     const name = legacyBlockStateName(id, metadata);
+    const appearance = name.startsWith('minecraft:legacy_block_') ? legacyBlockAppearance(id) : blockAppearance(name);
 
     blocks.push({
       x,
@@ -233,6 +233,8 @@ function parseLegacySchematic(schematic: NbtCompound, fileName = 'Uploaded schem
     });
   }
 
+  normalizeLegacyStairShapes(blocks);
+
   return finalizeModel({
     name: fileName,
     source: 'Legacy .schematic',
@@ -242,6 +244,161 @@ function parseLegacySchematic(schematic: NbtCompound, fileName = 'Uploaded schem
     paletteSize: new Set(blocks.map((block) => block.name)).size,
     warnings,
   });
+}
+
+function normalizeLegacyStairShapes(blocks: VoxelBlock[]) {
+  const blocksByPosition = new Map<string, VoxelBlock>();
+  for (const block of blocks) {
+    blocksByPosition.set(positionKey(block.x, block.y, block.z), block);
+  }
+
+  for (const block of blocks) {
+    const stair = parseStairState(block.stateKey);
+    if (!stair) continue;
+
+    const shape = legacyStairShape(block, stair, blocksByPosition);
+    block.stateKey = setBlockStateProperty(block.stateKey, 'shape', shape);
+  }
+}
+
+function legacyStairShape(
+  block: VoxelBlock,
+  stair: StairState,
+  blocksByPosition: Map<string, VoxelBlock>,
+): 'straight' | 'inner_left' | 'inner_right' | 'outer_left' | 'outer_right' {
+  const front = stairNeighbor(block, stair.facing, blocksByPosition);
+  if (front && front.half === stair.half && stairAxis(front.facing) !== stairAxis(stair.facing)) {
+    if (legacyStairHasDifferentOrientation(block, stair, oppositeFacing(front.facing), blocksByPosition)) {
+      return front.facing === rotateFacingCounterclockwise(stair.facing) ? 'outer_left' : 'outer_right';
+    }
+  }
+
+  const back = stairNeighbor(block, oppositeFacing(stair.facing), blocksByPosition);
+  if (back && back.half === stair.half && stairAxis(back.facing) !== stairAxis(stair.facing)) {
+    if (legacyStairHasDifferentOrientation(block, stair, back.facing, blocksByPosition)) {
+      return back.facing === rotateFacingCounterclockwise(stair.facing) ? 'inner_left' : 'inner_right';
+    }
+  }
+
+  return 'straight';
+}
+
+interface StairState {
+  facing: HorizontalFacing;
+  half: 'top' | 'bottom';
+}
+
+type HorizontalFacing = 'north' | 'south' | 'west' | 'east';
+
+function parseStairState(stateKey: string): StairState | null {
+  if (!/^minecraft:[a-z0-9_]+_stairs\[/.test(stateKey)) return null;
+
+  const facing = blockStateProperty(stateKey, 'facing');
+  const half = blockStateProperty(stateKey, 'half');
+  if (!isHorizontalFacing(facing) || (half !== 'top' && half !== 'bottom')) return null;
+
+  return { facing, half };
+}
+
+function stairNeighbor(
+  block: VoxelBlock,
+  facing: HorizontalFacing,
+  blocksByPosition: Map<string, VoxelBlock>,
+): StairState | null {
+  const offset = horizontalFacingOffset(facing);
+  const neighbor = blocksByPosition.get(positionKey(block.x + offset.x, block.y, block.z + offset.z));
+  return neighbor ? parseStairState(neighbor.stateKey) : null;
+}
+
+function legacyStairHasDifferentOrientation(
+  block: VoxelBlock,
+  stair: StairState,
+  facing: HorizontalFacing,
+  blocksByPosition: Map<string, VoxelBlock>,
+): boolean {
+  const neighbor = stairNeighbor(block, facing, blocksByPosition);
+  return !neighbor || neighbor.facing !== stair.facing || neighbor.half !== stair.half;
+}
+
+function blockStateProperty(stateKey: string, key: string): string | null {
+  const properties = /\[(?<properties>.*)\]$/.exec(stateKey)?.groups?.properties;
+  if (!properties) return null;
+
+  for (const pair of properties.split(',')) {
+    const [propertyKey, propertyValue] = pair.split('=');
+    if (propertyKey === key) return propertyValue ?? null;
+  }
+
+  return null;
+}
+
+function setBlockStateProperty(stateKey: string, key: string, value: string): string {
+  const match = /^(?<id>[^\[]+)\[(?<properties>.*)\]$/.exec(stateKey);
+  if (!match?.groups) return stateKey;
+
+  const properties = match.groups.properties
+    .split(',')
+    .map((pair) => {
+      const [propertyKey] = pair.split('=');
+      return propertyKey === key ? `${key}=${value}` : pair;
+    });
+
+  if (!properties.some((pair) => pair.startsWith(`${key}=`))) {
+    properties.push(`${key}=${value}`);
+  }
+
+  return `${match.groups.id}[${properties.join(',')}]`;
+}
+
+function positionKey(x: number, y: number, z: number): string {
+  return `${x},${y},${z}`;
+}
+
+function isHorizontalFacing(value: string | null): value is HorizontalFacing {
+  return value === 'north' || value === 'south' || value === 'west' || value === 'east';
+}
+
+function stairAxis(facing: HorizontalFacing): 'x' | 'z' {
+  return facing === 'east' || facing === 'west' ? 'x' : 'z';
+}
+
+function oppositeFacing(facing: HorizontalFacing): HorizontalFacing {
+  switch (facing) {
+    case 'north':
+      return 'south';
+    case 'south':
+      return 'north';
+    case 'west':
+      return 'east';
+    case 'east':
+      return 'west';
+  }
+}
+
+function rotateFacingCounterclockwise(facing: HorizontalFacing): HorizontalFacing {
+  switch (facing) {
+    case 'north':
+      return 'west';
+    case 'south':
+      return 'east';
+    case 'west':
+      return 'south';
+    case 'east':
+      return 'north';
+  }
+}
+
+function horizontalFacingOffset(facing: HorizontalFacing): { x: number; z: number } {
+  switch (facing) {
+    case 'north':
+      return { x: 0, z: -1 };
+    case 'south':
+      return { x: 0, z: 1 };
+    case 'west':
+      return { x: -1, z: 0 };
+    case 'east':
+      return { x: 1, z: 0 };
+  }
 }
 
 function parseLitematic(root: NbtCompound, fileName = 'Uploaded litematic'): SchematicModel {
@@ -519,6 +676,11 @@ function decodePackedLongArray(longs: BigInt64Array, expectedLength: number, bit
 }
 
 function legacyBlockStateName(id: number, metadata = 0): string {
+  const legacyStairs = legacyStairsName(id);
+  if (legacyStairs) {
+    return `minecraft:${legacyStairs}[facing=${legacyStairsFacing(metadata)},half=${legacyStairsHalf(metadata)},shape=straight]`;
+  }
+
   if (id === 29 || id === 33) {
     const facing = legacyPistonFacing(metadata);
     const extended = (metadata & 0x8) !== 0;
@@ -567,6 +729,46 @@ function legacyBlockStateName(id: number, metadata = 0): string {
   ]);
 
   return names.get(id) ?? `minecraft:legacy_block_${id}`;
+}
+
+function legacyStairsName(id: number): string | null {
+  const names = new Map<number, string>([
+    [53, 'oak_stairs'],
+    [67, 'cobblestone_stairs'],
+    [108, 'brick_stairs'],
+    [109, 'stone_brick_stairs'],
+    [114, 'nether_brick_stairs'],
+    [128, 'sandstone_stairs'],
+    [134, 'spruce_stairs'],
+    [135, 'birch_stairs'],
+    [136, 'jungle_stairs'],
+    [156, 'quartz_stairs'],
+    [163, 'acacia_stairs'],
+    [164, 'dark_oak_stairs'],
+    [180, 'red_sandstone_stairs'],
+    [203, 'purpur_stairs'],
+  ]);
+
+  return names.get(id) ?? null;
+}
+
+function legacyStairsFacing(metadata: number): string {
+  switch (metadata & 0x3) {
+    case 0:
+      return 'east';
+    case 1:
+      return 'west';
+    case 2:
+      return 'south';
+    case 3:
+      return 'north';
+    default:
+      return 'east';
+  }
+}
+
+function legacyStairsHalf(metadata: number): string {
+  return (metadata & 0x4) !== 0 ? 'top' : 'bottom';
 }
 
 function legacyPistonFacing(metadata: number): string {
