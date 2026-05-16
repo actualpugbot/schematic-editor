@@ -23,6 +23,7 @@ export interface ResolvedBlockPart {
   faceUvs: Record<ModelFaceName, ModelFaceUv | null>;
   faceRotations: Record<ModelFaceName, number>;
   faceCullfaces: Record<ModelFaceName, ModelFaceName | null>;
+  faceTranslucencies: Record<ModelFaceName, boolean>;
 }
 
 interface BlockstateJson {
@@ -162,6 +163,7 @@ async function resolveBlockPartsUncached(stateKey: string): Promise<ResolvedBloc
         faceUvs: faceUvs(element),
         faceRotations: faceRotations(element),
         faceCullfaces: faceCullfaces(element),
+        faceTranslucencies: faceTranslucencies(element, model.textures),
       });
     }
   }
@@ -353,6 +355,29 @@ function faceCullfaces(element: ModelElement): Record<ModelFaceName, ModelFaceNa
   };
 }
 
+function faceTranslucencies(element: ModelElement, textures: Record<string, string | null>): Record<ModelFaceName, boolean> {
+  const faces = element.faces ?? {};
+  const resolvedTextures = faceTextures(element, textures);
+
+  return {
+    down: isTranslucentFaceTexture(faces.down?.texture, resolvedTextures.down),
+    up: isTranslucentFaceTexture(faces.up?.texture, resolvedTextures.up),
+    north: isTranslucentFaceTexture(faces.north?.texture, resolvedTextures.north),
+    south: isTranslucentFaceTexture(faces.south?.texture, resolvedTextures.south),
+    west: isTranslucentFaceTexture(faces.west?.texture, resolvedTextures.west),
+    east: isTranslucentFaceTexture(faces.east?.texture, resolvedTextures.east),
+  };
+}
+
+function isTranslucentFaceTexture(texture: TextureReference | undefined, resolvedTextureId: string | null): boolean {
+  if (typeof texture === 'object' && texture.force_translucent) return true;
+  if (!resolvedTextureId) return false;
+
+  const path = resolvedTextureId.replace(/^minecraft:/, '');
+  return /(^|\/)(.+_)?(stained_)?glass(_pane_top)?$/.test(path)
+    || /(^|\/)(tinted_glass|ice|water|honey_block|slime_block)$/.test(path);
+}
+
 function resolveTextureReference(value: string | null, textures: Record<string, string | null>): string | null {
   if (!value) return null;
   if (!value.startsWith('#')) return normalizeResourceId(value, 'block');
@@ -446,6 +471,14 @@ function fallbackPart(id: string, variantRotation: { x: number; y: number }): Re
       south: null,
       west: null,
       east: null,
+    },
+    faceTranslucencies: {
+      down: false,
+      up: false,
+      north: false,
+      south: false,
+      west: false,
+      east: false,
     },
   };
 }

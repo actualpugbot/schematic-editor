@@ -364,6 +364,7 @@ async function createBlockMeshes(blocks: VoxelBlock[]): Promise<THREE.InstancedM
     const mesh = new THREE.InstancedMesh(geometry, materials, group.blocks.length);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+    mesh.renderOrder = partHasTranslucentFaces(group.part) ? 10 : 0;
 
     const quaternion = new THREE.Quaternion().setFromEuler(
       new THREE.Euler(
@@ -698,12 +699,17 @@ function materialsForPart(
       return part.isFallback ? colorMaterial(fallbackColor) : hiddenMaterial;
     }
 
-    return textureMaterial(textureId, tintColorForPart(textureId, part.faceTints[face], part), part.shade);
+    return textureMaterial(
+      textureId,
+      tintColorForPart(textureId, part.faceTints[face], part),
+      part.shade,
+      part.faceTranslucencies[face],
+    );
   });
 }
 
-function textureMaterial(textureId: string, tintColor: number | null, shade: boolean): THREE.Material {
-  const key = `texture::${textureId}::${tintColor ?? 'none'}::shade:${shade}`;
+function textureMaterial(textureId: string, tintColor: number | null, shade: boolean, translucent: boolean): THREE.Material {
+  const key = `texture::${textureId}::${tintColor ?? 'none'}::shade:${shade}::translucent:${translucent}`;
   const cached = materialCache.get(key);
   if (cached) return cached;
 
@@ -713,27 +719,51 @@ function textureMaterial(textureId: string, tintColor: number | null, shade: boo
   texture.minFilter = THREE.NearestMipmapNearestFilter;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
+  const beaconCore = isBeaconCoreTexture(textureId);
+  const opacity = translucent ? translucentTextureOpacity(textureId) : 1;
 
   const material = shade
     ? new THREE.MeshStandardMaterial({
         map: texture,
         color: tintColor ?? 0xffffff,
+        emissive: beaconCore ? 0x65fff5 : 0x000000,
+        emissiveIntensity: beaconCore ? 0.72 : 0,
         roughness: 0.92,
         metalness: 0.02,
         transparent: true,
+        opacity,
         alphaTest: 0.08,
+        depthWrite: !translucent,
         side: THREE.DoubleSide,
       })
     : new THREE.MeshBasicMaterial({
         map: texture,
         color: tintColor ?? 0xffffff,
         transparent: true,
+        opacity,
         alphaTest: 0.08,
+        depthWrite: !translucent,
         side: THREE.DoubleSide,
         toneMapped: false,
       });
   materialCache.set(key, material);
   return material;
+}
+
+function partHasTranslucentFaces(part: ResolvedBlockPart): boolean {
+  return faceOrder.some((face) => part.faceTranslucencies[face]);
+}
+
+function isBeaconCoreTexture(textureId: string): boolean {
+  return textureId.replace(/^minecraft:/, '') === 'block/beacon';
+}
+
+function translucentTextureOpacity(textureId: string): number {
+  const path = textureId.replace(/^minecraft:/, '');
+  if (path === 'block/glass' || path.endsWith('_stained_glass') || path === 'block/tinted_glass') {
+    return 0.58;
+  }
+  return 0.72;
 }
 
 function tintColorForPart(textureId: string, tintIndex: number | null, part: ResolvedBlockPart): number | null {
