@@ -377,7 +377,7 @@ async function createBlockMeshes(blocks: VoxelBlock[]): Promise<THREE.InstancedM
     const geometry = geometryForPart(group.part);
     const materials = materialsForPart(group.part, group.fallbackColor, group.hiddenFaces);
     const mesh = new THREE.InstancedMesh(geometry, materials, group.blocks.length);
-    mesh.castShadow = true;
+    mesh.castShadow = false;
     mesh.receiveShadow = true;
     mesh.renderOrder = partHasTranslucentFaces(group.part) ? 10 : 0;
 
