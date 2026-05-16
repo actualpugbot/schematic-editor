@@ -141,6 +141,11 @@ async function resolveBlockPartsUncached(stateKey: string): Promise<ResolvedBloc
   for (const variant of variants) {
     const model = await resolveModel(variant.model);
     if (!model || model.elements.length === 0) {
+      const fluidPart = syntheticFluidPart(state.id, state.properties, { x: variant.x ?? 0, y: variant.y ?? 0 });
+      if (fluidPart) {
+        parts.push(fluidPart);
+        continue;
+      }
       parts.push(fallbackPart(state.id, { x: variant.x ?? 0, y: variant.y ?? 0 }));
       continue;
     }
@@ -420,6 +425,75 @@ function partKey(
     variant.y ?? 0,
     faceKey,
   ].join('::');
+}
+
+function syntheticFluidPart(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart | null {
+  if (id !== 'minecraft:water') return null;
+
+  const level = Math.max(0, Math.min(8, Number.parseInt(properties.level ?? '0', 10) || 0));
+  const surfaceHeight = level === 0 ? 16 : Math.max(2, 15 - level * 1.55);
+
+  return {
+    key: `fluid::${id}::level:${level}::${variantRotation.x}::${variantRotation.y}`,
+    blockId: id,
+    blockProperties: properties,
+    from: [0, 0, 0],
+    to: [16, surfaceHeight, 16],
+    shade: true,
+    variantRotation,
+    faceTextures: {
+      down: 'minecraft:block/water_still',
+      up: 'minecraft:block/water_still',
+      north: 'minecraft:block/water_flow',
+      south: 'minecraft:block/water_flow',
+      west: 'minecraft:block/water_flow',
+      east: 'minecraft:block/water_flow',
+    },
+    faceTints: {
+      down: 0,
+      up: 0,
+      north: 0,
+      south: 0,
+      west: 0,
+      east: 0,
+    },
+    faceUvs: {
+      down: null,
+      up: null,
+      north: null,
+      south: null,
+      west: null,
+      east: null,
+    },
+    faceRotations: {
+      down: 0,
+      up: 0,
+      north: 0,
+      south: 0,
+      west: 0,
+      east: 0,
+    },
+    faceCullfaces: {
+      down: 'down',
+      up: 'up',
+      north: 'north',
+      south: 'south',
+      west: 'west',
+      east: 'east',
+    },
+    faceTranslucencies: {
+      down: true,
+      up: true,
+      north: true,
+      south: true,
+      west: true,
+      east: true,
+    },
+  };
 }
 
 function fallbackPart(id: string, variantRotation: { x: number; y: number }): ResolvedBlockPart {

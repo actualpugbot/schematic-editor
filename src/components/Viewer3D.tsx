@@ -54,12 +54,14 @@ const textureLoader = new THREE.TextureLoader();
 const defaultFoliageTint = 0x48b518;
 const birchFoliageTint = 0x80a755;
 const spruceFoliageTint = 0x619961;
+const waterTint = 0x4f9dff;
 const hiddenMaterial = new THREE.MeshBasicMaterial({
   transparent: true,
   opacity: 0,
   depthWrite: false,
   colorWrite: false,
 });
+const horizontalFaces = new Set<ModelFaceName>(['north', 'south', 'west', 'east']);
 
 export function Viewer3D(props: InternalViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -327,9 +329,11 @@ async function createBlockMeshes(blocks: VoxelBlock[]): Promise<THREE.InstancedM
   const resolvedStates = await Promise.all(states.map(async (state) => [state, await resolveBlockParts(state)] as const));
   const partsByState = new Map(resolvedStates);
   const occludingFacesByBlock = new Map<string, Set<ModelFaceName>>();
+  const partsByBlock = new Map<string, ResolvedBlockPart[]>();
 
   for (const block of blocks) {
     const parts = partsByState.get(block.stateKey) ?? [];
+    partsByBlock.set(blockPositionKey(block), parts);
     occludingFacesByBlock.set(blockPositionKey(block), occludingFacesForParts(parts));
   }
 
@@ -337,7 +341,7 @@ async function createBlockMeshes(blocks: VoxelBlock[]): Promise<THREE.InstancedM
     const parts = partsByState.get(block.stateKey) ?? [];
 
     for (const part of parts) {
-      const hiddenFaces = hiddenFacesForPart(block, part, occludingFacesByBlock);
+      const hiddenFaces = hiddenFacesForPart(block, part, occludingFacesByBlock, partsByBlock);
       const hiddenFaceKey = hiddenFaceCacheKey(hiddenFaces);
       const key = `${part.isFallback ? `${part.key}::${block.color}` : part.key}::hidden:${hiddenFaceKey}`;
       const group = groups.get(key);
@@ -396,6 +400,7 @@ function hiddenFacesForPart(
   block: VoxelBlock,
   part: ResolvedBlockPart,
   occludingFacesByBlock: Map<string, Set<ModelFaceName>>,
+  partsByBlock: Map<string, ResolvedBlockPart[]>,
 ): Set<ModelFaceName> {
   const hiddenFaces = new Set<ModelFaceName>();
 
@@ -405,7 +410,14 @@ function hiddenFacesForPart(
 
     const worldCullface = rotatedFace(cullface, part);
     const [x, y, z] = faceOffsets[worldCullface];
-    const neighborFaces = occludingFacesByBlock.get(`${block.x + x},${block.y + y},${block.z + z}`);
+    const neighborKey = `${block.x + x},${block.y + y},${block.z + z}`;
+    const neighborParts = partsByBlock.get(neighborKey) ?? [];
+    if (waterNeighborHidesFace(part, face, worldCullface, neighborParts)) {
+      hiddenFaces.add(face);
+      continue;
+    }
+
+    const neighborFaces = occludingFacesByBlock.get(neighborKey);
     if (neighborFaces?.has(oppositeFaces[worldCullface])) {
       hiddenFaces.add(face);
     }
@@ -414,12 +426,30 @@ function hiddenFacesForPart(
   return hiddenFaces;
 }
 
+function waterNeighborHidesFace(
+  part: ResolvedBlockPart,
+  face: ModelFaceName,
+  worldFace: ModelFaceName,
+  neighborParts: ResolvedBlockPart[],
+): boolean {
+  if (!isWaterPart(part)) return false;
+
+  const neighboringWater = neighborParts.find(isWaterPart);
+  if (!neighboringWater) return false;
+
+  if (horizontalFaces.has(worldFace)) {
+    return neighboringWater.to[1] >= part.to[1] - 0.01;
+  }
+
+  return (face === 'down' && worldFace === 'down') || (face === 'up' && worldFace === 'up');
+}
+
 function occludingFacesForParts(parts: ResolvedBlockPart[]): Set<ModelFaceName> {
   const faces = new Set<ModelFaceName>();
 
   for (const part of parts) {
     for (const face of faceOrder) {
-      if (part.faceTextures[face] && partFaceCoversBlockBoundary(part, face)) {
+      if (part.faceTextures[face] && !part.faceTranslucencies[face] && partFaceCoversBlockBoundary(part, face)) {
         faces.add(rotatedFace(face, part));
       }
     }
@@ -720,6 +750,7 @@ function textureMaterial(textureId: string, tintColor: number | null, shade: boo
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
   const beaconCore = isBeaconCoreTexture(textureId);
+  const water = isWaterTexture(textureId);
   const opacity = translucent ? translucentTextureOpacity(textureId) : 1;
 
   const material = shade
@@ -728,11 +759,11 @@ function textureMaterial(textureId: string, tintColor: number | null, shade: boo
         color: tintColor ?? 0xffffff,
         emissive: beaconCore ? 0x65fff5 : 0x000000,
         emissiveIntensity: beaconCore ? 0.72 : 0,
-        roughness: 0.92,
-        metalness: 0.02,
+        roughness: water ? 0.36 : 0.92,
+        metalness: water ? 0.08 : 0.02,
         transparent: true,
         opacity,
-        alphaTest: 0.08,
+        alphaTest: water ? 0.02 : 0.08,
         depthWrite: !translucent,
         side: THREE.DoubleSide,
       })
@@ -754,12 +785,23 @@ function partHasTranslucentFaces(part: ResolvedBlockPart): boolean {
   return faceOrder.some((face) => part.faceTranslucencies[face]);
 }
 
+function isWaterPart(part: ResolvedBlockPart): boolean {
+  return part.blockId === 'minecraft:water';
+}
+
 function isBeaconCoreTexture(textureId: string): boolean {
   return textureId.replace(/^minecraft:/, '') === 'block/beacon';
 }
 
+function isWaterTexture(textureId: string): boolean {
+  return textureId.replace(/^minecraft:/, '').startsWith('block/water_');
+}
+
 function translucentTextureOpacity(textureId: string): number {
   const path = textureId.replace(/^minecraft:/, '');
+  if (path.startsWith('block/water_')) {
+    return 0.54;
+  }
   if (path === 'block/glass' || path.endsWith('_stained_glass') || path === 'block/tinted_glass') {
     return 0.58;
   }
@@ -774,6 +816,7 @@ function tintColorForPart(textureId: string, tintIndex: number | null, part: Res
     return redstoneWireColor(part.blockProperties.power);
   }
 
+  if (path.startsWith('block/water_')) return waterTint;
   if (path.includes('spruce_leaves')) return spruceFoliageTint;
   if (path.includes('birch_leaves')) return birchFoliageTint;
   if (path.includes('leaves') || path.includes('vine') || path.includes('grass') || path.includes('fern')) {
