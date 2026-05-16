@@ -95,12 +95,18 @@ export function Viewer3D(props: InternalViewerProps) {
   }, [props.onBlockSelect]);
 
   useEffect(() => {
+    if (sceneRef.current) {
+      sceneRef.current.fog = null;
+    }
+  });
+
+  useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf3f0e8);
-    scene.fog = new THREE.Fog(0xf3f0e8, 70, 180);
+    scene.fog = null;
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 1000);
@@ -927,7 +933,7 @@ function textureMaterial(textureId: string, tintColor: number | null, shade: boo
         emissiveIntensity: beaconCore ? 0.72 : 0,
         roughness: water ? 0.36 : 0.92,
         metalness: water ? 0.08 : 0.02,
-        transparent: true,
+        transparent: translucent,
         opacity,
         alphaTest: water ? 0.02 : 0.08,
         depthWrite: !translucent,
@@ -936,7 +942,7 @@ function textureMaterial(textureId: string, tintColor: number | null, shade: boo
     : new THREE.MeshBasicMaterial({
         map: texture,
         color: tintColor ?? 0xffffff,
-        transparent: true,
+        transparent: translucent,
         opacity,
         alphaTest: 0.08,
         depthWrite: !translucent,
@@ -1036,6 +1042,7 @@ function fitCameraToModel(
   const target = new THREE.Vector3(0, Math.max(0, dimensions.height / 2 - 0.5), 0);
   const radius = Math.max(dimensions.width, dimensions.length, dimensions.height, 8);
   controls.target.copy(target);
+  controls.maxDistance = Math.max(240, radius * 6);
   camera.position.set(radius * 1.35, radius * 0.95 + dimensions.height * 0.4, radius * 1.45);
   camera.near = Math.max(0.1, radius / 100);
   camera.far = Math.max(500, radius * 12);
