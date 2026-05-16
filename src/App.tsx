@@ -1,19 +1,38 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   Box,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Cuboid,
+  Eye,
+  EyeOff,
   FileUp,
   Layers3,
   Rotate3D,
   ScanSearch,
 } from 'lucide-react';
 import { Viewer3D, type Viewer3DHandle } from './components/Viewer3D';
+import { resolveBlockParts, textureUrl, type ModelFaceName } from './lib/minecraftModels';
 import { createSampleModel, parseSchematic, type SchematicModel, type VoxelBlock } from './lib/schematic';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
+
+interface MaterialSummary {
+  id: string;
+  label: string;
+  count: number;
+  color: number;
+  stateKey: string;
+}
+
+interface BlockPreviewTextures {
+  shape: 'cube' | 'sprite';
+  top?: string;
+  left?: string;
+  right?: string;
+  sprite?: string;
+}
 
 function App() {
   const [model, setModel] = useState<SchematicModel | null>(() => createSampleModel());
@@ -22,6 +41,8 @@ function App() {
   const [visibleLayer, setVisibleLayer] = useState(model?.dimensions.height ? model.dimensions.height - 1 : 0);
   const [singleLayer, setSingleLayer] = useState(false);
   const [selectedBlock, setSelectedBlock] = useState<VoxelBlock | null>(null);
+  const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
+  const [hiddenMaterialIds, setHiddenMaterialIds] = useState<Set<string>>(() => new Set());
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const viewerRef = useRef<Viewer3DHandle | null>(null);
@@ -34,26 +55,40 @@ function App() {
 
   const visibleBlockCount = useMemo(() => {
     if (!model) return 0;
-    if (singleLayer) {
-      return model.layerCounts[visibleLayer] ?? 0;
-    }
-    return model.layerCounts.slice(0, visibleLayer + 1).reduce((sum, count) => sum + count, 0);
-  }, [model, singleLayer, visibleLayer]);
+    return model.blocks.filter((block) => {
+      if (hiddenMaterialIds.has(materialIdForBlock(block))) return false;
+      return singleLayer ? block.y === visibleLayer : block.y <= visibleLayer;
+    }).length;
+  }, [hiddenMaterialIds, model, singleLayer, visibleLayer]);
 
-  const topMaterials = useMemo(() => {
+  const currentLayerBlockCount = useMemo(() => {
+    if (!model) return 0;
+    return model.blocks.filter((block) => block.y === visibleLayer && !hiddenMaterialIds.has(materialIdForBlock(block))).length;
+  }, [hiddenMaterialIds, model, visibleLayer]);
+
+  const materials = useMemo<MaterialSummary[]>(() => {
     if (!model) return [];
 
-    const counts = new Map<string, { count: number; color: number }>();
+    const counts = new Map<string, MaterialSummary>();
     for (const block of model.blocks) {
-      const current = counts.get(block.material) ?? { count: 0, color: block.color };
+      const id = materialIdForBlock(block);
+      const current = counts.get(id) ?? {
+        id,
+        label: formatBlockName(id),
+        count: 0,
+        color: block.color,
+        stateKey: block.stateKey,
+      };
       current.count += 1;
-      counts.set(block.material, current);
+      counts.set(id, current);
     }
 
     return Array.from(counts.entries())
-      .sort((a, b) => b[1].count - a[1].count)
-      .slice(0, 6);
+      .map(([, item]) => item)
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
   }, [model]);
+
+  const selectedMaterial = materials.find((material) => material.id === selectedMaterialId) ?? null;
 
   useEffect(() => {
     if (!model || !selectedBlock) {
@@ -61,11 +96,18 @@ function App() {
     }
 
     const isFromCurrentModel = model.blocks.includes(selectedBlock);
-    const isVisible = singleLayer ? selectedBlock.y === visibleLayer : selectedBlock.y <= visibleLayer;
+    const isVisible =
+      !hiddenMaterialIds.has(materialIdForBlock(selectedBlock))
+      && (singleLayer ? selectedBlock.y === visibleLayer : selectedBlock.y <= visibleLayer);
     if (!isFromCurrentModel || !isVisible) {
       setSelectedBlock(null);
     }
-  }, [model, selectedBlock, singleLayer, visibleLayer]);
+  }, [hiddenMaterialIds, model, selectedBlock, singleLayer, visibleLayer]);
+
+  useEffect(() => {
+    if (!selectedMaterialId || materials.some((material) => material.id === selectedMaterialId)) return;
+    setSelectedMaterialId(null);
+  }, [materials, selectedMaterialId]);
 
   const handleFile = async (file: File) => {
     setLoadState('loading');
@@ -78,6 +120,8 @@ function App() {
       setVisibleLayer(parsed.dimensions.height - 1);
       setSingleLayer(false);
       setSelectedBlock(null);
+      setSelectedMaterialId(null);
+      setHiddenMaterialIds(new Set());
       setLoadState('ready');
     } catch (caught) {
       setLoadState('error');
@@ -123,6 +167,18 @@ function App() {
   };
 
   const layerPercent = model && model.dimensions.height > 1 ? (visibleLayer / (model.dimensions.height - 1)) * 100 : 100;
+
+  const toggleMaterialVisibility = (id: string) => {
+    setHiddenMaterialIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
 
   return (
     <main
@@ -179,6 +235,7 @@ function App() {
           singleLayer={singleLayer}
           autoRotate={false}
           showGrid
+          hiddenMaterialIds={hiddenMaterialIds}
           selectedBlock={selectedBlock}
           onBlockSelect={setSelectedBlock}
           viewerRef={viewerRef}
@@ -217,7 +274,7 @@ function App() {
               <div className="section-heading compact">
                 <div>
                   <p className="eyebrow">Selection</p>
-                  <h2>{selectedBlock ? selectedBlock.material : 'No block selected'}</h2>
+                  <h2>{selectedBlock ? formatBlockName(materialIdForBlock(selectedBlock)) : 'No block selected'}</h2>
                 </div>
                 <Box size={18} />
               </div>
@@ -260,7 +317,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="slider-wrap" style={{ '--layer-progress': `${layerPercent}%` } as React.CSSProperties}>
+              <div className="slider-wrap" style={{ '--layer-progress': `${layerPercent}%` } as CSSProperties}>
                 <input
                   type="range"
                   min="0"
@@ -276,7 +333,7 @@ function App() {
                   <input type="checkbox" checked={singleLayer} onChange={(event) => setSingleLayer(event.target.checked)} />
                   <span>Only this layer</span>
                 </label>
-                <span>{(model.layerCounts[visibleLayer] ?? 0).toLocaleString()} blocks</span>
+                <span>{currentLayerBlockCount.toLocaleString()} blocks</span>
               </div>
             </section>
 
@@ -284,19 +341,39 @@ function App() {
               <div className="section-heading compact">
                 <div>
                   <p className="eyebrow">Materials</p>
-                  <h2>Top blocks</h2>
+                  <h2>{materials.length.toLocaleString()} materials</h2>
                 </div>
                 <ChevronDown size={18} />
               </div>
               <div className="material-stack">
-                {topMaterials.map(([name, item]) => (
-                  <div className="material-row" key={name}>
-                    <span className="swatch" style={{ backgroundColor: `#${item.color.toString(16).padStart(6, '0')}` }} />
-                    <span>{name}</span>
-                    <strong>{item.count.toLocaleString()}</strong>
+                {materials.map((material) => (
+                  <div
+                    className={`material-row${selectedMaterial?.id === material.id ? ' is-selected' : ''}`}
+                    key={material.id}
+                  >
+                    <button className="material-pick" type="button" onClick={() => setSelectedMaterialId(material.id)}>
+                      <BlockPreview stateKey={material.stateKey} color={material.color} />
+                      <span>{material.label}</span>
+                      <strong>{material.count.toLocaleString()}</strong>
+                    </button>
+                    <button
+                      type="button"
+                      className="material-visibility"
+                      aria-label={hiddenMaterialIds.has(material.id) ? `Show ${material.label}` : `Hide ${material.label}`}
+                      title={hiddenMaterialIds.has(material.id) ? 'Show block' : 'Hide block'}
+                      onClick={() => toggleMaterialVisibility(material.id)}
+                    >
+                      {hiddenMaterialIds.has(material.id) ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
                   </div>
                 ))}
               </div>
+              {selectedMaterial && (
+                <div className="material-breakdown">
+                  <span>{selectedMaterial.label}</span>
+                  <strong>{storageBreakdown(selectedMaterial.count)}</strong>
+                </div>
+              )}
             </section>
 
             {model.warnings.length > 0 && (
@@ -326,6 +403,107 @@ function Metric({ icon, label, value }: MetricProps) {
       <strong>{value}</strong>
     </div>
   );
+}
+
+function BlockPreview({ stateKey, color }: { stateKey: string; color: number }) {
+  const [textures, setTextures] = useState<BlockPreviewTextures | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void resolveBlockParts(stateKey).then((parts) => {
+      if (cancelled) return;
+      setTextures(previewTextures(parts));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [stateKey]);
+
+  const fallbackColor = `#${color.toString(16).padStart(6, '0')}`;
+
+  return (
+    <span
+      className="block-preview"
+      data-shape={textures?.shape ?? 'cube'}
+      aria-hidden="true"
+      style={{
+        '--block-fallback': fallbackColor,
+        '--block-top': textures?.top ? `url("${textures.top}")` : 'none',
+        '--block-left': textures?.left ? `url("${textures.left}")` : 'none',
+        '--block-right': textures?.right ? `url("${textures.right}")` : 'none',
+        '--block-sprite': textures?.sprite ? `url("${textures.sprite}")` : 'none',
+      } as CSSProperties}
+    >
+      <span className="block-preview-face block-preview-top" />
+      <span className="block-preview-face block-preview-left" />
+      <span className="block-preview-face block-preview-right" />
+    </span>
+  );
+}
+
+function previewTextures(parts: Awaited<ReturnType<typeof resolveBlockParts>>): BlockPreviewTextures {
+  const part = parts.find((item) => item.faceTextures.up || item.faceTextures.north || item.faceTextures.east) ?? parts[0];
+  if (!part) return { shape: 'sprite' };
+
+  const faceTextures = part.faceTextures;
+  const fallbackTexture = part.isFallback ? part.blockId : null;
+  const top = faceTextures.up ?? faceTextures.north ?? faceTextures.east ?? faceTextures.south ?? faceTextures.west ?? faceTextures.down ?? fallbackTexture;
+  const left = faceTextures.west ?? faceTextures.north ?? faceTextures.east ?? top;
+  const right = faceTextures.east ?? faceTextures.south ?? faceTextures.north ?? top;
+  const sprite = faceTextures.north ?? faceTextures.south ?? faceTextures.east ?? faceTextures.west ?? faceTextures.up ?? faceTextures.down;
+
+  if (!isFullCubePreview(parts)) {
+    return {
+      shape: 'sprite',
+      sprite: sprite ? textureUrl(sprite) : undefined,
+    };
+  }
+
+  return {
+    shape: 'cube',
+    top: top ? textureUrl(top) : undefined,
+    left: left ? textureUrl(left) : undefined,
+    right: right ? textureUrl(right) : undefined,
+  };
+}
+
+function isFullCubePreview(parts: Awaited<ReturnType<typeof resolveBlockParts>>): boolean {
+  return parts.length === 1
+    && parts[0].from.every((value) => value === 0)
+    && parts[0].to.every((value) => value === 16)
+    && (parts[0].isFallback || (['down', 'up', 'north', 'south', 'west', 'east'] satisfies ModelFaceName[]).every((face) => parts[0].faceTextures[face]));
+}
+
+function materialIdForBlock(block: VoxelBlock): string {
+  return block.stateKey.split('[', 1)[0];
+}
+
+function formatBlockName(id: string): string {
+  return id
+    .replace(/^minecraft:/, '')
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function storageBreakdown(count: number): string {
+  const shulkers = Math.floor(count / 1728);
+  const afterShulkers = count % 1728;
+  const stacks = Math.floor(afterShulkers / 64);
+  const blocks = afterShulkers % 64;
+  const parts = [
+    quantityLabel(shulkers, 'shulker box', 'shulker boxes'),
+    quantityLabel(stacks, 'stack', 'stacks'),
+    quantityLabel(blocks, 'block', 'blocks'),
+  ].filter(Boolean);
+
+  return parts.join(' + ') || '0 blocks';
+}
+
+function quantityLabel(value: number, singular: string, plural: string): string {
+  if (value === 0) return '';
+  return `${value.toLocaleString()} ${value === 1 ? singular : plural}`;
 }
 
 function clamp(value: number, min: number, max: number) {

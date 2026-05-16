@@ -13,6 +13,7 @@ interface Viewer3DProps {
   model: SchematicModel | null;
   visibleLayer: number;
   singleLayer: boolean;
+  hiddenMaterialIds: Set<string>;
   autoRotate: boolean;
   showGrid: boolean;
   selectedBlock: VoxelBlock | null;
@@ -80,9 +81,10 @@ export function Viewer3D(props: InternalViewerProps) {
   const filteredBlocks = useMemo(() => {
     if (!props.model) return [];
     return props.model.blocks.filter((block) =>
-      props.singleLayer ? block.y === props.visibleLayer : block.y <= props.visibleLayer,
+      !props.hiddenMaterialIds.has(blockMaterialId(block))
+      && (props.singleLayer ? block.y === props.visibleLayer : block.y <= props.visibleLayer),
     );
-  }, [props.model, props.singleLayer, props.visibleLayer]);
+  }, [props.hiddenMaterialIds, props.model, props.singleLayer, props.visibleLayer]);
 
   useEffect(() => {
     latestModelRef.current = props.model;
@@ -289,7 +291,9 @@ export function Viewer3D(props: InternalViewerProps) {
       return;
     }
 
-    const isVisible = props.singleLayer ? block.y === props.visibleLayer : block.y <= props.visibleLayer;
+    const isVisible =
+      !props.hiddenMaterialIds.has(blockMaterialId(block))
+      && (props.singleLayer ? block.y === props.visibleLayer : block.y <= props.visibleLayer);
     if (!isVisible) {
       selectionBox.visible = false;
       return;
@@ -301,7 +305,7 @@ export function Viewer3D(props: InternalViewerProps) {
       block.z - (props.model.dimensions.length - 1) / 2,
     );
     selectionBox.visible = true;
-  }, [props.model, props.selectedBlock, props.singleLayer, props.visibleLayer]);
+  }, [props.hiddenMaterialIds, props.model, props.selectedBlock, props.singleLayer, props.visibleLayer]);
 
   useEffect(() => {
     const camera = cameraRef.current;
@@ -405,6 +409,10 @@ async function createBlockMeshes(blocks: VoxelBlock[]): Promise<THREE.InstancedM
 
 function blockPositionKey(block: VoxelBlock): string {
   return `${block.x},${block.y},${block.z}`;
+}
+
+function blockMaterialId(block: VoxelBlock): string {
+  return block.stateKey.split('[', 1)[0];
 }
 
 function hiddenFacesForPart(
