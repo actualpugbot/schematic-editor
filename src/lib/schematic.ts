@@ -17,6 +17,12 @@ export interface SchematicDimensions {
   length: number;
 }
 
+export interface SchematicOrigin {
+  x: number;
+  y: number;
+  z: number;
+}
+
 export interface VoxelBlock {
   x: number;
   y: number;
@@ -31,6 +37,7 @@ export interface SchematicModel {
   name: string;
   source: 'Sponge .schem' | 'Legacy .schematic' | 'Litematica .litematic' | 'Sample';
   dimensions: SchematicDimensions;
+  origin: SchematicOrigin;
   blocks: VoxelBlock[];
   paletteSize: number;
   layerCounts: number[];
@@ -126,6 +133,7 @@ export function createSampleModel(): SchematicModel {
     name: 'Sample workshop house',
     source: 'Sample',
     dimensions: { width, height, length },
+    origin: { x: 0, y: 0, z: 0 },
     blocks,
     paletteSize: 9,
     warnings: [],
@@ -177,6 +185,7 @@ function parseSpongeSchematic(schematic: NbtCompound, fileName = 'Uploaded schem
     name: fileName,
     source: 'Sponge .schem',
     dimensions,
+    origin: readVector3(schematic.Offset, { x: 0, y: 0, z: 0 }),
     blocks,
     paletteSize,
     warnings,
@@ -226,6 +235,7 @@ function parseLegacySchematic(schematic: NbtCompound, fileName = 'Uploaded schem
     name: fileName,
     source: 'Legacy .schematic',
     dimensions,
+    origin: { x: 0, y: 0, z: 0 },
     blocks,
     paletteSize: new Set(blocks.map((block) => block.name)).size,
     warnings,
@@ -269,6 +279,14 @@ function parseLitematic(root: NbtCompound, fileName = 'Uploaded litematic'): Sch
       continue;
     }
 
+    const bounds = regionBounds(position, signedSize);
+    minX = Math.min(minX, bounds.minX);
+    minY = Math.min(minY, bounds.minY);
+    minZ = Math.min(minZ, bounds.minZ);
+    maxX = Math.max(maxX, bounds.maxX);
+    maxY = Math.max(maxY, bounds.maxY);
+    maxZ = Math.max(maxZ, bounds.maxZ);
+
     const paletteEntries = palette.map(readLitematicPaletteEntry);
     const totalBlocks = dimensions.width * dimensions.height * dimensions.length;
     const bitsPerEntry = Math.max(2, Math.ceil(Math.log2(Math.max(1, paletteEntries.length))));
@@ -288,13 +306,6 @@ function parseLitematic(root: NbtCompound, fileName = 'Uploaded litematic'): Sch
       const worldZ = position.z + (signedSize.z < 0 ? -localZ : localZ);
       const name = stateKey.split('[')[0];
       const appearance = blockAppearance(name);
-
-      minX = Math.min(minX, worldX);
-      minY = Math.min(minY, worldY);
-      minZ = Math.min(minZ, worldZ);
-      maxX = Math.max(maxX, worldX);
-      maxY = Math.max(maxY, worldY);
-      maxZ = Math.max(maxZ, worldZ);
 
       blocksWithWorldCoords.push({
         x: worldX,
@@ -330,6 +341,7 @@ function parseLitematic(root: NbtCompound, fileName = 'Uploaded litematic'): Sch
       height: maxY - minY + 1,
       length: maxZ - minZ + 1,
     },
+    origin: { x: minX, y: minY, z: minZ },
     blocks,
     paletteSize: paletteNames.size,
     warnings,
@@ -459,6 +471,21 @@ function readVector3(value: unknown, fallback: { x: number; y: number; z: number
   }
 
   return fallback;
+}
+
+function regionBounds(position: SchematicOrigin, signedSize: SchematicOrigin) {
+  const endX = position.x + signedSize.x - Math.sign(signedSize.x || 1);
+  const endY = position.y + signedSize.y - Math.sign(signedSize.y || 1);
+  const endZ = position.z + signedSize.z - Math.sign(signedSize.z || 1);
+
+  return {
+    minX: Math.min(position.x, endX),
+    minY: Math.min(position.y, endY),
+    minZ: Math.min(position.z, endZ),
+    maxX: Math.max(position.x, endX),
+    maxY: Math.max(position.y, endY),
+    maxZ: Math.max(position.z, endZ),
+  };
 }
 
 function decodePackedLongArray(longs: BigInt64Array, expectedLength: number, bitsPerEntry: number): number[] {

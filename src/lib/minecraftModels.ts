@@ -7,6 +7,8 @@ export interface BlockStateInfo {
 
 export interface ResolvedBlockPart {
   key: string;
+  blockId: string;
+  blockProperties: Record<string, string>;
   from: [number, number, number];
   to: [number, number, number];
   isFallback?: boolean;
@@ -16,6 +18,7 @@ export interface ResolvedBlockPart {
     y: number;
   };
   faceTextures: Record<ModelFaceName, string | null>;
+  faceTints: Record<ModelFaceName, number | null>;
 }
 
 interface BlockstateJson {
@@ -68,6 +71,7 @@ export interface ModelElementRotation {
 
 interface ModelFace {
   texture?: TextureReference;
+  tintindex?: number;
 }
 
 type TextureReference =
@@ -133,7 +137,9 @@ async function resolveBlockPartsUncached(stateKey: string): Promise<ResolvedBloc
 
     for (const [index, element] of model.elements.entries()) {
       parts.push({
-        key: partKey(variant, element, model.textures, index),
+        key: `${stateKey}::${partKey(variant, element, model.textures, index)}`,
+        blockId: state.id,
+        blockProperties: state.properties,
         from: element.from,
         to: element.to,
         elementRotation: element.rotation,
@@ -142,6 +148,7 @@ async function resolveBlockPartsUncached(stateKey: string): Promise<ResolvedBloc
           y: variant.y ?? 0,
         },
         faceTextures: faceTextures(element, model.textures),
+        faceTints: faceTints(element),
       });
     }
   }
@@ -281,6 +288,19 @@ function faceTextures(element: ModelElement, textures: Record<string, string | n
   };
 }
 
+function faceTints(element: ModelElement): Record<ModelFaceName, number | null> {
+  const faces = element.faces ?? {};
+
+  return {
+    down: faces.down?.tintindex ?? null,
+    up: faces.up?.tintindex ?? null,
+    north: faces.north?.tintindex ?? null,
+    south: faces.south?.tintindex ?? null,
+    west: faces.west?.tintindex ?? null,
+    east: faces.east?.tintindex ?? null,
+  };
+}
+
 function resolveTextureReference(value: string | null, textures: Record<string, string | null>): string | null {
   if (!value) return null;
   if (!value.startsWith('#')) return normalizeResourceId(value, 'block');
@@ -303,7 +323,10 @@ function partKey(
   index: number,
 ): string {
   const faceKey = Object.entries(faceTextures(element, textures))
-    .map(([face, texture]) => `${face}:${texture ?? 'fallback'}`)
+    .map(([face, texture]) => {
+      const tint = element.faces?.[face as ModelFaceName]?.tintindex ?? 'none';
+      return `${face}:${texture ?? 'fallback'}:${tint}`;
+    })
     .join('|');
   const rotation = element.rotation
     ? `${element.rotation.axis}:${element.rotation.angle}:${element.rotation.origin.join(',')}`
@@ -323,11 +346,21 @@ function partKey(
 function fallbackPart(id: string, variantRotation: { x: number; y: number }): ResolvedBlockPart {
   return {
     key: `fallback::${id}::${variantRotation.x}::${variantRotation.y}`,
+    blockId: id,
+    blockProperties: {},
     from: [0, 0, 0],
     to: [16, 16, 16],
     isFallback: true,
     variantRotation,
     faceTextures: {
+      down: null,
+      up: null,
+      north: null,
+      south: null,
+      west: null,
+      east: null,
+    },
+    faceTints: {
       down: null,
       up: null,
       north: null,

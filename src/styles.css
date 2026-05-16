@@ -316,6 +316,7 @@ h2 {
 
 .drop-zone,
 .layer-control,
+.selected-block,
 .view-control,
 .material-list,
 .notice {
@@ -382,10 +383,58 @@ h2 {
 }
 
 .layer-control,
+.selected-block,
 .view-control,
 .material-list,
 .notice {
   padding: 14px;
+}
+
+.selected-block {
+  min-width: 0;
+}
+
+.selected-block-details {
+  display: grid;
+  gap: 11px;
+}
+
+.selected-block-details p,
+.selection-empty {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.selected-block-details dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.selected-block-details div {
+  min-width: 0;
+  padding: 8px 9px;
+  background: #ebe4d5;
+  border: 1px solid var(--line);
+}
+
+.selected-block-details dt {
+  color: var(--moss);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.selected-block-details dd {
+  margin: 2px 0 0;
+  color: var(--ink);
+  font-weight: 900;
 }
 
 .section-heading {

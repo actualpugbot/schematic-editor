@@ -15,6 +15,8 @@ interface Viewer3DProps {
   singleLayer: boolean;
   autoRotate: boolean;
   showGrid: boolean;
+  selectedBlock: VoxelBlock | null;
+  onBlockSelect?: (block: VoxelBlock | null) => void;
   onReady?: () => void;
 }
 
@@ -33,6 +35,9 @@ const faceOrder: ModelFaceName[] = ['east', 'west', 'up', 'down', 'south', 'nort
 const geometryCache = new Map<string, THREE.BufferGeometry>();
 const materialCache = new Map<string, THREE.Material>();
 const textureLoader = new THREE.TextureLoader();
+const defaultFoliageTint = 0x48b518;
+const birchFoliageTint = 0x80a755;
+const spruceFoliageTint = 0x619961;
 const hiddenMaterial = new THREE.MeshBasicMaterial({
   transparent: true,
   opacity: 0,
@@ -48,9 +53,11 @@ export function Viewer3D(props: InternalViewerProps) {
   const controlsRef = useRef<OrbitControls | null>(null);
   const modelGroupRef = useRef<THREE.Group | null>(null);
   const gridRef = useRef<THREE.Group | null>(null);
+  const selectionBoxRef = useRef<THREE.LineSegments | null>(null);
   const frameRef = useRef<number | null>(null);
   const spinRef = useRef<{ start: number; duration: number; from: number; to: number } | null>(null);
   const latestModelRef = useRef<SchematicModel | null>(props.model);
+  const onBlockSelectRef = useRef(props.onBlockSelect);
 
   const filteredBlocks = useMemo(() => {
     if (!props.model) return [];
@@ -62,6 +69,10 @@ export function Viewer3D(props: InternalViewerProps) {
   useEffect(() => {
     latestModelRef.current = props.model;
   }, [props.model]);
+
+  useEffect(() => {
+    onBlockSelectRef.current = props.onBlockSelect;
+  }, [props.onBlockSelect]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -121,6 +132,10 @@ export function Viewer3D(props: InternalViewerProps) {
     gridRef.current = gridGroup;
     scene.add(gridGroup);
 
+    const selectionBox = createSelectionBox();
+    selectionBoxRef.current = selectionBox;
+    scene.add(selectionBox);
+
     const resize = () => {
       const rect = container.getBoundingClientRect();
       const width = Math.max(1, rect.width);
@@ -133,6 +148,23 @@ export function Viewer3D(props: InternalViewerProps) {
     const observer = new ResizeObserver(resize);
     observer.observe(container);
     resize();
+
+    const pointerStart = { x: 0, y: 0 };
+    const handlePointerDown = (event: PointerEvent) => {
+      pointerStart.x = event.clientX;
+      pointerStart.y = event.clientY;
+    };
+    const handlePointerUp = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      const distance = Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y);
+      if (distance > 5) return;
+
+      const block = pickBlock(event, renderer, camera, modelGroup);
+      onBlockSelectRef.current?.(block);
+    };
+
+    renderer.domElement.addEventListener('pointerdown', handlePointerDown);
+    renderer.domElement.addEventListener('pointerup', handlePointerUp);
 
     const animate = (time: number) => {
       if (controlsRef.current) {
@@ -173,6 +205,8 @@ export function Viewer3D(props: InternalViewerProps) {
       if (frameRef.current !== null) {
         window.cancelAnimationFrame(frameRef.current);
       }
+      renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
+      renderer.domElement.removeEventListener('pointerup', handlePointerUp);
       controls.dispose();
       renderer.dispose();
       container.removeChild(renderer.domElement);
@@ -181,6 +215,7 @@ export function Viewer3D(props: InternalViewerProps) {
       cameraRef.current = null;
       rendererRef.current = null;
       controlsRef.current = null;
+      selectionBoxRef.current = null;
     };
   }, []);
 
@@ -225,6 +260,30 @@ export function Viewer3D(props: InternalViewerProps) {
     gridGroup.add(helper);
     centerGroup(gridGroup, props.model.dimensions);
   }, [props.model, props.showGrid]);
+
+  useEffect(() => {
+    const selectionBox = selectionBoxRef.current;
+    if (!selectionBox) return;
+
+    const block = props.selectedBlock;
+    if (!props.model || !block) {
+      selectionBox.visible = false;
+      return;
+    }
+
+    const isVisible = props.singleLayer ? block.y === props.visibleLayer : block.y <= props.visibleLayer;
+    if (!isVisible) {
+      selectionBox.visible = false;
+      return;
+    }
+
+    selectionBox.position.set(
+      block.x - (props.model.dimensions.width - 1) / 2,
+      block.y,
+      block.z - (props.model.dimensions.length - 1) / 2,
+    );
+    selectionBox.visible = true;
+  }, [props.model, props.selectedBlock, props.singleLayer, props.visibleLayer]);
 
   useEffect(() => {
     const camera = cameraRef.current;
@@ -283,7 +342,7 @@ async function createBlockMeshes(blocks: VoxelBlock[]): Promise<THREE.InstancedM
     const quaternion = new THREE.Quaternion().setFromEuler(
       new THREE.Euler(
         THREE.MathUtils.degToRad(group.part.variantRotation.x),
-        THREE.MathUtils.degToRad(group.part.variantRotation.y),
+        THREE.MathUtils.degToRad(variantYRotation(group.part)),
         0,
       ),
     );
@@ -295,10 +354,48 @@ async function createBlockMeshes(blocks: VoxelBlock[]): Promise<THREE.InstancedM
     });
 
     mesh.instanceMatrix.needsUpdate = true;
+    mesh.userData.blocks = group.blocks;
     meshes.push(mesh);
   }
 
   return meshes;
+}
+
+function createSelectionBox(): THREE.LineSegments {
+  const geometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.08, 1.08, 1.08));
+  const material = new THREE.LineBasicMaterial({
+    color: 0xf7c948,
+    depthTest: false,
+    transparent: true,
+    opacity: 0.95,
+  });
+  const box = new THREE.LineSegments(geometry, material);
+  box.renderOrder = 20;
+  box.visible = false;
+  return box;
+}
+
+function pickBlock(
+  event: PointerEvent,
+  renderer: THREE.WebGLRenderer,
+  camera: THREE.PerspectiveCamera,
+  modelGroup: THREE.Group,
+): VoxelBlock | null {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const pointer = new THREE.Vector2(
+    ((event.clientX - rect.left) / rect.width) * 2 - 1,
+    -(((event.clientY - rect.top) / rect.height) * 2 - 1),
+  );
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(pointer, camera);
+
+  const intersections = raycaster.intersectObjects(modelGroup.children, false);
+  const hit = intersections.find((intersection) => intersection.instanceId !== undefined);
+  if (!hit || hit.instanceId === undefined) return null;
+
+  const mesh = hit.object as THREE.InstancedMesh;
+  const blocks = mesh.userData.blocks as VoxelBlock[] | undefined;
+  return blocks?.[hit.instanceId] ?? null;
 }
 
 function geometryForPart(part: ResolvedBlockPart): THREE.BufferGeometry {
@@ -350,12 +447,12 @@ function materialsForPart(part: ResolvedBlockPart, fallbackColor: number): THREE
       return part.isFallback ? colorMaterial(fallbackColor) : hiddenMaterial;
     }
 
-    return textureMaterial(textureId);
+    return textureMaterial(textureId, tintColorForPart(textureId, part.faceTints[face], part));
   });
 }
 
-function textureMaterial(textureId: string): THREE.Material {
-  const key = `texture::${textureId}`;
+function textureMaterial(textureId: string, tintColor: number | null): THREE.Material {
+  const key = `texture::${textureId}::${tintColor ?? 'none'}`;
   const cached = materialCache.get(key);
   if (cached) return cached;
 
@@ -368,6 +465,7 @@ function textureMaterial(textureId: string): THREE.Material {
 
   const material = new THREE.MeshStandardMaterial({
     map: texture,
+    color: tintColor ?? 0xffffff,
     roughness: 0.92,
     metalness: 0.02,
     transparent: true,
@@ -376,6 +474,45 @@ function textureMaterial(textureId: string): THREE.Material {
   });
   materialCache.set(key, material);
   return material;
+}
+
+function tintColorForPart(textureId: string, tintIndex: number | null, part: ResolvedBlockPart): number | null {
+  if (tintIndex === null) return null;
+  const path = textureId.replace(/^minecraft:/, '');
+
+  if (part.blockId === 'minecraft:redstone_wire' && tintIndex === 0) {
+    return redstoneWireColor(part.blockProperties.power);
+  }
+
+  if (path.includes('spruce_leaves')) return spruceFoliageTint;
+  if (path.includes('birch_leaves')) return birchFoliageTint;
+  if (path.includes('leaves') || path.includes('vine') || path.includes('grass') || path.includes('fern')) {
+    return defaultFoliageTint;
+  }
+
+  return null;
+}
+
+function redstoneWireColor(powerValue: string | undefined): number {
+  const power = Math.max(0, Math.min(15, Number.parseInt(powerValue ?? '0', 10) || 0));
+  const strength = power / 15;
+  const red = power === 0 ? 0.3 : strength * 0.6 + 0.4;
+  const green = Math.max(0, strength * strength * 0.7 - 0.5);
+  const blue = Math.max(0, strength * strength * 0.6 - 0.7);
+
+  return (
+    (Math.round(red * 255) << 16) |
+    (Math.round(green * 255) << 8) |
+    Math.round(blue * 255)
+  );
+}
+
+function variantYRotation(part: ResolvedBlockPart): number {
+  if (part.blockId === 'minecraft:redstone_wire') {
+    return -part.variantRotation.y;
+  }
+
+  return part.variantRotation.y;
 }
 
 function colorMaterial(color: number): THREE.Material {

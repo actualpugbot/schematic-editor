@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box,
   ChevronDown,
@@ -14,7 +14,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { Viewer3D, type Viewer3DHandle } from './components/Viewer3D';
-import { createSampleModel, parseSchematic, type SchematicModel } from './lib/schematic';
+import { createSampleModel, parseSchematic, type SchematicModel, type VoxelBlock } from './lib/schematic';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -24,12 +24,18 @@ function App() {
   const [error, setError] = useState('');
   const [visibleLayer, setVisibleLayer] = useState(model?.dimensions.height ? model.dimensions.height - 1 : 0);
   const [singleLayer, setSingleLayer] = useState(false);
-  const [autoRotate, setAutoRotate] = useState(true);
+  const [autoRotate, setAutoRotate] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
+  const [selectedBlock, setSelectedBlock] = useState<VoxelBlock | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const viewerRef = useRef<Viewer3DHandle | null>(null);
   const dragDepthRef = useRef(0);
+  const visibleWorldY = model ? model.origin.y + visibleLayer : visibleLayer;
+  const lowestWorldY = model ? model.origin.y : 0;
+  const selectedBlockWorldX = selectedBlock && model ? model.origin.x + selectedBlock.x : null;
+  const selectedBlockWorldY = selectedBlock && model ? model.origin.y + selectedBlock.y : null;
+  const selectedBlockWorldZ = selectedBlock && model ? model.origin.z + selectedBlock.z : null;
 
   const visibleBlockCount = useMemo(() => {
     if (!model) return 0;
@@ -54,6 +60,18 @@ function App() {
       .slice(0, 6);
   }, [model]);
 
+  useEffect(() => {
+    if (!model || !selectedBlock) {
+      return;
+    }
+
+    const isFromCurrentModel = model.blocks.includes(selectedBlock);
+    const isVisible = singleLayer ? selectedBlock.y === visibleLayer : selectedBlock.y <= visibleLayer;
+    if (!isFromCurrentModel || !isVisible) {
+      setSelectedBlock(null);
+    }
+  }, [model, selectedBlock, singleLayer, visibleLayer]);
+
   const handleFile = async (file: File) => {
     setLoadState('loading');
     setError('');
@@ -64,6 +82,7 @@ function App() {
       setModel(parsed);
       setVisibleLayer(parsed.dimensions.height - 1);
       setSingleLayer(false);
+      setSelectedBlock(null);
       setLoadState('ready');
     } catch (caught) {
       setLoadState('error');
@@ -108,6 +127,7 @@ function App() {
     setModel(sample);
     setVisibleLayer(sample.dimensions.height - 1);
     setSingleLayer(false);
+    setSelectedBlock(null);
     setError('');
     setLoadState('ready');
   };
@@ -174,6 +194,8 @@ function App() {
           singleLayer={singleLayer}
           autoRotate={autoRotate}
           showGrid={showGrid}
+          selectedBlock={selectedBlock}
+          onBlockSelect={setSelectedBlock}
           viewerRef={viewerRef}
         />
 
@@ -187,7 +209,7 @@ function App() {
 
         <div className="viewport-status" aria-live="polite">
           <span>{loadState === 'loading' ? 'Reading file...' : `${visibleBlockCount.toLocaleString()} visible blocks`}</span>
-          <span>{singleLayer ? `Layer ${visibleLayer + 1}` : `Layers 1-${visibleLayer + 1}`}</span>
+          <span>{singleLayer ? `Y ${visibleWorldY}` : `Y ${lowestWorldY}-${visibleWorldY}`}</span>
         </div>
       </section>
 
@@ -228,11 +250,42 @@ function App() {
               <Metric icon={<Sparkles size={17} />} label="Palette" value={model.paletteSize.toString()} />
             </section>
 
+            <section className="selected-block" aria-live="polite">
+              <div className="section-heading compact">
+                <div>
+                  <p className="eyebrow">Selection</p>
+                  <h2>{selectedBlock ? selectedBlock.material : 'No block selected'}</h2>
+                </div>
+                <Box size={18} />
+              </div>
+              {selectedBlock ? (
+                <div className="selected-block-details">
+                  <p>{selectedBlock.name}</p>
+                  <dl>
+                    <div>
+                      <dt>X</dt>
+                      <dd>{selectedBlockWorldX}</dd>
+                    </div>
+                    <div>
+                      <dt>Y</dt>
+                      <dd>{selectedBlockWorldY}</dd>
+                    </div>
+                    <div>
+                      <dt>Z</dt>
+                      <dd>{selectedBlockWorldZ}</dd>
+                    </div>
+                  </dl>
+                </div>
+              ) : (
+                <p className="selection-empty">Click a visible block in the viewport.</p>
+              )}
+            </section>
+
             <section className="layer-control">
               <div className="section-heading">
                 <div>
                   <p className="eyebrow">Layer view</p>
-                  <h2>Y {visibleLayer}</h2>
+                  <h2>Y {visibleWorldY}</h2>
                 </div>
                 <div className="stepper">
                   <button type="button" onClick={() => stepLayer(-1)} title="Previous layer">
