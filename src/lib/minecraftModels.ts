@@ -141,6 +141,12 @@ async function resolveBlockPartsUncached(stateKey: string): Promise<ResolvedBloc
   for (const variant of variants) {
     const model = await resolveModel(variant.model);
     if (!model || model.elements.length === 0) {
+      const syntheticParts = syntheticBlockParts(state.id, state.properties, { x: variant.x ?? 0, y: variant.y ?? 0 });
+      if (syntheticParts.length > 0) {
+        parts.push(...syntheticParts);
+        continue;
+      }
+
       const fluidPart = syntheticFluidPart(state.id, state.properties, { x: variant.x ?? 0, y: variant.y ?? 0 });
       if (fluidPart) {
         parts.push(fluidPart);
@@ -425,6 +431,284 @@ function partKey(
     variant.y ?? 0,
     faceKey,
   ].join('::');
+}
+
+function syntheticBlockParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  const movingPistonParts = syntheticMovingPistonParts(id, properties, variantRotation);
+  if (movingPistonParts.length > 0) return movingPistonParts;
+
+  const chestParts = syntheticChestParts(id, properties, variantRotation);
+  if (chestParts.length > 0) return chestParts;
+
+  return [];
+}
+
+function syntheticMovingPistonParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (id !== 'minecraft:moving_piston') return [];
+
+  const pistonRotation = {
+    x: variantRotation.x + pistonFacingXRotation(properties.facing),
+    y: variantRotation.y + pistonFacingYRotation(properties.facing),
+  };
+  const isSticky = properties.type === 'sticky';
+  const topTexture = isSticky ? 'minecraft:block/piston_top_sticky' : 'minecraft:block/piston_top';
+
+  return [
+    syntheticCuboidPart(
+      id,
+      properties,
+      `moving-piston-base:${isSticky ? 'sticky' : 'normal'}`,
+      [0, 0, 4],
+      [16, 16, 16],
+      {
+        down: 'minecraft:block/piston_side',
+        up: 'minecraft:block/piston_side',
+        north: 'minecraft:block/piston_inner',
+        south: 'minecraft:block/piston_bottom',
+        west: 'minecraft:block/piston_side',
+        east: 'minecraft:block/piston_side',
+      },
+      pistonRotation,
+    ),
+    syntheticCuboidPart(
+      id,
+      properties,
+      `moving-piston-head:${isSticky ? 'sticky' : 'normal'}`,
+      [0, 0, -16],
+      [16, 16, -12],
+      {
+        down: 'minecraft:block/piston_side',
+        up: 'minecraft:block/piston_side',
+        north: topTexture,
+        south: 'minecraft:block/piston_top',
+        west: 'minecraft:block/piston_side',
+        east: 'minecraft:block/piston_side',
+      },
+      pistonRotation,
+    ),
+    syntheticCuboidPart(
+      id,
+      properties,
+      `moving-piston-arm:${isSticky ? 'sticky' : 'normal'}`,
+      [6, 6, -12],
+      [10, 10, 4],
+      'minecraft:block/piston_side',
+      pistonRotation,
+    ),
+  ];
+}
+
+function pistonFacingXRotation(facing: string | undefined): number {
+  switch (facing) {
+    case 'down':
+      return 90;
+    case 'up':
+      return 270;
+    default:
+      return 0;
+  }
+}
+
+function pistonFacingYRotation(facing: string | undefined): number {
+  switch (facing) {
+    case 'east':
+      return 90;
+    case 'south':
+      return 180;
+    case 'west':
+      return 270;
+    case 'north':
+    default:
+      return 0;
+  }
+}
+
+function syntheticChestParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (!isChestBlock(id)) return [];
+
+  const chestRotation = {
+    x: variantRotation.x,
+    y: variantRotation.y + chestFacingRotation(properties.facing),
+  };
+  const palette = chestPalette(id);
+
+  return [
+    syntheticCuboidPart(id, properties, `chest-base:${palette.bodyKey}`, [2, 0, 2], [14, 9, 14], palette.body, chestRotation),
+    syntheticCuboidPart(id, properties, `chest-lid:${palette.bodyKey}`, [1.5, 9.25, 1.5], [14.5, 14, 14.5], palette.body, chestRotation),
+    syntheticCuboidPart(id, properties, `chest-base-front-trim:${palette.trim}`, [1.25, 0.25, 0.75], [14.75, 2, 2.25], palette.trim, chestRotation),
+    syntheticCuboidPart(id, properties, `chest-base-back-trim:${palette.trim}`, [1.25, 0.25, 13.75], [14.75, 2, 15.25], palette.trim, chestRotation),
+    syntheticCuboidPart(id, properties, `chest-seam:${palette.trim}`, [1, 8.25, 0.75], [15, 10.25, 2.25], palette.trim, chestRotation),
+    syntheticCuboidPart(id, properties, `chest-lid-front-trim:${palette.trim}`, [1, 12.75, 0.75], [15, 14.5, 2.25], palette.trim, chestRotation),
+    syntheticCuboidPart(id, properties, `chest-lid-back-trim:${palette.trim}`, [1, 12.75, 13.75], [15, 14.5, 15.25], palette.trim, chestRotation),
+    syntheticCuboidPart(id, properties, `chest-left-edge:${palette.trim}`, [0.75, 0.25, 1], [2.25, 13.75, 2.5], palette.trim, chestRotation),
+    syntheticCuboidPart(id, properties, `chest-right-edge:${palette.trim}`, [13.75, 0.25, 1], [15.25, 13.75, 2.5], palette.trim, chestRotation),
+    syntheticCuboidPart(id, properties, `chest-latch:${palette.latch}`, [6.5, 4.5, 0.35], [9.5, 8.5, 1.55], palette.latch, chestRotation),
+  ];
+}
+
+function isChestBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return /(^|_)chest$/.test(path);
+}
+
+function chestFacingRotation(facing: string | undefined): number {
+  switch (facing) {
+    case 'east':
+      return 90;
+    case 'south':
+      return 180;
+    case 'west':
+      return 270;
+    case 'north':
+    default:
+      return 0;
+  }
+}
+
+interface SyntheticChestPalette {
+  bodyKey: string;
+  body: Record<ModelFaceName, string>;
+  trim: string;
+  latch: string;
+}
+
+function chestPalette(id: string): SyntheticChestPalette {
+  const path = id.replace(/^minecraft:/, '');
+  const latch = path === 'trapped_chest' ? 'minecraft:block/redstone_block' : 'minecraft:block/gold_block';
+
+  if (path === 'ender_chest') {
+    return {
+      bodyKey: 'ender',
+      body: cubeTextures('minecraft:block/obsidian'),
+      trim: 'minecraft:block/purpur_block',
+      latch: 'minecraft:block/emerald_block',
+    };
+  }
+
+  if (path.includes('oxidized_copper_chest')) {
+    return copperChestPalette('minecraft:block/oxidized_copper', 'minecraft:block/oxidized_cut_copper', latch);
+  }
+
+  if (path.includes('weathered_copper_chest')) {
+    return copperChestPalette('minecraft:block/weathered_copper', 'minecraft:block/weathered_cut_copper', latch);
+  }
+
+  if (path.includes('exposed_copper_chest')) {
+    return copperChestPalette('minecraft:block/exposed_copper', 'minecraft:block/exposed_cut_copper', latch);
+  }
+
+  if (path.includes('copper_chest')) {
+    return copperChestPalette('minecraft:block/copper_block', 'minecraft:block/cut_copper', latch);
+  }
+
+  return {
+    bodyKey: 'wood',
+    body: {
+      down: 'minecraft:block/barrel_bottom',
+      up: 'minecraft:block/barrel_top',
+      north: 'minecraft:block/barrel_side',
+      south: 'minecraft:block/barrel_side',
+      west: 'minecraft:block/barrel_side',
+      east: 'minecraft:block/barrel_side',
+    },
+    trim: 'minecraft:block/dark_oak_planks',
+    latch,
+  };
+}
+
+function copperChestPalette(bodyTexture: string, trimTexture: string, latchTexture: string): SyntheticChestPalette {
+  return {
+    bodyKey: bodyTexture,
+    body: cubeTextures(bodyTexture),
+    trim: trimTexture,
+    latch: latchTexture,
+  };
+}
+
+function cubeTextures(texture: string): Record<ModelFaceName, string> {
+  return {
+    down: texture,
+    up: texture,
+    north: texture,
+    south: texture,
+    west: texture,
+    east: texture,
+  };
+}
+
+function syntheticCuboidPart(
+  id: string,
+  properties: Record<string, string>,
+  key: string,
+  from: [number, number, number],
+  to: [number, number, number],
+  textures: string | Record<ModelFaceName, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart {
+  const faceTextures = typeof textures === 'string' ? cubeTextures(textures) : textures;
+
+  return {
+    key: `synthetic::${id}::${key}::${variantRotation.x}::${variantRotation.y}`,
+    blockId: id,
+    blockProperties: properties,
+    from,
+    to,
+    shade: true,
+    variantRotation,
+    faceTextures,
+    faceTints: {
+      down: null,
+      up: null,
+      north: null,
+      south: null,
+      west: null,
+      east: null,
+    },
+    faceUvs: {
+      down: null,
+      up: null,
+      north: null,
+      south: null,
+      west: null,
+      east: null,
+    },
+    faceRotations: {
+      down: 0,
+      up: 0,
+      north: 0,
+      south: 0,
+      west: 0,
+      east: 0,
+    },
+    faceCullfaces: {
+      down: null,
+      up: null,
+      north: null,
+      south: null,
+      west: null,
+      east: null,
+    },
+    faceTranslucencies: {
+      down: false,
+      up: false,
+      north: false,
+      south: false,
+      west: false,
+      east: false,
+    },
+  };
 }
 
 function syntheticFluidPart(
