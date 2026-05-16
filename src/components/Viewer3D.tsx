@@ -996,13 +996,14 @@ function centerGroup(group: THREE.Group, dimensions: SchematicDimensions) {
 function createFootprintGrid(dimensions: SchematicDimensions): THREE.LineSegments {
   const vertices: number[] = [];
   const material = new THREE.LineBasicMaterial({ color: 0x4d5b54, transparent: true, opacity: 0.28 });
+  const y = -0.55;
 
   for (let x = -0.5; x <= dimensions.width - 0.5; x += 1) {
-    vertices.push(x, -0.02, -0.5, x, -0.02, dimensions.length - 0.5);
+    vertices.push(x, y, -0.5, x, y, dimensions.length - 0.5);
   }
 
   for (let z = -0.5; z <= dimensions.length - 0.5; z += 1) {
-    vertices.push(-0.5, -0.02, z, dimensions.width - 0.5, -0.02, z);
+    vertices.push(-0.5, y, z, dimensions.width - 0.5, y, z);
   }
 
   const geometry = new THREE.BufferGeometry();
