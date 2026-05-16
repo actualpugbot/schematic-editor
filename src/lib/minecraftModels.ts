@@ -98,6 +98,27 @@ const blockstateCache = new Map<string, Promise<BlockstateJson | null>>();
 const modelCache = new Map<string, Promise<ModelJson | null>>();
 const resolvedModelCache = new Map<string, Promise<ResolvedModel | null>>();
 const resolvedBlockCache = new Map<string, Promise<ResolvedBlockPart[]>>();
+const defaultPlayerSkinSvg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" shape-rendering="crispEdges">
+  <rect width="64" height="64" fill="none"/>
+  <rect x="0" y="8" width="8" height="8" fill="#c68655"/>
+  <rect x="8" y="8" width="8" height="8" fill="#d69a6a"/>
+  <rect x="16" y="8" width="8" height="8" fill="#b97849"/>
+  <rect x="24" y="8" width="8" height="8" fill="#8f5433"/>
+  <rect x="8" y="0" width="8" height="8" fill="#6a3d25"/>
+  <rect x="16" y="0" width="8" height="8" fill="#b97849"/>
+  <rect x="8" y="8" width="8" height="2" fill="#5a3420"/>
+  <rect x="9" y="11" width="2" height="2" fill="#2b2f35"/>
+  <rect x="13" y="11" width="2" height="2" fill="#2b2f35"/>
+  <rect x="11" y="14" width="3" height="1" fill="#7c3f35"/>
+  <rect x="32" y="8" width="8" height="8" fill="#4d2e1d" opacity=".95"/>
+  <rect x="40" y="8" width="8" height="8" fill="#5a3420" opacity=".95"/>
+  <rect x="48" y="8" width="8" height="8" fill="#4a2a1a" opacity=".95"/>
+  <rect x="56" y="8" width="8" height="8" fill="#3b2115" opacity=".95"/>
+  <rect x="40" y="0" width="8" height="8" fill="#4d2e1d" opacity=".95"/>
+  <rect x="48" y="0" width="8" height="8" fill="#2f1a10" opacity=".95"/>
+  <rect x="40" y="8" width="8" height="3" fill="#2f1a10" opacity=".95"/>
+</svg>`.trim();
 
 export function parseBlockStateKey(stateKey: string): BlockStateInfo {
   const match = /^(?<id>[^\[]+)(?:\[(?<properties>.*)\])?$/.exec(stateKey);
@@ -473,6 +494,9 @@ function syntheticBlockParts(
   properties: Record<string, string>,
   variantRotation: { x: number; y: number },
 ): ResolvedBlockPart[] {
+  const playerHeadParts = syntheticPlayerHeadParts(id, properties, variantRotation);
+  if (playerHeadParts.length > 0) return playerHeadParts;
+
   const beaconParts = syntheticBeaconParts(id, properties, variantRotation);
   if (beaconParts.length > 0) return beaconParts;
 
@@ -480,6 +504,54 @@ function syntheticBlockParts(
   if (movingPistonParts.length > 0) return movingPistonParts;
 
   return [];
+}
+
+function syntheticPlayerHeadParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (!isPlayerHeadBlock(id)) return [];
+
+  const wallMounted = id === 'minecraft:player_wall_head';
+  const headRotation = {
+    x: variantRotation.x,
+    y: variantRotation.y + (wallMounted ? horizontalFacingRotation(properties.facing) : headRotationFromProperty(properties.rotation)),
+  };
+  const baseCuboid: BlockEntityCuboid = wallMounted
+    ? { name: 'base', from: [4, 4, 0], to: [12, 12, 8], textureOrigin: [0, 0] }
+    : { name: 'base', from: [4, 0, 4], to: [12, 8, 12], textureOrigin: [0, 0] };
+  const hatCuboid: BlockEntityCuboid = wallMounted
+    ? { name: 'hat', from: [3.5, 3.5, -0.5], to: [12.5, 12.5, 8.5], textureOrigin: [32, 0] }
+    : { name: 'hat', from: [3.5, -0.5, 3.5], to: [12.5, 8.5, 12.5], textureOrigin: [32, 0] };
+  const texture = 'schemview:entity/player/default';
+
+  return [baseCuboid, hatCuboid].map((cuboid) =>
+    blockEntityCuboidPart(id, properties, `player-head:${wallMounted ? 'wall' : 'floor'}:${cuboid.name}`, cuboid, texture, headRotation),
+  );
+}
+
+function isPlayerHeadBlock(id: string): boolean {
+  return id === 'minecraft:player_head' || id === 'minecraft:player_wall_head';
+}
+
+function headRotationFromProperty(rotation: string | undefined): number {
+  const steps = Math.max(0, Math.min(15, Number.parseInt(rotation ?? '0', 10) || 0));
+  return steps * 22.5;
+}
+
+function horizontalFacingRotation(facing: string | undefined): number {
+  switch (facing) {
+    case 'east':
+      return 90;
+    case 'south':
+      return 180;
+    case 'west':
+      return 270;
+    case 'north':
+    default:
+      return 0;
+  }
 }
 
 function syntheticBeaconParts(
@@ -1077,5 +1149,10 @@ function resourcePath(id: string): string {
 }
 
 export function textureUrl(textureId: string): string {
-  return `${assetRoot}/textures/${resourcePath(normalizeResourceId(textureId, 'block'))}.png`;
+  const normalized = normalizeResourceId(textureId, 'block');
+  if (normalized === 'schemview:entity/player/default') {
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(defaultPlayerSkinSvg)}`;
+  }
+
+  return `${assetRoot}/textures/${resourcePath(normalized)}.png`;
 }
