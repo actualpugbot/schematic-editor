@@ -303,9 +303,9 @@ function parseLitematic(root: NbtCompound, fileName = 'Uploaded litematic'): Sch
       const localX = index % dimensions.width;
       const localZ = Math.floor(index / dimensions.width) % dimensions.length;
       const localY = Math.floor(index / (dimensions.width * dimensions.length));
-      const worldX = position.x + (signedSize.x < 0 ? -localX : localX);
-      const worldY = position.y + (signedSize.y < 0 ? -localY : localY);
-      const worldZ = position.z + (signedSize.z < 0 ? -localZ : localZ);
+      const worldX = position.x + litematicStorageToRegionCoordinate(localX, signedSize.x);
+      const worldY = position.y + litematicStorageToRegionCoordinate(localY, signedSize.y);
+      const worldZ = position.z + litematicStorageToRegionCoordinate(localZ, signedSize.z);
       const name = stateKey.split('[')[0];
       const appearance = blockAppearance(name);
 
@@ -488,6 +488,10 @@ function regionBounds(position: SchematicOrigin, signedSize: SchematicOrigin) {
     maxY: Math.max(position.y, endY),
     maxZ: Math.max(position.z, endZ),
   };
+}
+
+function litematicStorageToRegionCoordinate(storageCoordinate: number, signedSize: number): number {
+  return signedSize < 0 ? storageCoordinate + signedSize + 1 : storageCoordinate;
 }
 
 function decodePackedLongArray(longs: BigInt64Array, expectedLength: number, bitsPerEntry: number): number[] {
