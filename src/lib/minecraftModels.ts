@@ -94,6 +94,7 @@ type TextureReference =
 export type ModelFaceUv = [number, number, number, number];
 
 const assetRoot = '/minecraft-assets/assets/minecraft';
+const playerHeadTexturePrefix = 'schemview:entity/player/head/';
 const blockstateCache = new Map<string, Promise<BlockstateJson | null>>();
 const modelCache = new Map<string, Promise<ModelJson | null>>();
 const resolvedModelCache = new Map<string, Promise<ResolvedModel | null>>();
@@ -524,7 +525,7 @@ function syntheticPlayerHeadParts(
   const hatCuboid: BlockEntityCuboid = wallMounted
     ? { name: 'hat', from: [3.5, 3.5, -0.5], to: [12.5, 12.5, 8.5], textureOrigin: [32, 0] }
     : { name: 'hat', from: [3.5, -0.5, 3.5], to: [12.5, 8.5, 12.5], textureOrigin: [32, 0] };
-  const texture = 'schemview:entity/player/default';
+  const texture = playerHeadTextureId(properties.schemview_head);
 
   return [baseCuboid, hatCuboid].map((cuboid) =>
     blockEntityCuboidPart(id, properties, `player-head:${wallMounted ? 'wall' : 'floor'}:${cuboid.name}`, cuboid, texture, headRotation),
@@ -533,6 +534,10 @@ function syntheticPlayerHeadParts(
 
 function isPlayerHeadBlock(id: string): boolean {
   return id === 'minecraft:player_head' || id === 'minecraft:player_wall_head';
+}
+
+function playerHeadTextureId(textureHash: string | undefined): string {
+  return textureHash ? `${playerHeadTexturePrefix}${textureHash}` : 'schemview:entity/player/default';
 }
 
 function headRotationFromProperty(rotation: string | undefined): number {
@@ -1152,6 +1157,10 @@ export function textureUrl(textureId: string): string {
   const normalized = normalizeResourceId(textureId, 'block');
   if (normalized === 'schemview:entity/player/default') {
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(defaultPlayerSkinSvg)}`;
+  }
+
+  if (normalized.startsWith(playerHeadTexturePrefix)) {
+    return `https://textures.minecraft.net/texture/${normalized.slice(playerHeadTexturePrefix.length)}`;
   }
 
   return `${assetRoot}/textures/${resourcePath(normalized)}.png`;

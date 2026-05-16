@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { Viewer3D, type Viewer3DHandle } from './components/Viewer3D';
 import { resolveBlockParts, textureUrl, type ModelFaceName } from './lib/minecraftModels';
-import { createSampleModel, parseSchematic, type SchematicModel, type VoxelBlock } from './lib/schematic';
+import { createSampleModel, parseSchematic, type PlayerHeadTexture, type SchematicModel, type VoxelBlock } from './lib/schematic';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -43,6 +43,7 @@ function App() {
   const [selectedBlock, setSelectedBlock] = useState<VoxelBlock | null>(null);
   const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
   const [hiddenMaterialIds, setHiddenMaterialIds] = useState<Set<string>>(() => new Set());
+  const [playerHeadSelections, setPlayerHeadSelections] = useState<Record<string, string>>({});
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const viewerRef = useRef<Viewer3DHandle | null>(null);
@@ -89,6 +90,11 @@ function App() {
   }, [model]);
 
   const selectedMaterial = materials.find((material) => material.id === selectedMaterialId) ?? null;
+  const playerHeadOptions = useMemo(() => uniquePlayerHeadTextures(model), [model]);
+  const selectedBlockKey = selectedBlock ? blockPositionKey(selectedBlock) : null;
+  const selectedPlayerHeadTextureId = selectedBlock
+    ? playerHeadSelections[blockPositionKey(selectedBlock)] ?? selectedBlock.playerHeadTexture?.id ?? playerHeadOptions[0]?.id ?? ''
+    : '';
 
   useEffect(() => {
     if (!model || !selectedBlock) {
@@ -121,6 +127,7 @@ function App() {
       setSingleLayer(false);
       setSelectedBlock(null);
       setSelectedMaterialId(null);
+      setPlayerHeadSelections({});
       setHiddenMaterialIds(new Set());
       setLoadState('ready');
     } catch (caught) {
@@ -180,6 +187,15 @@ function App() {
     });
   };
 
+  const choosePlayerHeadTexture = (textureId: string) => {
+    if (!selectedBlockKey) return;
+
+    setPlayerHeadSelections((current) => ({
+      ...current,
+      [selectedBlockKey]: textureId,
+    }));
+  };
+
   return (
     <main
       className={`app-shell${isDraggingFile ? ' is-dragging-file' : ''}`}
@@ -236,6 +252,7 @@ function App() {
           autoRotate={false}
           showGrid
           hiddenMaterialIds={hiddenMaterialIds}
+          playerHeadSelections={playerHeadSelections}
           selectedBlock={selectedBlock}
           onBlockSelect={setSelectedBlock}
           viewerRef={viewerRef}
@@ -295,6 +312,35 @@ function App() {
                       <dd>{selectedBlockWorldZ}</dd>
                     </div>
                   </dl>
+                  {isPlayerHeadBlock(selectedBlock) && playerHeadOptions.length > 0 && (
+                    <div className="player-head-picker">
+                      <label htmlFor="player-head-select">Displayed head</label>
+                      <select
+                        id="player-head-select"
+                        value={selectedPlayerHeadTextureId}
+                        onChange={(event) => choosePlayerHeadTexture(event.target.value)}
+                      >
+                        {playerHeadOptions.map((texture, index) => (
+                          <option key={texture.id} value={texture.id}>
+                            {playerHeadLabel(texture, index)}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="player-head-options" aria-label="Player head texture choices">
+                        {playerHeadOptions.map((texture, index) => (
+                          <button
+                            className={selectedPlayerHeadTextureId === texture.id ? 'is-selected' : ''}
+                            key={texture.id}
+                            type="button"
+                            onClick={() => choosePlayerHeadTexture(texture.id)}
+                            title={playerHeadLabel(texture, index)}
+                          >
+                            <img src={texture.url} alt="" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <p className="selection-empty">Click a visible block in the viewport.</p>
@@ -477,6 +523,31 @@ function isFullCubePreview(parts: Awaited<ReturnType<typeof resolveBlockParts>>)
 
 function materialIdForBlock(block: VoxelBlock): string {
   return block.stateKey.split('[', 1)[0];
+}
+
+function blockPositionKey(block: VoxelBlock): string {
+  return `${block.x},${block.y},${block.z}`;
+}
+
+function isPlayerHeadBlock(block: VoxelBlock): boolean {
+  return block.name === 'minecraft:player_head' || block.name === 'minecraft:player_wall_head';
+}
+
+function uniquePlayerHeadTextures(model: SchematicModel | null): PlayerHeadTexture[] {
+  if (!model) return [];
+
+  const textures = new Map<string, PlayerHeadTexture>();
+  for (const block of model.blocks) {
+    if (block.playerHeadTexture) {
+      textures.set(block.playerHeadTexture.id, block.playerHeadTexture);
+    }
+  }
+
+  return Array.from(textures.values());
+}
+
+function playerHeadLabel(texture: PlayerHeadTexture, index: number): string {
+  return `Head ${index + 1} (${texture.id.slice(0, 8)})`;
 }
 
 function formatBlockName(id: string): string {

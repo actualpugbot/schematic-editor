@@ -14,6 +14,7 @@ interface Viewer3DProps {
   visibleLayer: number;
   singleLayer: boolean;
   hiddenMaterialIds: Set<string>;
+  playerHeadSelections: Record<string, string>;
   autoRotate: boolean;
   showGrid: boolean;
   selectedBlock: VoxelBlock | null;
@@ -52,6 +53,7 @@ const oppositeFaces: Record<ModelFaceName, ModelFaceName> = {
 const geometryCache = new Map<string, THREE.BufferGeometry>();
 const materialCache = new Map<string, THREE.Material>();
 const textureLoader = new THREE.TextureLoader();
+textureLoader.setCrossOrigin('anonymous');
 const defaultFoliageTint = 0x48b518;
 const birchFoliageTint = 0x80a755;
 const spruceFoliageTint = 0x619961;
@@ -260,7 +262,7 @@ export function Viewer3D(props: InternalViewerProps) {
 
     let cancelled = false;
 
-    void createBlockMeshes(filteredBlocks).then((meshes) => {
+    void createBlockMeshes(filteredBlocks, props.playerHeadSelections).then((meshes) => {
       if (cancelled) return;
       clearGroup(group, false);
       for (const mesh of meshes) {
@@ -272,7 +274,7 @@ export function Viewer3D(props: InternalViewerProps) {
     return () => {
       cancelled = true;
     };
-  }, [filteredBlocks, props.model]);
+  }, [filteredBlocks, props.model, props.playerHeadSelections]);
 
   useEffect(() => {
     const gridGroup = gridRef.current;
@@ -308,7 +310,7 @@ export function Viewer3D(props: InternalViewerProps) {
     let cancelled = false;
     selectionBox.visible = false;
 
-    void createSelectionBoxGeometry(block, filteredBlocks).then((geometry) => {
+    void createSelectionBoxGeometry(block, filteredBlocks, props.playerHeadSelections).then((geometry) => {
       if (cancelled) {
         geometry.dispose();
         return;
@@ -327,7 +329,15 @@ export function Viewer3D(props: InternalViewerProps) {
     return () => {
       cancelled = true;
     };
-  }, [filteredBlocks, props.hiddenMaterialIds, props.model, props.selectedBlock, props.singleLayer, props.visibleLayer]);
+  }, [
+    filteredBlocks,
+    props.hiddenMaterialIds,
+    props.model,
+    props.playerHeadSelections,
+    props.selectedBlock,
+    props.singleLayer,
+    props.visibleLayer,
+  ]);
 
   useEffect(() => {
     const camera = cameraRef.current;
@@ -341,7 +351,10 @@ export function Viewer3D(props: InternalViewerProps) {
   return <div className="viewer-canvas" data-testid="viewer-canvas" ref={containerRef} />;
 }
 
-async function createBlockMeshes(blocks: VoxelBlock[]): Promise<THREE.InstancedMesh[]> {
+async function createBlockMeshes(
+  blocks: VoxelBlock[],
+  playerHeadSelections: Record<string, string>,
+): Promise<THREE.InstancedMesh[]> {
   const groups = new Map<
     string,
     {
@@ -351,7 +364,7 @@ async function createBlockMeshes(blocks: VoxelBlock[]): Promise<THREE.InstancedM
       blocks: VoxelBlock[];
     }
   >();
-  const states = Array.from(new Set(blocks.map((block) => block.stateKey)));
+  const states = Array.from(new Set(blocks.map((block) => renderStateKeyForBlock(block, playerHeadSelections))));
   const resolvedStates = await Promise.all(states.map(async (state) => [state, await resolveBlockParts(state)] as const));
   const partsByState = new Map(resolvedStates);
   const occludingFacesByBlock = new Map<string, Set<ModelFaceName>>();
@@ -360,7 +373,7 @@ async function createBlockMeshes(blocks: VoxelBlock[]): Promise<THREE.InstancedM
   const partsByBlock = new Map<string, ResolvedBlockPart[]>();
 
   for (const block of blocks) {
-    const parts = partsByState.get(block.stateKey) ?? [];
+    const parts = partsByState.get(renderStateKeyForBlock(block, playerHeadSelections)) ?? [];
     partsByBlock.set(blockPositionKey(block), parts);
     occludingFacesByBlock.set(blockPositionKey(block), occludingFacesForParts(parts));
     boundaryFacesByBlock.set(blockPositionKey(block), boundaryFacesForParts(parts));
@@ -368,7 +381,7 @@ async function createBlockMeshes(blocks: VoxelBlock[]): Promise<THREE.InstancedM
   }
 
   for (const block of blocks) {
-    const parts = partsByState.get(block.stateKey) ?? [];
+    const parts = partsByState.get(renderStateKeyForBlock(block, playerHeadSelections)) ?? [];
 
     for (const part of parts) {
       const hiddenFaces = hiddenFacesForPart(
@@ -425,6 +438,36 @@ async function createBlockMeshes(blocks: VoxelBlock[]): Promise<THREE.InstancedM
 
 function blockPositionKey(block: VoxelBlock): string {
   return `${block.x},${block.y},${block.z}`;
+}
+
+function renderStateKeyForBlock(block: VoxelBlock, playerHeadSelections: Record<string, string>): string {
+  if (!block.playerHeadTexture && block.name !== 'minecraft:player_head' && block.name !== 'minecraft:player_wall_head') {
+    return block.stateKey;
+  }
+
+  const textureId = playerHeadSelections[blockPositionKey(block)] ?? block.playerHeadTexture?.id;
+  if (!textureId) return block.stateKey;
+
+  return setBlockStateProperty(block.stateKey, 'schemview_head', textureId);
+}
+
+function setBlockStateProperty(stateKey: string, key: string, value: string): string {
+  const match = /^(?<id>[^\[]+)(?:\[(?<properties>.*)\])?$/.exec(stateKey);
+  if (!match?.groups) return stateKey;
+
+  const properties = new Map<string, string>();
+  const rawProperties = match.groups.properties;
+  if (rawProperties) {
+    for (const pair of rawProperties.split(',')) {
+      const [propertyKey, propertyValue] = pair.split('=');
+      if (propertyKey && propertyValue !== undefined && propertyKey !== key) {
+        properties.set(propertyKey, propertyValue);
+      }
+    }
+  }
+  properties.set(key, value);
+
+  return `${match.groups.id}[${Array.from(properties.entries()).map(([propertyKey, propertyValue]) => `${propertyKey}=${propertyValue}`).join(',')}]`;
 }
 
 function blockMaterialId(block: VoxelBlock): string {
@@ -595,23 +638,25 @@ function createSelectionBox(): THREE.LineSegments {
 async function createSelectionBoxGeometry(
   selectedBlock: VoxelBlock,
   visibleBlocks: VoxelBlock[],
+  playerHeadSelections: Record<string, string>,
 ): Promise<THREE.BufferGeometry> {
-  const visibleFaces = await visibleBoundaryFacesForBlock(selectedBlock, visibleBlocks);
+  const visibleFaces = await visibleBoundaryFacesForBlock(selectedBlock, visibleBlocks, playerHeadSelections);
   return createSelectionEdgesGeometry(visibleFaces);
 }
 
 async function visibleBoundaryFacesForBlock(
   selectedBlock: VoxelBlock,
   visibleBlocks: VoxelBlock[],
+  playerHeadSelections: Record<string, string>,
 ): Promise<Set<ModelFaceName>> {
-  const states = Array.from(new Set(visibleBlocks.map((block) => block.stateKey)));
+  const states = Array.from(new Set(visibleBlocks.map((block) => renderStateKeyForBlock(block, playerHeadSelections))));
   const resolvedStates = await Promise.all(states.map(async (state) => [state, await resolveBlockParts(state)] as const));
   const partsByState = new Map(resolvedStates);
   const occludingFacesByBlock = new Map<string, Set<ModelFaceName>>();
   const partsByBlock = new Map<string, ResolvedBlockPart[]>();
 
   for (const block of visibleBlocks) {
-    const parts = partsByState.get(block.stateKey) ?? [];
+    const parts = partsByState.get(renderStateKeyForBlock(block, playerHeadSelections)) ?? [];
     const key = blockPositionKey(block);
     partsByBlock.set(key, parts);
     occludingFacesByBlock.set(key, occludingFacesForParts(parts));
@@ -628,7 +673,7 @@ async function visibleBoundaryFacesForBlock(
       continue;
     }
 
-    const selectedParts = partsByState.get(selectedBlock.stateKey) ?? [];
+    const selectedParts = partsByState.get(renderStateKeyForBlock(selectedBlock, playerHeadSelections)) ?? [];
     const neighborParts = partsByBlock.get(neighborKey) ?? [];
     if (selectedParts.some((part) => waterNeighborHidesFace(part, face, face, neighborParts))) {
       visibleFaces.delete(face);

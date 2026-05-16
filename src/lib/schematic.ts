@@ -31,6 +31,12 @@ export interface VoxelBlock {
   stateKey: string;
   color: number;
   material: string;
+  playerHeadTexture?: PlayerHeadTexture;
+}
+
+export interface PlayerHeadTexture {
+  id: string;
+  url: string;
 }
 
 export interface SchematicModel {
@@ -447,6 +453,7 @@ function parseLitematic(root: NbtCompound, fileName = 'Uploaded litematic'): Sch
     maxZ = Math.max(maxZ, bounds.maxZ);
 
     const paletteEntries = palette.map(readLitematicPaletteEntry);
+    const playerHeadTextures = readLitematicPlayerHeadTextures(rawRegion);
     const totalBlocks = dimensions.width * dimensions.height * dimensions.length;
     const bitsPerEntry = Math.max(2, Math.ceil(Math.log2(Math.max(1, paletteEntries.length))));
     const blockIds = decodePackedLongArray(blockStates, totalBlocks, bitsPerEntry);
@@ -474,6 +481,7 @@ function parseLitematic(root: NbtCompound, fileName = 'Uploaded litematic'): Sch
         stateKey,
         color: appearance.color,
         material: appearance.label,
+        playerHeadTexture: playerHeadTextures.get(positionKey(worldX, worldY, worldZ)),
       });
     }
   }
@@ -605,6 +613,65 @@ function readLitematicPaletteEntry(value: unknown): string {
     .join(',');
 
   return `${name}[${serializedProperties}]`;
+}
+
+function readLitematicPlayerHeadTextures(region: NbtCompound): Map<string, PlayerHeadTexture> {
+  const texturesByPosition = new Map<string, PlayerHeadTexture>();
+  const tileEntities = asList(region.TileEntities);
+  if (!tileEntities) return texturesByPosition;
+
+  for (const rawTileEntity of tileEntities) {
+    if (!isCompound(rawTileEntity) || asString(rawTileEntity.id) !== 'minecraft:skull') continue;
+
+    const x = asNumber(rawTileEntity.x, Number.NaN);
+    const y = asNumber(rawTileEntity.y, Number.NaN);
+    const z = asNumber(rawTileEntity.z, Number.NaN);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+
+    const texture = readPlayerHeadTexture(rawTileEntity);
+    if (!texture) continue;
+
+    texturesByPosition.set(positionKey(x, y, z), texture);
+  }
+
+  return texturesByPosition;
+}
+
+function readPlayerHeadTexture(tileEntity: NbtCompound): PlayerHeadTexture | null {
+  const rawValue = readProfileTextureValue(tileEntity.profile) ?? readLegacyProfileTextureValue(tileEntity.SkullOwner);
+  if (!rawValue) return null;
+
+  try {
+    const decoded = JSON.parse(atob(rawValue)) as { textures?: { SKIN?: { url?: string } } };
+    const rawUrl = decoded.textures?.SKIN?.url;
+    if (!rawUrl) return null;
+
+    const id = rawUrl.split('/').filter(Boolean).at(-1);
+    if (!id) return null;
+
+    return {
+      id,
+      url: `https://textures.minecraft.net/texture/${id}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readProfileTextureValue(profile: unknown): string | null {
+  if (!isCompound(profile)) return null;
+
+  const properties = asList(profile.properties);
+  const textureProperty = properties?.find((property) => isCompound(property) && asString(property.name) === 'textures');
+  return isCompound(textureProperty) ? asString(textureProperty.value) : null;
+}
+
+function readLegacyProfileTextureValue(skullOwner: unknown): string | null {
+  if (!isCompound(skullOwner) || !isCompound(skullOwner.Properties)) return null;
+
+  const textures = asList(skullOwner.Properties.textures);
+  const textureProperty = textures?.find(isCompound);
+  return isCompound(textureProperty) ? asString(textureProperty.Value ?? textureProperty.value) : null;
 }
 
 function readVector3(value: unknown, fallback: { x: number; y: number; z: number }) {
