@@ -5,13 +5,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Cuboid,
-  Eye,
   FileUp,
-  Grid3X3,
   Layers3,
   Rotate3D,
   ScanSearch,
-  Sparkles,
 } from 'lucide-react';
 import { Viewer3D, type Viewer3DHandle } from './components/Viewer3D';
 import { createSampleModel, parseSchematic, type SchematicModel, type VoxelBlock } from './lib/schematic';
@@ -24,8 +21,6 @@ function App() {
   const [error, setError] = useState('');
   const [visibleLayer, setVisibleLayer] = useState(model?.dimensions.height ? model.dimensions.height - 1 : 0);
   const [singleLayer, setSingleLayer] = useState(false);
-  const [autoRotate, setAutoRotate] = useState(false);
-  const [showGrid, setShowGrid] = useState(true);
   const [selectedBlock, setSelectedBlock] = useState<VoxelBlock | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -122,16 +117,6 @@ function App() {
     if (file) void handleFile(file);
   };
 
-  const useSample = () => {
-    const sample = createSampleModel();
-    setModel(sample);
-    setVisibleLayer(sample.dimensions.height - 1);
-    setSingleLayer(false);
-    setSelectedBlock(null);
-    setError('');
-    setLoadState('ready');
-  };
-
   const stepLayer = (delta: number) => {
     if (!model) return;
     setVisibleLayer((current) => clamp(current + delta, 0, model.dimensions.height - 1));
@@ -192,8 +177,8 @@ function App() {
           model={model}
           visibleLayer={visibleLayer}
           singleLayer={singleLayer}
-          autoRotate={autoRotate}
-          showGrid={showGrid}
+          autoRotate={false}
+          showGrid
           selectedBlock={selectedBlock}
           onBlockSelect={setSelectedBlock}
           viewerRef={viewerRef}
@@ -214,22 +199,6 @@ function App() {
       </section>
 
       <aside className="control-rail" aria-label="Schematic controls">
-        <section className="drop-zone">
-          <div className="drop-icon" aria-hidden="true">
-            <FileUp size={22} />
-          </div>
-          <div>
-            <h2>Open a schematic</h2>
-            <p>.litematic, .schem, .schematic, or NBT files stay in this browser.</p>
-          </div>
-          <button className="secondary-button" type="button" onClick={() => inputRef.current?.click()}>
-            Choose file
-          </button>
-          <button className="text-button" type="button" onClick={useSample}>
-            Load sample
-          </button>
-        </section>
-
         {error && (
           <section className="notice error" role="alert">
             <ScanSearch size={18} />
@@ -242,12 +211,6 @@ function App() {
             <section className="stats-grid" aria-label="Schematic summary">
               <Metric icon={<Box size={17} />} label="Blocks" value={model.blocks.length.toLocaleString()} />
               <Metric icon={<Layers3 size={17} />} label="Height" value={model.dimensions.height.toString()} />
-              <Metric
-                icon={<Grid3X3 size={17} />}
-                label="Footprint"
-                value={`${model.dimensions.width} x ${model.dimensions.length}`}
-              />
-              <Metric icon={<Sparkles size={17} />} label="Palette" value={model.paletteSize.toString()} />
             </section>
 
             <section className="selected-block" aria-live="polite">
@@ -315,28 +278,6 @@ function App() {
                 </label>
                 <span>{(model.layerCounts[visibleLayer] ?? 0).toLocaleString()} blocks</span>
               </div>
-            </section>
-
-            <section className="view-control">
-              <div className="section-heading compact">
-                <div>
-                  <p className="eyebrow">360 view</p>
-                  <h2>Orbit</h2>
-                </div>
-                <Eye size={18} />
-              </div>
-              <label className="switch-row">
-                <span>Auto rotate</span>
-                <input type="checkbox" checked={autoRotate} onChange={(event) => setAutoRotate(event.target.checked)} />
-              </label>
-              <label className="switch-row">
-                <span>Footprint grid</span>
-                <input type="checkbox" checked={showGrid} onChange={(event) => setShowGrid(event.target.checked)} />
-              </label>
-              <button className="wide-button" type="button" onClick={() => viewerRef.current?.spinOnce()}>
-                <Rotate3D size={18} />
-                One full turn
-              </button>
             </section>
 
             <section className="material-list">
