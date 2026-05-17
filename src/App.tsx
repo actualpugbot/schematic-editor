@@ -50,18 +50,9 @@ function App() {
   const materialItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const dragDepthRef = useRef(0);
   const visibleWorldY = model ? model.origin.y + visibleLayer : visibleLayer;
-  const lowestWorldY = model ? model.origin.y : 0;
   const selectedBlockWorldX = selectedBlock && model ? model.origin.x + selectedBlock.x : null;
   const selectedBlockWorldY = selectedBlock && model ? model.origin.y + selectedBlock.y : null;
   const selectedBlockWorldZ = selectedBlock && model ? model.origin.z + selectedBlock.z : null;
-
-  const visibleBlockCount = useMemo(() => {
-    if (!model) return 0;
-    return model.blocks.filter((block) => {
-      if (hiddenMaterialIds.has(materialIdForBlock(block))) return false;
-      return singleLayer ? block.y === visibleLayer : block.y <= visibleLayer;
-    }).length;
-  }, [hiddenMaterialIds, model, singleLayer, visibleLayer]);
 
   const currentLayerBlockCount = useMemo(() => {
     if (!model) return 0;
@@ -304,19 +295,6 @@ function App() {
           onBlockSelect={setSelectedBlock}
           viewerRef={viewerRef}
         />
-
-        <div className="view-presets" aria-label="Camera presets">
-          <button type="button" onClick={() => viewerRef.current?.setPreset('front')}>Front</button>
-          <button type="button" onClick={() => viewerRef.current?.setPreset('right')}>Right</button>
-          <button type="button" onClick={() => viewerRef.current?.setPreset('back')}>Back</button>
-          <button type="button" onClick={() => viewerRef.current?.setPreset('left')}>Left</button>
-          <button type="button" onClick={() => viewerRef.current?.setPreset('top')}>Top</button>
-        </div>
-
-        <div className="viewport-status" aria-live="polite">
-          <span>{loadState === 'loading' ? 'Reading file...' : `${visibleBlockCount.toLocaleString()} visible blocks`}</span>
-          <span>{singleLayer ? `Y ${visibleWorldY}` : `Y ${lowestWorldY}-${visibleWorldY}`}</span>
-        </div>
       </section>
 
       <aside className="control-rail" aria-label="Schematic controls">

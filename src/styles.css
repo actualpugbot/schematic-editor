@@ -58,7 +58,8 @@ select:focus-visible {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 390px);
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
 }
 
 .drop-overlay {
@@ -102,7 +103,7 @@ select:focus-visible {
 .viewport-panel {
   position: relative;
   min-width: 0;
-  min-height: 100vh;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -120,9 +121,7 @@ select:focus-visible {
 }
 
 .brand-lockup,
-.topbar-actions,
-.view-presets,
-.viewport-status {
+.topbar-actions {
   pointer-events: auto;
 }
 
@@ -187,7 +186,6 @@ h2 {
 .secondary-button,
 .wide-button,
 .icon-button,
-.view-presets button,
 .stepper button,
 .text-button {
   min-height: 42px;
@@ -240,7 +238,6 @@ h2 {
 .secondary-button:hover,
 .wide-button:hover,
 .icon-button:hover,
-.view-presets button:hover,
 .stepper button:hover {
   transform: translateY(-1px);
   border-color: rgba(37, 40, 36, 0.3);
@@ -261,55 +258,15 @@ h2 {
   height: 100%;
 }
 
-.view-presets {
-  position: absolute;
-  z-index: 4;
-  left: 22px;
-  bottom: 22px;
-  display: flex;
-  gap: 7px;
-  padding: 7px;
-  background: color-mix(in oklch, var(--paper-strong), transparent 7%);
-  border: 1px solid rgba(93, 76, 53, 0.2);
-  box-shadow: var(--shadow);
-}
-
-.view-presets button {
-  min-width: 54px;
-  padding: 0 10px;
-  background: transparent;
-  color: var(--stone);
-  font-size: 0.8rem;
-  font-weight: 900;
-}
-
-.viewport-status {
-  position: absolute;
-  right: 22px;
-  bottom: 22px;
-  z-index: 4;
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.viewport-status span {
-  padding: 9px 11px;
-  background: rgba(32, 35, 31, 0.82);
-  color: #f7f1e5;
-  font-size: 0.78rem;
-  font-weight: 800;
-}
-
 .control-rail {
   position: relative;
   z-index: 6;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-height: 0;
   max-height: 100vh;
-  overflow: auto;
+  overflow: hidden;
   padding: 18px;
   background: color-mix(in oklch, var(--paper-strong), var(--paper) 20%);
   border-left: 1px solid var(--line);
@@ -423,6 +380,12 @@ h2 {
 .material-list,
 .notice {
   padding: 14px;
+}
+
+.summary-card,
+.layer-control,
+.notice {
+  flex: 0 0 auto;
 }
 
 .player-head-picker {
@@ -571,10 +534,18 @@ h2 {
 
 .material-stack {
   display: grid;
+  flex: 0 1 auto;
   gap: 8px;
-  max-height: min(42vh, 430px);
+  min-height: 0;
   overflow: auto;
   padding-right: 3px;
+}
+
+.material-list {
+  display: flex;
+  flex: 0 1 auto;
+  min-height: 0;
+  flex-direction: column;
 }
 
 .material-search {
@@ -818,6 +789,8 @@ h2 {
   .app-shell {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(56vh, 62vh) auto;
+    height: auto;
+    min-height: 100vh;
   }
 
   .viewport-panel {
@@ -826,6 +799,7 @@ h2 {
 
   .control-rail {
     max-height: none;
+    overflow: visible;
     border-left: 0;
     border-top: 1px solid var(--line);
     display: grid;
@@ -836,6 +810,10 @@ h2 {
   .drop-zone,
   .summary-card {
     grid-column: 1 / -1;
+  }
+
+  .material-list {
+    max-height: calc(100vh - 24px);
   }
 }
 
@@ -858,20 +836,6 @@ h2 {
 
   .topbar-actions {
     align-self: flex-end;
-  }
-
-  .view-presets {
-    left: 12px;
-    right: 12px;
-    bottom: 12px;
-    overflow-x: auto;
-  }
-
-  .viewport-status {
-    left: 12px;
-    right: 12px;
-    bottom: 70px;
-    justify-content: flex-start;
   }
 
   .control-rail {

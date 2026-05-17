@@ -22,10 +22,7 @@ interface Viewer3DProps {
   onReady?: () => void;
 }
 
-type CameraPreset = 'front' | 'right' | 'back' | 'left' | 'top';
-
 export interface Viewer3DHandle {
-  setPreset: (preset: CameraPreset) => void;
   spinOnce: () => void;
 }
 
@@ -209,12 +206,6 @@ export function Viewer3D(props: InternalViewerProps) {
 
     frameRef.current = window.requestAnimationFrame(animate);
     props.viewerRef.current = {
-      setPreset: (preset) => {
-        const latestModel = latestModelRef.current;
-        if (latestModel) {
-          setCameraPreset(preset, latestModel.dimensions, camera, controls);
-        }
-      },
       spinOnce: () => {
         spinRef.current = {
           start: performance.now(),
@@ -1178,30 +1169,6 @@ function fitCameraToModel(
   camera.near = Math.max(0.1, radius / 100);
   camera.far = Math.max(500, radius * 12);
   camera.updateProjectionMatrix();
-  controls.update();
-}
-
-function setCameraPreset(
-  preset: CameraPreset,
-  dimensions: SchematicDimensions,
-  camera: THREE.PerspectiveCamera,
-  controls: OrbitControls,
-) {
-  const radius = Math.max(dimensions.width, dimensions.length, dimensions.height, 8) * 1.85;
-  const target = new THREE.Vector3(0, Math.max(0, dimensions.height / 2 - 0.5), 0);
-  const y = preset === 'top' ? radius : radius * 0.48;
-
-  const positions: Record<CameraPreset, THREE.Vector3> = {
-    front: new THREE.Vector3(0, y, radius),
-    right: new THREE.Vector3(radius, y, 0),
-    back: new THREE.Vector3(0, y, -radius),
-    left: new THREE.Vector3(-radius, y, 0),
-    top: new THREE.Vector3(0.01, radius, 0.01),
-  };
-
-  controls.target.copy(target);
-  camera.position.copy(positions[preset]);
-  camera.lookAt(target);
   controls.update();
 }
 
