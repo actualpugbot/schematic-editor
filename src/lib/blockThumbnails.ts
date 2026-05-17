@@ -408,17 +408,36 @@ async function loadTexture(textureId: string): Promise<THREE.Texture> {
   if (cached) return cached;
 
   const promise = textureLoader.loadAsync(textureUrl(textureId)).then((texture) => {
-    const cutout = isAlphaCutoutTexture(textureId);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.magFilter = THREE.NearestFilter;
-    texture.minFilter = cutout ? THREE.NearestFilter : THREE.NearestMipmapNearestFilter;
-    texture.generateMipmaps = !cutout;
-    texture.wrapS = THREE.ClampToEdgeWrapping;
-    texture.wrapT = THREE.ClampToEdgeWrapping;
+    configureMinecraftTexture(texture, textureId);
+    cropAnimatedTextureToFirstFrame(texture);
     return texture;
   });
   textureCache.set(textureId, promise);
   return promise;
+}
+
+function configureMinecraftTexture(texture: THREE.Texture, textureId: string) {
+  const cutout = isAlphaCutoutTexture(textureId);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = cutout ? THREE.NearestFilter : THREE.NearestMipmapNearestFilter;
+  texture.generateMipmaps = !cutout;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+}
+
+function cropAnimatedTextureToFirstFrame(texture: THREE.Texture) {
+  const image = texture.image as { width?: number; height?: number } | undefined;
+  const width = image?.width ?? 0;
+  const height = image?.height ?? 0;
+  if (width <= 0 || height <= width || height % width !== 0) return;
+
+  const frameRatio = width / height;
+  texture.repeat.set(1, frameRatio);
+  texture.offset.set(0, 1 - frameRatio);
+  texture.minFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
 }
 
 function colorMaterial(color: number): THREE.Material {
