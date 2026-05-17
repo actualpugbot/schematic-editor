@@ -44,6 +44,7 @@ function App() {
   const [playerHeadSelections, setPlayerHeadSelections] = useState<Record<string, string>>({});
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('materials');
+  const [summaryDismissed, setSummaryDismissed] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const viewerRef = useRef<Viewer3DHandle | null>(null);
   const materialItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -100,8 +101,6 @@ function App() {
     ? playerHeadSelections[blockPositionKey(selectedBlock)] ?? selectedBlock.playerHeadTexture?.id ?? playerHeadOptions[0]?.id ?? ''
     : '';
   const totalBlocks = model?.blocks.length ?? 0;
-  const totalStacks = model ? materials.reduce((sum, material) => sum + Math.ceil(material.count / itemStackSize(material.id)), 0) : 0;
-  const totalShulkerBoxes = Math.ceil(totalStacks / 27);
 
   useEffect(() => {
     if (!model || !selectedBlock) {
@@ -159,6 +158,7 @@ function App() {
       setMaterialSearch('');
       setPlayerHeadSelections({});
       setHiddenMaterialIds(new Set());
+      setSummaryDismissed(false);
       setLoadState('ready');
     } catch (caught) {
       setLoadState('error');
@@ -363,15 +363,27 @@ function App() {
             </section>
           )}
 
-          {model && (
+          {model && !summaryDismissed && (
             <section className="build-summary-card" aria-label="Build summary">
               <div className="section-heading compact">
                 <div>
                   <p className="eyebrow">Build Summary</p>
-                  <h2>{model.dimensions.width} x {model.dimensions.height} x {model.dimensions.length}</h2>
                 </div>
+                <button
+                  type="button"
+                  className="summary-dismiss"
+                  onClick={() => setSummaryDismissed(true)}
+                  title="Dismiss build summary"
+                  aria-label="Dismiss build summary"
+                >
+                  <X size={14} />
+                </button>
               </div>
               <dl className="summary-metrics">
+                <div>
+                  <dt>Dimensions</dt>
+                  <dd>{model.dimensions.width} x {model.dimensions.height} x {model.dimensions.length}</dd>
+                </div>
                 <div>
                   <dt>Total Blocks</dt>
                   <dd>{totalBlocks.toLocaleString()}</dd>
@@ -379,20 +391,6 @@ function App() {
                 <div>
                   <dt>Unique Materials</dt>
                   <dd>{materials.length.toLocaleString()}</dd>
-                </div>
-                <div>
-                  <dt>Visible Layer</dt>
-                  <dd>Y {visibleWorldY}</dd>
-                </div>
-              </dl>
-              <dl className="storage-metrics">
-                <div>
-                  <dt>Est. Stacks</dt>
-                  <dd>{totalStacks.toLocaleString()}</dd>
-                </div>
-                <div>
-                  <dt>Est. Shulker Boxes</dt>
-                  <dd>{totalShulkerBoxes.toLocaleString()}</dd>
                 </div>
               </dl>
             </section>
