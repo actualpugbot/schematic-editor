@@ -555,9 +555,6 @@ function syntheticBlockParts(
   properties: Record<string, string>,
   variantRotation: { x: number; y: number },
 ): ResolvedBlockPart[] {
-  const decoratedPotParts = syntheticDecoratedPotParts(id, properties, variantRotation);
-  if (decoratedPotParts.length > 0) return decoratedPotParts;
-
   const playerHeadParts = syntheticPlayerHeadParts(id, properties, variantRotation);
   if (playerHeadParts.length > 0) return playerHeadParts;
 
@@ -565,22 +562,6 @@ function syntheticBlockParts(
   if (movingPistonParts.length > 0) return movingPistonParts;
 
   return [];
-}
-
-function syntheticDecoratedPotParts(
-  id: string,
-  properties: Record<string, string>,
-  variantRotation: { x: number; y: number },
-): ResolvedBlockPart[] {
-  if (id !== 'minecraft:decorated_pot') return [];
-
-  const texture = 'minecraft:block/terracotta';
-
-  return [
-    syntheticCuboidPart(id, properties, 'decorated-pot-base', [4, 0, 4], [12, 2, 12], texture, variantRotation),
-    syntheticCuboidPart(id, properties, 'decorated-pot-body', [3, 2, 3], [13, 12, 13], texture, variantRotation),
-    syntheticCuboidPart(id, properties, 'decorated-pot-neck', [5, 12, 5], [11, 16, 11], texture, variantRotation),
-  ];
 }
 
 function syntheticPlayerHeadParts(
@@ -679,10 +660,135 @@ function specialBlockEntityParts(
   properties: Record<string, string>,
   variantRotation: { x: number; y: number },
 ): ResolvedBlockPart[] {
+  const decoratedPotParts = decoratedPotBlockEntityParts(id, properties, variantRotation);
+  if (decoratedPotParts.length > 0) return decoratedPotParts;
+
   const chestParts = chestBlockEntityParts(id, properties, variantRotation);
   if (chestParts.length > 0) return chestParts;
 
   return [];
+}
+
+function decoratedPotBlockEntityParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (id !== 'minecraft:decorated_pot') return [];
+
+  const baseTexture = 'minecraft:entity/decorated_pot/decorated_pot_base';
+  const sideTexture = 'minecraft:entity/decorated_pot/decorated_pot_side';
+  const rotation = {
+    x: variantRotation.x,
+    y: variantRotation.y + decoratedPotFacingRotation(properties.facing),
+  };
+
+  return [
+    blockEntityPlanePart(
+      id,
+      properties,
+      'decorated-pot:front',
+      'south',
+      [1, 0, 15],
+      [15, 16, 15],
+      sideTexture,
+      [16, 16],
+      [1, 0, 15, 16],
+      rotation,
+    ),
+    blockEntityPlanePart(
+      id,
+      properties,
+      'decorated-pot:back',
+      'north',
+      [1, 0, 1],
+      [15, 16, 1],
+      sideTexture,
+      [16, 16],
+      [1, 0, 15, 16],
+      rotation,
+    ),
+    blockEntityPlanePart(
+      id,
+      properties,
+      'decorated-pot:left',
+      'west',
+      [1, 0, 1],
+      [1, 16, 15],
+      sideTexture,
+      [16, 16],
+      [1, 0, 15, 16],
+      rotation,
+    ),
+    blockEntityPlanePart(
+      id,
+      properties,
+      'decorated-pot:right',
+      'east',
+      [15, 0, 1],
+      [15, 16, 15],
+      sideTexture,
+      [16, 16],
+      [1, 0, 15, 16],
+      rotation,
+    ),
+    blockEntityPlanePart(
+      id,
+      properties,
+      'decorated-pot:top',
+      'up',
+      [1, 16, 1],
+      [15, 16, 15],
+      baseTexture,
+      [32, 32],
+      [14, 13, 28, 27],
+      rotation,
+    ),
+    blockEntityPlanePart(
+      id,
+      properties,
+      'decorated-pot:bottom',
+      'down',
+      [1, 0, 1],
+      [15, 0, 15],
+      baseTexture,
+      [32, 32],
+      [0, 13, 14, 27],
+      rotation,
+    ),
+    blockEntityCuboidPart(
+      id,
+      properties,
+      'decorated-pot:neck',
+      { name: 'neck', from: [4.1, 12.1, 4.1], to: [11.9, 14.9, 11.9], textureOrigin: [0, 0] },
+      baseTexture,
+      rotation,
+      [32, 32],
+    ),
+    blockEntityCuboidPart(
+      id,
+      properties,
+      'decorated-pot:rim',
+      { name: 'rim', from: [4.8, 14.8, 4.8], to: [11.2, 16.2, 11.2], textureOrigin: [0, 5] },
+      baseTexture,
+      rotation,
+      [32, 32],
+    ),
+  ];
+}
+
+function decoratedPotFacingRotation(facing: string | undefined): number {
+  switch (facing) {
+    case 'north':
+      return 180;
+    case 'east':
+      return 270;
+    case 'west':
+      return 90;
+    case 'south':
+    default:
+      return 0;
+  }
 }
 
 function syntheticMovingPistonParts(
@@ -870,6 +976,7 @@ function blockEntityCuboidPart(
   cuboid: BlockEntityCuboid,
   texture: string,
   variantRotation: { x: number; y: number },
+  textureSize: [number, number] = [64, 64],
 ): ResolvedBlockPart {
   const width = cuboid.to[0] - cuboid.from[0];
   const height = cuboid.to[1] - cuboid.from[1];
@@ -887,7 +994,7 @@ function blockEntityCuboidPart(
     blockProperties: properties,
     from: cuboid.from,
     to: cuboid.to,
-    textureSize: [64, 64],
+    textureSize,
     shade: true,
     uvLock: false,
     variantRotation,
@@ -925,6 +1032,76 @@ function blockEntityCuboidPart(
       west: false,
       east: false,
     },
+  };
+}
+
+function blockEntityPlanePart(
+  id: string,
+  properties: Record<string, string>,
+  key: string,
+  face: ModelFaceName,
+  from: [number, number, number],
+  to: [number, number, number],
+  texture: string,
+  textureSize: [number, number],
+  uv: ModelFaceUv,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart {
+  return {
+    key: `block-entity::${id}::${key}::${variantRotation.x}::${variantRotation.y}`,
+    blockId: id,
+    blockProperties: properties,
+    from,
+    to,
+    textureSize,
+    shade: true,
+    uvLock: false,
+    variantRotation,
+    faceTextures: faceRecord(face, texture),
+    faceTints: {
+      down: null,
+      up: null,
+      north: null,
+      south: null,
+      west: null,
+      east: null,
+    },
+    faceUvs: faceRecord(face, uv),
+    faceRotations: {
+      down: 0,
+      up: 0,
+      north: 0,
+      south: 0,
+      west: 0,
+      east: 0,
+    },
+    faceCullfaces: {
+      down: null,
+      up: null,
+      north: null,
+      south: null,
+      west: null,
+      east: null,
+    },
+    faceTranslucencies: {
+      down: false,
+      up: false,
+      north: false,
+      south: false,
+      west: false,
+      east: false,
+    },
+  };
+}
+
+function faceRecord<T>(face: ModelFaceName, value: T): Record<ModelFaceName, T | null> {
+  return {
+    down: face === 'down' ? value : null,
+    up: face === 'up' ? value : null,
+    north: face === 'north' ? value : null,
+    south: face === 'south' ? value : null,
+    west: face === 'west' ? value : null,
+    east: face === 'east' ? value : null,
   };
 }
 
