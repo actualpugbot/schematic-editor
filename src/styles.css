@@ -842,7 +842,7 @@ dd {
   background-image: var(--block-thumbnail);
   background-repeat: no-repeat;
   background-position: center;
-  background-size: 32px 32px;
+  background-size: 28px 28px;
   image-rendering: pixelated;
 }
 
