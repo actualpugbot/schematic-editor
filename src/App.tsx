@@ -12,7 +12,7 @@ import {
   Search,
 } from 'lucide-react';
 import { Viewer3D, type Viewer3DHandle } from './components/Viewer3D';
-import { resolveBlockParts, textureUrl, type ModelFaceName } from './lib/minecraftModels';
+import { createBlockThumbnail } from './lib/blockThumbnails';
 import { createSampleModel, parseSchematic, type PlayerHeadTexture, type SchematicModel, type VoxelBlock } from './lib/schematic';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
@@ -23,14 +23,6 @@ interface MaterialSummary {
   count: number;
   color: number;
   stateKey: string;
-}
-
-interface BlockPreviewTextures {
-  shape: 'cube' | 'sprite';
-  top?: string;
-  left?: string;
-  right?: string;
-  sprite?: string;
 }
 
 function App() {
@@ -494,73 +486,42 @@ function App() {
 }
 
 function BlockPreview({ stateKey, color }: { stateKey: string; color: number }) {
-  const [textures, setTextures] = useState<BlockPreviewTextures | null>(null);
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void resolveBlockParts(stateKey).then((parts) => {
+    setThumbnailUrl(null);
+    void createBlockThumbnail(stateKey, color).then((url) => {
       if (cancelled) return;
-      setTextures(previewTextures(parts));
+      setThumbnailUrl(url);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [stateKey]);
+  }, [color, stateKey]);
 
   const fallbackColor = `#${color.toString(16).padStart(6, '0')}`;
 
   return (
     <span
       className="block-preview"
-      data-shape={textures?.shape ?? 'cube'}
+      data-shape="thumbnail"
       aria-hidden="true"
       style={{
         '--block-fallback': fallbackColor,
-        '--block-top': textures?.top ? `url("${textures.top}")` : 'none',
-        '--block-left': textures?.left ? `url("${textures.left}")` : 'none',
-        '--block-right': textures?.right ? `url("${textures.right}")` : 'none',
-        '--block-sprite': textures?.sprite ? `url("${textures.sprite}")` : 'none',
+        '--block-thumbnail': thumbnailUrl ? `url("${thumbnailUrl}")` : 'none',
       } as CSSProperties}
     >
-      <span className="block-preview-face block-preview-top" />
-      <span className="block-preview-face block-preview-left" />
-      <span className="block-preview-face block-preview-right" />
+      {!thumbnailUrl && (
+        <>
+          <span className="block-preview-face block-preview-top" />
+          <span className="block-preview-face block-preview-left" />
+          <span className="block-preview-face block-preview-right" />
+        </>
+      )}
     </span>
   );
-}
-
-function previewTextures(parts: Awaited<ReturnType<typeof resolveBlockParts>>): BlockPreviewTextures {
-  const part = parts.find((item) => item.faceTextures.up || item.faceTextures.north || item.faceTextures.east) ?? parts[0];
-  if (!part) return { shape: 'sprite' };
-
-  const faceTextures = part.faceTextures;
-  const fallbackTexture = part.isFallback ? part.blockId : null;
-  const top = faceTextures.up ?? faceTextures.north ?? faceTextures.east ?? faceTextures.south ?? faceTextures.west ?? faceTextures.down ?? fallbackTexture;
-  const left = faceTextures.west ?? faceTextures.north ?? faceTextures.east ?? top;
-  const right = faceTextures.east ?? faceTextures.south ?? faceTextures.north ?? top;
-  const sprite = faceTextures.north ?? faceTextures.south ?? faceTextures.east ?? faceTextures.west ?? faceTextures.up ?? faceTextures.down;
-
-  if (!isFullCubePreview(parts)) {
-    return {
-      shape: 'sprite',
-      sprite: sprite ? textureUrl(sprite) : undefined,
-    };
-  }
-
-  return {
-    shape: 'cube',
-    top: top ? textureUrl(top) : undefined,
-    left: left ? textureUrl(left) : undefined,
-    right: right ? textureUrl(right) : undefined,
-  };
-}
-
-function isFullCubePreview(parts: Awaited<ReturnType<typeof resolveBlockParts>>): boolean {
-  return parts.length === 1
-    && parts[0].from.every((value) => value === 0)
-    && parts[0].to.every((value) => value === 16)
-    && (parts[0].isFallback || (['down', 'up', 'north', 'south', 'west', 'east'] satisfies ModelFaceName[]).every((face) => parts[0].faceTextures[face]));
 }
 
 function materialIdForBlock(block: VoxelBlock): string {

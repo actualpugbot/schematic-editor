@@ -658,6 +658,7 @@ h2 {
 
 .block-preview {
   --block-fallback: #8b8f85;
+  --block-thumbnail: none;
   --block-top: none;
   --block-left: none;
   --block-right: none;
@@ -667,6 +668,14 @@ h2 {
   width: 28px;
   height: 28px;
   transform: translateY(1px);
+}
+
+.block-preview[data-shape='thumbnail'] {
+  background-image: var(--block-thumbnail);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 32px 32px;
+  image-rendering: pixelated;
 }
 
 .block-preview[data-shape='sprite'] {
