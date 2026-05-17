@@ -574,7 +574,8 @@ function coplanarBoundaryFaceShouldBeHidden(
 ): boolean {
   return (
     Boolean(part.faceCullfaces[face])
-    && (part.faceTranslucencies[face] || Boolean(neighborTranslucentBoundaryFaces?.has(neighborFace)))
+    && part.faceTranslucencies[face]
+    && Boolean(neighborTranslucentBoundaryFaces?.has(neighborFace))
   );
 }
 
@@ -773,6 +774,15 @@ function geometryForPart(part: ResolvedBlockPart): THREE.BufferGeometry {
     if (part.elementRotation.axis === 'x') rotation.makeRotationX(radians);
     if (part.elementRotation.axis === 'y') rotation.makeRotationY(radians);
     if (part.elementRotation.axis === 'z') rotation.makeRotationZ(radians);
+    if (part.elementRotation.rescale) {
+      const factor = 1 / Math.max(0.0001, Math.cos(radians));
+      const scale = new THREE.Matrix4().makeScale(
+        part.elementRotation.axis === 'x' ? 1 : factor,
+        part.elementRotation.axis === 'y' ? 1 : factor,
+        part.elementRotation.axis === 'z' ? 1 : factor,
+      );
+      rotation.multiply(scale);
+    }
 
     matrix.makeTranslation(origin.x, origin.y, origin.z);
     matrix.multiply(rotation);
@@ -1000,6 +1010,7 @@ function textureMaterial(textureId: string, tintColor: number | null, shade: boo
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
   const beaconCore = isBeaconCoreTexture(textureId);
+  const glowing = beaconCore || isGlowingTexture(textureId);
   const water = isWaterTexture(textureId);
   const glass = isGlassTexture(textureId);
   const opacity = translucent ? translucentTextureOpacity(textureId) : 1;
@@ -1010,8 +1021,8 @@ function textureMaterial(textureId: string, tintColor: number | null, shade: boo
     ? new THREE.MeshStandardMaterial({
         map: texture,
         color: tintColor ?? 0xffffff,
-        emissive: beaconCore ? 0x65fff5 : 0x000000,
-        emissiveIntensity: beaconCore ? 0.72 : 0,
+        emissive: glowing ? emissiveColor(textureId) : 0x000000,
+        emissiveIntensity: glowing ? 0.72 : 0,
         roughness: water ? 0.36 : 0.92,
         metalness: water ? 0.08 : 0.02,
         transparent: translucent,
@@ -1049,6 +1060,26 @@ function isRailPart(part: ResolvedBlockPart): boolean {
 
 function isBeaconCoreTexture(textureId: string): boolean {
   return textureId.replace(/^minecraft:/, '') === 'block/beacon';
+}
+
+function isGlowingTexture(textureId: string): boolean {
+  const path = textureId.replace(/^minecraft:/, '');
+  return (
+    path === 'block/sea_lantern'
+    || path === 'block/lantern'
+    || path === 'block/soul_lantern'
+    || path.startsWith('block/lava_')
+    || path.includes('campfire_fire')
+  );
+}
+
+function emissiveColor(textureId: string): number {
+  const path = textureId.replace(/^minecraft:/, '');
+  if (path === 'block/sea_lantern') return 0xcff8e9;
+  if (path === 'block/soul_lantern') return 0x64d6ff;
+  if (path.startsWith('block/lava_') || path.includes('campfire_fire')) return 0xff8a24;
+  if (path === 'block/lantern') return 0xffc552;
+  return 0x65fff5;
 }
 
 function isWaterTexture(textureId: string): boolean {

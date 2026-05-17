@@ -100,6 +100,7 @@ export type ModelFaceUv = [number, number, number, number];
 
 const assetRoot = '/minecraft-assets/assets/minecraft';
 const playerHeadTexturePrefix = 'schemview:entity/player/head/';
+const solidTexturePrefix = 'schemview:block/solid/';
 const blockstateCache = new Map<string, Promise<BlockstateJson | null>>();
 const modelCache = new Map<string, Promise<ModelJson | null>>();
 const resolvedModelCache = new Map<string, Promise<ResolvedModel | null>>();
@@ -503,8 +504,26 @@ function syntheticBlockParts(
   properties: Record<string, string>,
   variantRotation: { x: number; y: number },
 ): ResolvedBlockPart[] {
+  const chainParts = syntheticChainParts(id, properties, variantRotation);
+  if (chainParts.length > 0) return chainParts;
+
   const playerHeadParts = syntheticPlayerHeadParts(id, properties, variantRotation);
   if (playerHeadParts.length > 0) return playerHeadParts;
+
+  const signParts = syntheticSignParts(id, properties, variantRotation);
+  if (signParts.length > 0) return signParts;
+
+  const hangingSignParts = syntheticHangingSignParts(id, properties, variantRotation);
+  if (hangingSignParts.length > 0) return hangingSignParts;
+
+  const bannerParts = syntheticBannerParts(id, properties, variantRotation);
+  if (bannerParts.length > 0) return bannerParts;
+
+  const bedParts = syntheticBedParts(id, properties, variantRotation);
+  if (bedParts.length > 0) return bedParts;
+
+  const enchantingTableParts = syntheticEnchantingTableParts(id, properties, variantRotation);
+  if (enchantingTableParts.length > 0) return enchantingTableParts;
 
   const beaconParts = syntheticBeaconParts(id, properties, variantRotation);
   if (beaconParts.length > 0) return beaconParts;
@@ -513,6 +532,55 @@ function syntheticBlockParts(
   if (movingPistonParts.length > 0) return movingPistonParts;
 
   return [];
+}
+
+function syntheticChainParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (id !== 'minecraft:chain') return [];
+
+  const axis = properties.axis ?? 'y';
+  const rotation = {
+    x: variantRotation.x + (axis === 'x' || axis === 'z' ? 90 : 0),
+    y: variantRotation.y + (axis === 'x' ? 90 : 0),
+  };
+
+  return [
+    syntheticCuboidPart(
+      id,
+      properties,
+      `chain:${axis}:north-south`,
+      [6.5, 0, 8],
+      [9.5, 16, 8],
+      {
+        down: null,
+        up: null,
+        north: 'minecraft:block/iron_chain',
+        south: 'minecraft:block/iron_chain',
+        west: null,
+        east: null,
+      },
+      rotation,
+    ),
+    syntheticCuboidPart(
+      id,
+      properties,
+      `chain:${axis}:east-west`,
+      [8, 0, 6.5],
+      [8, 16, 9.5],
+      {
+        down: null,
+        up: null,
+        north: null,
+        south: null,
+        west: 'minecraft:block/iron_chain',
+        east: 'minecraft:block/iron_chain',
+      },
+      rotation,
+    ),
+  ];
 }
 
 function syntheticPlayerHeadParts(
@@ -540,6 +608,168 @@ function syntheticPlayerHeadParts(
   );
 }
 
+function syntheticSignParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (!isStandingSignBlock(id) && !isWallSignBlock(id)) return [];
+
+  const wallMounted = isWallSignBlock(id);
+  const rotation = {
+    x: variantRotation.x,
+    y: variantRotation.y + (wallMounted ? horizontalFacingRotation(properties.facing) : headRotationFromProperty(properties.rotation)),
+  };
+  const wood = signWoodTexture(id);
+  const board = syntheticCuboidPart(
+    id,
+    properties,
+    `sign:${wallMounted ? 'wall' : 'standing'}:board`,
+    wallMounted ? [2, 5, 0] : [2, 7, 7.5],
+    wallMounted ? [14, 13, 1] : [14, 15, 8.5],
+    wood,
+    rotation,
+  );
+
+  if (wallMounted) return [board];
+
+  return [
+    board,
+    syntheticCuboidPart(id, properties, 'sign:standing:post', [7, 0, 7], [9, 7, 9], wood, rotation),
+  ];
+}
+
+function syntheticHangingSignParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (!isHangingSignBlock(id)) return [];
+
+  const wallMounted = isWallHangingSignBlock(id);
+  const rotation = {
+    x: variantRotation.x,
+    y: variantRotation.y + (wallMounted ? horizontalFacingRotation(properties.facing) : headRotationFromProperty(properties.rotation)),
+  };
+  const wood = signWoodTexture(id);
+  const parts = [
+    syntheticCuboidPart(
+      id,
+      properties,
+      `hanging-sign:${wallMounted ? 'wall' : 'ceiling'}:board`,
+      wallMounted ? [2, 4, 0] : [2, 4, 7.5],
+      wallMounted ? [14, 12, 1] : [14, 12, 8.5],
+      wood,
+      rotation,
+    ),
+    syntheticCuboidPart(
+      id,
+      properties,
+      `hanging-sign:${wallMounted ? 'wall' : 'ceiling'}:bar`,
+      wallMounted ? [3, 12, 0] : [3, 12, 7],
+      wallMounted ? [13, 14, 1] : [13, 14, 9],
+      wood,
+      rotation,
+    ),
+  ];
+
+  if (!wallMounted) {
+    parts.push(
+      syntheticCuboidPart(id, properties, 'hanging-sign:ceiling:left-chain', [3, 14, 7.5], [4, 16, 8.5], 'minecraft:block/iron_chain', rotation),
+      syntheticCuboidPart(id, properties, 'hanging-sign:ceiling:right-chain', [12, 14, 7.5], [13, 16, 8.5], 'minecraft:block/iron_chain', rotation),
+    );
+  }
+
+  return parts;
+}
+
+function syntheticBannerParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (!isBannerBlock(id)) return [];
+
+  const wallMounted = id.replace(/^minecraft:/, '').endsWith('_wall_banner');
+  const color = bannerColorTexture(id);
+  const rotation = {
+    x: variantRotation.x,
+    y: variantRotation.y + (wallMounted ? horizontalFacingRotation(properties.facing) : headRotationFromProperty(properties.rotation)),
+  };
+  const cloth = syntheticCuboidPart(
+    id,
+    properties,
+    `banner:${wallMounted ? 'wall' : 'standing'}:cloth`,
+    wallMounted ? [4, 4, 0] : [4, 3, 7.5],
+    wallMounted ? [12, 15, 1] : [12, 15, 8.5],
+    color,
+    rotation,
+  );
+
+  if (wallMounted) return [cloth];
+
+  return [
+    syntheticCuboidPart(id, properties, 'banner:standing:pole', [7.25, 0, 7.25], [8.75, 16, 8.75], 'minecraft:block/oak_planks', rotation),
+    syntheticCuboidPart(id, properties, 'banner:standing:crossbar', [3.5, 13.5, 7.25], [12.5, 15, 8.75], 'minecraft:block/oak_planks', rotation),
+    cloth,
+  ];
+}
+
+function syntheticBedParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (!isBedBlock(id)) return [];
+
+  const part = properties.part === 'head' ? 'head' : 'foot';
+  const rotation = {
+    x: variantRotation.x,
+    y: variantRotation.y + horizontalFacingRotation(properties.facing),
+  };
+  const wool = bedColorTexture(id);
+  const parts = [
+    syntheticCuboidPart(id, properties, `bed:${part}:blanket`, [0, 3, 0], [16, 9, 16], wool, rotation),
+    syntheticCuboidPart(id, properties, `bed:${part}:frame`, [0, 0, 0], [16, 3, 16], 'minecraft:block/oak_planks', rotation),
+  ];
+
+  if (part === 'head') {
+    parts.push(syntheticCuboidPart(id, properties, 'bed:head:pillow', [1, 9, 1], [15, 11, 7], solidTexture('f4f0e6'), rotation));
+  }
+
+  return parts;
+}
+
+function syntheticEnchantingTableParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (id !== 'minecraft:enchanting_table') return [];
+
+  return [
+    syntheticCuboidPart(
+      id,
+      properties,
+      'enchanting-table:base',
+      [0, 0, 0],
+      [16, 12, 16],
+      {
+        down: 'minecraft:block/enchanting_table_bottom',
+        up: 'minecraft:block/enchanting_table_top',
+        north: 'minecraft:block/enchanting_table_side',
+        south: 'minecraft:block/enchanting_table_side',
+        west: 'minecraft:block/enchanting_table_side',
+        east: 'minecraft:block/enchanting_table_side',
+      },
+      variantRotation,
+    ),
+    syntheticCuboidPart(id, properties, 'enchanting-table:book-left', [3, 12, 4], [8, 13, 12], solidTexture('efe5c8'), { x: variantRotation.x, y: variantRotation.y + 8 }),
+    syntheticCuboidPart(id, properties, 'enchanting-table:book-right', [8, 12, 4], [13, 13, 12], solidTexture('efe5c8'), { x: variantRotation.x, y: variantRotation.y - 8 }),
+    syntheticCuboidPart(id, properties, 'enchanting-table:book-cover', [2.5, 13, 3.5], [13.5, 14, 12.5], solidTexture('7c2536'), variantRotation),
+  ];
+}
+
 function isPlayerHeadBlock(id: string): boolean {
   return id === 'minecraft:player_head' || id === 'minecraft:player_wall_head';
 }
@@ -565,6 +795,80 @@ function horizontalFacingRotation(facing: string | undefined): number {
     default:
       return 0;
   }
+}
+
+function isStandingSignBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path.endsWith('_sign') && !path.endsWith('_wall_sign') && !path.endsWith('_hanging_sign') && !path.endsWith('_wall_hanging_sign');
+}
+
+function isWallSignBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path.endsWith('_wall_sign');
+}
+
+function isHangingSignBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path.endsWith('_hanging_sign') || path.endsWith('_wall_hanging_sign');
+}
+
+function isWallHangingSignBlock(id: string): boolean {
+  return id.replace(/^minecraft:/, '').endsWith('_wall_hanging_sign');
+}
+
+function isBannerBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path.endsWith('_banner') || path.endsWith('_wall_banner');
+}
+
+function isBedBlock(id: string): boolean {
+  return id.replace(/^minecraft:/, '').endsWith('_bed');
+}
+
+function signWoodTexture(id: string): string {
+  const wood = id
+    .replace(/^minecraft:/, '')
+    .replace(/_wall_hanging_sign$/, '')
+    .replace(/_hanging_sign$/, '')
+    .replace(/_wall_sign$/, '')
+    .replace(/_sign$/, '');
+
+  if (wood === 'crimson' || wood === 'warped') return `minecraft:block/${wood}_stem`;
+  if (wood === 'bamboo') return 'minecraft:block/bamboo_planks';
+  return `minecraft:block/${wood}_planks`;
+}
+
+function bannerColorTexture(id: string): string {
+  const color = id.replace(/^minecraft:/, '').replace(/_wall_banner$/, '').replace(/_banner$/, '');
+  return solidTexture(minecraftDyeColors[color] ?? minecraftDyeColors.white);
+}
+
+function bedColorTexture(id: string): string {
+  const color = id.replace(/^minecraft:/, '').replace(/_bed$/, '');
+  return solidTexture(minecraftDyeColors[color] ?? minecraftDyeColors.red);
+}
+
+const minecraftDyeColors: Record<string, string> = {
+  white: 'f9fffe',
+  orange: 'f9801d',
+  magenta: 'c74ebd',
+  light_blue: '3ab3da',
+  yellow: 'fed83d',
+  lime: '80c71f',
+  pink: 'f38baa',
+  gray: '474f52',
+  light_gray: '9d9d97',
+  cyan: '169c9c',
+  purple: '8932b8',
+  blue: '3c44aa',
+  brown: '835432',
+  green: '5e7c16',
+  red: 'b02e26',
+  black: '1d1d21',
+};
+
+function solidTexture(hex: string): string {
+  return `${solidTexturePrefix}${hex.replace(/^#/, '').toLowerCase()}`;
 }
 
 function syntheticBeaconParts(
@@ -988,10 +1292,14 @@ function syntheticFluidPart(
   properties: Record<string, string>,
   variantRotation: { x: number; y: number },
 ): ResolvedBlockPart | null {
-  if (id !== 'minecraft:water') return null;
+  if (id !== 'minecraft:water' && id !== 'minecraft:lava' && id !== 'minecraft:bubble_column') return null;
 
   const level = Math.max(0, Math.min(8, Number.parseInt(properties.level ?? '0', 10) || 0));
-  const surfaceHeight = level === 0 ? 16 : Math.max(2, 15 - level * 1.55);
+  const surfaceHeight = id === 'minecraft:bubble_column' || level === 0 ? 16 : Math.max(2, 15 - level * 1.55);
+  const stillTexture = id === 'minecraft:lava' ? 'minecraft:block/lava_still' : 'minecraft:block/water_still';
+  const flowTexture = id === 'minecraft:lava' ? 'minecraft:block/lava_flow' : 'minecraft:block/water_flow';
+  const translucent = id !== 'minecraft:lava';
+  const tint = id === 'minecraft:water' || id === 'minecraft:bubble_column' ? 0 : null;
 
   return {
     key: `fluid::${id}::level:${level}::${variantRotation.x}::${variantRotation.y}`,
@@ -1004,20 +1312,20 @@ function syntheticFluidPart(
     uvLock: false,
     variantRotation,
     faceTextures: {
-      down: 'minecraft:block/water_still',
-      up: 'minecraft:block/water_still',
-      north: 'minecraft:block/water_flow',
-      south: 'minecraft:block/water_flow',
-      west: 'minecraft:block/water_flow',
-      east: 'minecraft:block/water_flow',
+      down: stillTexture,
+      up: stillTexture,
+      north: flowTexture,
+      south: flowTexture,
+      west: flowTexture,
+      east: flowTexture,
     },
     faceTints: {
-      down: 0,
-      up: 0,
-      north: 0,
-      south: 0,
-      west: 0,
-      east: 0,
+      down: tint,
+      up: tint,
+      north: tint,
+      south: tint,
+      west: tint,
+      east: tint,
     },
     faceUvs: {
       down: null,
@@ -1044,12 +1352,12 @@ function syntheticFluidPart(
       east: 'east',
     },
     faceTranslucencies: {
-      down: true,
-      up: true,
-      north: true,
-      south: true,
-      west: true,
-      east: true,
+      down: translucent,
+      up: translucent,
+      north: translucent,
+      south: translucent,
+      west: translucent,
+      east: translucent,
     },
   };
 }
@@ -1163,6 +1471,12 @@ function resourcePath(id: string): string {
 
 export function textureUrl(textureId: string): string {
   const normalized = normalizeResourceId(textureId, 'block');
+  if (normalized.startsWith(solidTexturePrefix)) {
+    const color = normalized.slice(solidTexturePrefix.length);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" shape-rendering="crispEdges"><rect width="16" height="16" fill="#${color}"/></svg>`;
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }
+
   if (normalized === 'schemview:entity/player/default') {
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(defaultPlayerSkinSvg)}`;
   }
