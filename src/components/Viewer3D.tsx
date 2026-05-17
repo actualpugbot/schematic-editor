@@ -827,16 +827,12 @@ function createModelElementGeometry(part: ResolvedBlockPart): THREE.BufferGeomet
 const faceCornerOrder = [0, 1, 2, 3];
 
 function modelFacePositions(part: ResolvedBlockPart, face: ModelFaceName): Array<[number, number, number]> {
-  const depthBias = 0.0005;
-  const xBias = part.from[0] === part.to[0] ? depthBias : 0;
-  const yBias = part.from[1] === part.to[1] ? depthBias : 0;
-  const zBias = part.from[2] === part.to[2] ? depthBias : 0;
-  const x1 = part.from[0] / 16 - 0.5 - xBias;
-  const y1 = part.from[1] / 16 - 0.5 - yBias;
-  const z1 = part.from[2] / 16 - 0.5 - zBias;
-  const x2 = part.to[0] / 16 - 0.5 + xBias;
-  const y2 = part.to[1] / 16 - 0.5 + yBias;
-  const z2 = part.to[2] / 16 - 0.5 + zBias;
+  const x1 = part.from[0] / 16 - 0.5;
+  const y1 = part.from[1] / 16 - 0.5;
+  const z1 = part.from[2] / 16 - 0.5;
+  const x2 = part.to[0] / 16 - 0.5;
+  const y2 = part.to[1] / 16 - 0.5;
+  const z2 = part.to[2] / 16 - 0.5;
 
   switch (face) {
     case 'east':
@@ -999,9 +995,11 @@ function textureMaterial(textureId: string, tintColor: number | null, shade: boo
   if (cached) return cached;
 
   const texture = textureLoader.load(textureUrl(textureId));
+  const cutout = isAlphaCutoutTexture(textureId);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.magFilter = THREE.NearestFilter;
-  texture.minFilter = THREE.NearestMipmapNearestFilter;
+  texture.minFilter = cutout ? THREE.NearestFilter : THREE.NearestMipmapNearestFilter;
+  texture.generateMipmaps = !cutout;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
   const beaconCore = isBeaconCoreTexture(textureId);
@@ -1022,7 +1020,7 @@ function textureMaterial(textureId: string, tintColor: number | null, shade: boo
         metalness: water ? 0.08 : 0.02,
         transparent: translucent,
         opacity,
-        alphaTest: water ? 0.02 : 0.08,
+        alphaTest: cutout ? 0.5 : water ? 0.02 : 0.08,
         depthWrite,
         side,
       })
@@ -1031,7 +1029,7 @@ function textureMaterial(textureId: string, tintColor: number | null, shade: boo
         color: tintColor ?? 0xffffff,
         transparent: translucent,
         opacity,
-        alphaTest: 0.08,
+        alphaTest: cutout ? 0.5 : 0.08,
         depthWrite,
         side,
         toneMapped: false,
@@ -1085,6 +1083,26 @@ function emissiveColor(textureId: string): number {
 
 function isWaterTexture(textureId: string): boolean {
   return textureId.replace(/^minecraft:/, '').startsWith('block/water_');
+}
+
+function isAlphaCutoutTexture(textureId: string): boolean {
+  const path = textureId.replace(/^minecraft:/, '');
+  return (
+    /(^|\/)(wheat|carrots|potatoes|beetroots|nether_wart)_stage\d+$/.test(path)
+    || path.includes('crop')
+    || path.includes('sapling')
+    || path.includes('grass')
+    || path.includes('fern')
+    || path.includes('bush')
+    || path.includes('roots')
+    || path.includes('vines')
+    || path.includes('flower')
+    || path.includes('coral')
+    || path.includes('mushroom')
+    || path.includes('amethyst_bud')
+    || path.includes('dripstone')
+    || path === 'block/cobweb'
+  );
 }
 
 function isGlassTexture(textureId: string): boolean {
