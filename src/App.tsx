@@ -4,18 +4,32 @@ import {
   ChevronLeft,
   ChevronRight,
   Cuboid,
+  Download,
   Eye,
   EyeOff,
   FileUp,
+  Layers,
+  ListFilter,
+  LocateFixed,
+  Maximize,
+  Moon,
+  MousePointer2,
+  Move3D,
+  Pencil,
   Rotate3D,
   ScanSearch,
   Search,
+  Settings,
+  SlidersHorizontal,
+  Sun,
+  Upload,
 } from 'lucide-react';
 import { Viewer3D, type Viewer3DHandle } from './components/Viewer3D';
 import { createBlockThumbnail } from './lib/blockThumbnails';
 import { createSampleModel, parseSchematic, type PlayerHeadTexture, type SchematicModel, type VoxelBlock } from './lib/schematic';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
+type InspectorTab = 'materials' | 'selection' | 'layers';
 
 interface MaterialSummary {
   id: string;
@@ -37,9 +51,13 @@ function App() {
   const [hiddenMaterialIds, setHiddenMaterialIds] = useState<Set<string>>(() => new Set());
   const [playerHeadSelections, setPlayerHeadSelections] = useState<Record<string, string>>({});
   const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>('materials');
   const inputRef = useRef<HTMLInputElement | null>(null);
   const viewerRef = useRef<Viewer3DHandle | null>(null);
   const materialItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const materialPanelRef = useRef<HTMLElement | null>(null);
+  const layerPanelRef = useRef<HTMLElement | null>(null);
+  const selectionPanelRef = useRef<HTMLElement | null>(null);
   const dragDepthRef = useRef(0);
   const visibleWorldY = model ? model.origin.y + visibleLayer : visibleLayer;
   const selectedBlockWorldX = selectedBlock && model ? model.origin.x + selectedBlock.x : null;
@@ -90,6 +108,9 @@ function App() {
   const selectedPlayerHeadTextureId = selectedBlock
     ? playerHeadSelections[blockPositionKey(selectedBlock)] ?? selectedBlock.playerHeadTexture?.id ?? playerHeadOptions[0]?.id ?? ''
     : '';
+  const totalBlocks = model?.blocks.length ?? 0;
+  const totalStacks = model ? materials.reduce((sum, material) => sum + Math.ceil(material.count / itemStackSize(material.id)), 0) : 0;
+  const totalShulkerBoxes = Math.ceil(totalStacks / 27);
 
   useEffect(() => {
     if (!model || !selectedBlock) {
@@ -226,6 +247,12 @@ function App() {
     }));
   };
 
+  const showPanel = (tab: InspectorTab) => {
+    setInspectorTab(tab);
+    const panel = tab === 'materials' ? materialPanelRef : tab === 'layers' ? layerPanelRef : selectionPanelRef;
+    window.requestAnimationFrame(() => panel.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+  };
+
   return (
     <main
       className={`app-shell${isDraggingFile ? ' is-dragging-file' : ''}`}
@@ -241,53 +268,184 @@ function App() {
           <span>.litematic, .schem, .schematic, or NBT</span>
         </div>
       </div>
-      <section className="viewport-panel" aria-label="Schematic 3D viewport">
-        <header className="topbar">
+      <header className="topbar">
+        <div className="topbar-left">
           <div className="brand-lockup">
             <div className="brand-mark" aria-hidden="true">
               <Cuboid size={22} />
             </div>
+            <strong>SchemView</strong>
+          </div>
+          <div className="file-lockup">
+            <h1>{model ? model.name : 'Minecraft schematic viewer'}</h1>
+            <button className="ghost-icon" type="button" onClick={() => inputRef.current?.click()} title="Change file">
+              <Pencil size={16} />
+            </button>
+            {loadState === 'ready' && <span className="save-chip">Saved</span>}
+          </div>
+        </div>
+
+        <div className="topbar-actions">
+          <button className="secondary-button" type="button" onClick={() => inputRef.current?.click()}>
+            <Download size={17} />
+            Import
+          </button>
+          <button className="primary-button" type="button" onClick={() => inputRef.current?.click()}>
+            <Upload size={17} />
+            Upload
+          </button>
+          <span className="topbar-divider" aria-hidden="true" />
+          <div className="mode-toggle" aria-label="View mode">
+            <button className="is-active" type="button" onClick={() => viewerRef.current?.spinOnce()}>
+              <Cuboid size={16} />
+              3D
+            </button>
+            <button type="button" onClick={() => setSingleLayer(true)}>
+              <Layers size={16} />
+              Slice
+            </button>
+          </div>
+          <button className="ghost-icon" type="button" onClick={() => showPanel('layers')} title="Layer settings">
+            <Sun size={18} />
+          </button>
+          <div className="avatar" aria-hidden="true">JD</div>
+          <input
+            ref={inputRef}
+            className="file-input"
+            type="file"
+            accept=".litematic,.schem,.schematic,.nbt"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void handleFile(file);
+              event.target.value = '';
+            }}
+          />
+        </div>
+      </header>
+
+      <div className="workspace">
+        <nav className="tool-rail" aria-label="Primary tools">
+          <button className="is-active" type="button" onClick={() => viewerRef.current?.spinOnce()}>
+            <Eye size={24} />
+            <span>View</span>
+          </button>
+          <button type="button" onClick={() => inputRef.current?.click()}>
+            <Pencil size={24} />
+            <span>Edit</span>
+          </button>
+          <button type="button" onClick={() => showPanel('selection')}>
+            <MousePointer2 size={24} />
+            <span>Select</span>
+          </button>
+          <button type="button" onClick={() => showPanel('materials')}>
+            <Cuboid size={24} />
+            <span>Materials</span>
+          </button>
+          <button type="button" onClick={() => showPanel('layers')}>
+            <Layers size={24} />
+            <span>Layers</span>
+          </button>
+          <span className="tool-rail-spacer" />
+          <button type="button" onClick={() => viewerRef.current?.spinOnce()} title="Spin 360 degrees">
+            <Rotate3D size={23} />
+            <span>Spin</span>
+          </button>
+          <button type="button" onClick={() => showPanel('layers')} title="Layer settings">
+            <Settings size={23} />
+          </button>
+          <button type="button" onClick={() => showPanel('materials')} title="Materials">
+            <Moon size={23} />
+          </button>
+        </nav>
+
+        <section className="viewport-panel" aria-label="Schematic 3D viewport">
+          <div className="camera-card" aria-label="Camera controls">
             <div>
-              <p className="eyebrow">Schemview</p>
-              <h1>{model ? model.name : 'Minecraft schematic viewer'}</h1>
+              <strong>Camera</strong>
+              <ChevronDown size={15} />
+            </div>
+            <div className="camera-buttons">
+              <button type="button" title="Center build" onClick={() => viewerRef.current?.spinOnce()}>
+                <LocateFixed size={18} />
+              </button>
+              <button type="button" title="Frame build" onClick={() => viewerRef.current?.spinOnce()}>
+                <Maximize size={18} />
+              </button>
+              <button type="button" title="Orbit" onClick={() => viewerRef.current?.spinOnce()}>
+                <Move3D size={18} />
+              </button>
+              <button type="button" title="Layer controls" onClick={() => showPanel('layers')}>
+                <SlidersHorizontal size={18} />
+              </button>
             </div>
           </div>
 
-          <div className="topbar-actions">
-            <button className="icon-button" type="button" onClick={() => viewerRef.current?.spinOnce()} title="Spin 360 degrees">
+          {model && (
+            <section className="build-summary-card" aria-label="Build summary">
+              <div className="section-heading compact">
+                <div>
+                  <p className="eyebrow">Build Summary</p>
+                  <h2>{model.dimensions.width} x {model.dimensions.height} x {model.dimensions.length}</h2>
+                </div>
+              </div>
+              <dl className="summary-metrics">
+                <div>
+                  <dt>Total Blocks</dt>
+                  <dd>{totalBlocks.toLocaleString()}</dd>
+                </div>
+                <div>
+                  <dt>Unique Materials</dt>
+                  <dd>{materials.length.toLocaleString()}</dd>
+                </div>
+                <div>
+                  <dt>Visible Layer</dt>
+                  <dd>Y {visibleWorldY}</dd>
+                </div>
+              </dl>
+              <dl className="storage-metrics">
+                <div>
+                  <dt>Est. Stacks</dt>
+                  <dd>{totalStacks.toLocaleString()}</dd>
+                </div>
+                <div>
+                  <dt>Est. Shulker Boxes</dt>
+                  <dd>{totalShulkerBoxes.toLocaleString()}</dd>
+                </div>
+              </dl>
+            </section>
+          )}
+
+          <div className="viewport-tools" aria-label="Viewport tools">
+            <button type="button" onClick={() => viewerRef.current?.spinOnce()} title="Move view">
+              <Move3D size={19} />
+            </button>
+            <button type="button" onClick={() => viewerRef.current?.spinOnce()} title="Spin 360 degrees">
               <Rotate3D size={19} />
             </button>
-            <button className="primary-button" type="button" onClick={() => inputRef.current?.click()}>
-              <FileUp size={18} />
-              Upload
+            <button type="button" onClick={() => showPanel('materials')} title="Materials">
+              <Cuboid size={19} />
             </button>
-            <input
-              ref={inputRef}
-              className="file-input"
-              type="file"
-              accept=".litematic,.schem,.schematic,.nbt"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void handleFile(file);
-                event.target.value = '';
-              }}
-            />
           </div>
-        </header>
 
-        <Viewer3D
-          model={model}
-          visibleLayer={visibleLayer}
-          singleLayer={singleLayer}
-          autoRotate={false}
-          showGrid
-          hiddenMaterialIds={hiddenMaterialIds}
-          playerHeadSelections={playerHeadSelections}
-          selectedBlock={selectedBlock}
-          onBlockSelect={setSelectedBlock}
-          viewerRef={viewerRef}
-        />
-      </section>
+          <div className="axis-gizmo" aria-hidden="true">
+            <span className="axis-y">Y</span>
+            <span className="axis-z">Z</span>
+            <span className="axis-x">X</span>
+          </div>
+
+          <Viewer3D
+            model={model}
+            visibleLayer={visibleLayer}
+            singleLayer={singleLayer}
+            autoRotate={false}
+            showGrid
+            hiddenMaterialIds={hiddenMaterialIds}
+            playerHeadSelections={playerHeadSelections}
+            selectedBlock={selectedBlock}
+            onBlockSelect={setSelectedBlock}
+            viewerRef={viewerRef}
+          />
+        </section>
 
       <aside className="control-rail" aria-label="Schematic controls">
         {error && (
@@ -299,7 +457,41 @@ function App() {
 
         {model && (
           <>
-            <section className="summary-card" aria-label="Schematic summary">
+            <div className="inspector-tabs" role="tablist" aria-label="Inspector panels">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={inspectorTab === 'materials'}
+                className={inspectorTab === 'materials' ? 'is-active' : ''}
+                onClick={() => showPanel('materials')}
+              >
+                Materials List
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={inspectorTab === 'selection'}
+                className={inspectorTab === 'selection' ? 'is-active' : ''}
+                onClick={() => showPanel('selection')}
+              >
+                Selection Inspector
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={inspectorTab === 'layers'}
+                className={inspectorTab === 'layers' ? 'is-active' : ''}
+                onClick={() => showPanel('layers')}
+              >
+                Layer View
+              </button>
+            </div>
+
+            <section
+              className={`summary-card inspector-panel${inspectorTab === 'selection' ? ' is-active' : ''}`}
+              aria-label="Schematic summary"
+              ref={selectionPanelRef}
+            >
               <div className="summary-selection" role="status" aria-live="polite">
                 <p className="eyebrow">Selection</p>
                 {selectedBlock ? (
@@ -356,7 +548,10 @@ function App() {
               )}
             </section>
 
-            <section className="layer-control">
+            <section
+              className={`layer-control inspector-panel${inspectorTab === 'layers' ? ' is-active' : ''}`}
+              ref={layerPanelRef}
+            >
               <div className="section-heading">
                 <div>
                   <p className="eyebrow">Layer view</p>
@@ -392,7 +587,10 @@ function App() {
               </div>
             </section>
 
-            <section className="material-list">
+            <section
+              className={`material-list inspector-panel${inspectorTab === 'materials' ? ' is-active' : ''}`}
+              ref={materialPanelRef}
+            >
               <div className="section-heading compact">
                 <div>
                   <p className="eyebrow">Materials</p>
@@ -402,7 +600,7 @@ function App() {
                       : `${materials.length.toLocaleString()} materials`}
                   </h2>
                 </div>
-                <ChevronDown size={18} />
+                <ListFilter size={18} />
               </div>
               <label className="material-search">
                 <Search size={16} aria-hidden="true" />
@@ -481,6 +679,7 @@ function App() {
           </>
         )}
       </aside>
+      </div>
     </main>
   );
 }

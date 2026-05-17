@@ -104,7 +104,7 @@ export function Viewer3D(props: InternalViewerProps) {
     if (!container) return;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf3f0e8);
+    scene.background = new THREE.Color(0xf4f8f8);
     scene.fog = null;
     sceneRef.current = scene;
 
@@ -142,7 +142,7 @@ export function Viewer3D(props: InternalViewerProps) {
 
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(400, 400),
-      new THREE.MeshStandardMaterial({ color: 0xe0d8c6, roughness: 0.94, metalness: 0.02 }),
+      new THREE.MeshStandardMaterial({ color: 0xe8eeee, roughness: 0.94, metalness: 0.02 }),
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.56;
