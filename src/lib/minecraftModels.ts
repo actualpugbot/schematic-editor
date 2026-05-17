@@ -156,7 +156,7 @@ function defaultBlockProperties(id: string, properties: Record<string, string>):
     };
   }
 
-  if (isLanternBlock(id)) {
+  if (isDecorativeLanternBlock(id)) {
     return {
       hanging: 'false',
       ...properties,
@@ -181,6 +181,11 @@ function isStairsBlock(id: string): boolean {
 function isLanternBlock(id: string): boolean {
   const path = id.replace(/^minecraft:/, '');
   return path === 'lantern' || path.endsWith('_lantern');
+}
+
+function isDecorativeLanternBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path !== 'sea_lantern' && path !== 'jack_o_lantern' && isLanternBlock(id);
 }
 
 export async function resolveBlockParts(stateKey: string): Promise<ResolvedBlockPart[]> {
@@ -239,7 +244,8 @@ async function resolveBlockPartsUncached(stateKey: string): Promise<ResolvedBloc
       continue;
     }
 
-    for (const [index, element] of model.elements.entries()) {
+    for (const [index, rawElement] of model.elements.entries()) {
+      const element = normalizeModelElementForBlock(state.id, rawElement);
       parts.push({
         key: `${stateKey}::${partKey(variant, element, model.textures, index)}`,
         blockId: state.id,
@@ -265,6 +271,28 @@ async function resolveBlockPartsUncached(stateKey: string): Promise<ResolvedBloc
   }
 
   return parts;
+}
+
+function normalizeModelElementForBlock(id: string, element: ModelElement): ModelElement {
+  if (!isDecorativeLanternBlock(id)) return element;
+
+  return thickenZeroDepthElement(element, 0.25);
+}
+
+function thickenZeroDepthElement(element: ModelElement, thickness: number): ModelElement {
+  const from = [...element.from] as [number, number, number];
+  const to = [...element.to] as [number, number, number];
+  let changed = false;
+
+  for (let axis = 0; axis < 3; axis += 1) {
+    if (from[axis] !== to[axis]) continue;
+
+    from[axis] -= thickness / 2;
+    to[axis] += thickness / 2;
+    changed = true;
+  }
+
+  return changed ? { ...element, from, to } : element;
 }
 
 function selectVariants(blockstate: BlockstateJson, properties: Record<string, string>): BlockstateVariant[] {

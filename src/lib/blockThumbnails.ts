@@ -379,6 +379,7 @@ async function textureMaterial(
         map: texture,
         color: tintColor ?? 0xffffff,
         emissive: glowing ? emissiveColor(textureId) : 0x000000,
+        emissiveMap: glowing ? texture : null,
         emissiveIntensity: glowing ? 0.72 : 0,
         roughness: isWaterTexture(textureId) ? 0.36 : 0.92,
         metalness: isWaterTexture(textureId) ? 0.08 : 0.02,
@@ -505,6 +506,7 @@ function isGlowingTexture(textureId: string): boolean {
     path === 'block/sea_lantern'
     || path === 'block/lantern'
     || path === 'block/soul_lantern'
+    || path === 'block/copper_lantern'
     || path.endsWith('_copper_lantern')
     || path === 'block/smoker_front_on'
     || path.endsWith('_emissive')
@@ -517,12 +519,16 @@ function emissiveColor(textureId: string): number {
   const path = textureId.replace(/^minecraft:/, '');
   if (path === 'block/sea_lantern') return 0xcff8e9;
   if (path === 'block/soul_lantern') return 0x64d6ff;
-  if (path.endsWith('_copper_lantern')) return 0xffb95f;
+  if (isCopperLanternTexturePath(path)) return 0xffffff;
   if (path === 'block/smoker_front_on') return 0xff8a24;
   if (path.endsWith('_emissive')) return 0xffffb8;
   if (path.startsWith('block/lava_') || path.includes('campfire_fire')) return 0xff8a24;
   if (path === 'block/lantern') return 0xffc552;
   return 0x65fff5;
+}
+
+function isCopperLanternTexturePath(path: string): boolean {
+  return path === 'block/copper_lantern' || path.endsWith('_copper_lantern');
 }
 
 function tintColorForPart(textureId: string, tintIndex: number | null, part: ResolvedBlockPart): number | null {
