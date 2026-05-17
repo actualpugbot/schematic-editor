@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Cuboid,
   Eye,
   EyeOff,
@@ -42,7 +43,7 @@ function App() {
   const [visibleLayer, setVisibleLayer] = useState(model?.dimensions.height ? model.dimensions.height - 1 : 0);
   const [singleLayer, setSingleLayer] = useState(false);
   const [selectedBlock, setSelectedBlock] = useState<VoxelBlock | null>(null);
-  const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
+  const [expandedMaterialIds, setExpandedMaterialIds] = useState<Set<string>>(() => new Set());
   const [materialSearch, setMaterialSearch] = useState('');
   const [hiddenMaterialIds, setHiddenMaterialIds] = useState<Set<string>>(() => new Set());
   const [playerHeadSelections, setPlayerHeadSelections] = useState<Record<string, string>>({});
@@ -102,7 +103,6 @@ function App() {
     });
   }, [materialSearch, materials]);
 
-  const selectedMaterial = materials.find((material) => material.id === selectedMaterialId) ?? null;
   const playerHeadOptions = useMemo(() => uniquePlayerHeadTextures(model), [model]);
   const selectedBlockKey = selectedBlock ? blockPositionKey(selectedBlock) : null;
   const selectedPlayerHeadTextureId = selectedBlock
@@ -124,9 +124,12 @@ function App() {
   }, [hiddenMaterialIds, model, selectedBlock, singleLayer, visibleLayer]);
 
   useEffect(() => {
-    if (!selectedMaterialId || materials.some((material) => material.id === selectedMaterialId)) return;
-    setSelectedMaterialId(null);
-  }, [materials, selectedMaterialId]);
+    const validMaterialIds = new Set(materials.map((material) => material.id));
+    setExpandedMaterialIds((current) => {
+      const next = new Set(Array.from(current).filter((materialId) => validMaterialIds.has(materialId)));
+      return next.size === current.size ? current : next;
+    });
+  }, [materials]);
 
   const handleFile = async (file: File) => {
     setLoadState('loading');
@@ -139,7 +142,7 @@ function App() {
       setVisibleLayer(parsed.dimensions.height - 1);
       setSingleLayer(false);
       setSelectedBlock(null);
-      setSelectedMaterialId(null);
+      setExpandedMaterialIds(new Set());
       setMaterialSearch('');
       setPlayerHeadSelections({});
       setHiddenMaterialIds(new Set());
@@ -191,6 +194,18 @@ function App() {
 
   const toggleMaterialVisibility = (id: string) => {
     setHiddenMaterialIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleMaterialBreakdown = (id: string) => {
+    setExpandedMaterialIds((current) => {
       const next = new Set(current);
       if (next.has(id)) {
         next.delete(id);
@@ -420,37 +435,54 @@ function App() {
                 />
               </label>
               <div className="material-stack">
-                {filteredMaterials.map((material) => (
-                  <div
-                    className={`material-row${selectedMaterial?.id === material.id ? ' is-selected' : ''}`}
-                    key={material.id}
-                  >
-                    <button className="material-pick" type="button" onClick={() => setSelectedMaterialId(material.id)}>
-                      <BlockPreview stateKey={material.stateKey} color={material.color} />
-                      <span>{material.label}</span>
-                      <strong>{material.count.toLocaleString()}</strong>
-                    </button>
-                    <button
-                      type="button"
-                      className="material-visibility"
-                      aria-label={hiddenMaterialIds.has(material.id) ? `Show ${material.label}` : `Hide ${material.label}`}
-                      title={hiddenMaterialIds.has(material.id) ? 'Show block' : 'Hide block'}
-                      onClick={() => toggleMaterialVisibility(material.id)}
-                    >
-                      {hiddenMaterialIds.has(material.id) ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                ))}
+                {filteredMaterials.map((material) => {
+                  const isExpanded = expandedMaterialIds.has(material.id);
+
+                  return (
+                    <div className="material-item" key={material.id}>
+                      <div className={`material-row${isExpanded ? ' is-selected' : ''}`}>
+                        <button
+                          className="material-pick"
+                          type="button"
+                          aria-expanded={isExpanded}
+                          onClick={() => toggleMaterialBreakdown(material.id)}
+                        >
+                          <BlockPreview stateKey={material.stateKey} color={material.color} />
+                          <span>{material.label}</span>
+                          <strong>{material.count.toLocaleString()}</strong>
+                        </button>
+                        <button
+                          type="button"
+                          className="material-visibility"
+                          aria-label={hiddenMaterialIds.has(material.id) ? `Show ${material.label}` : `Hide ${material.label}`}
+                          title={hiddenMaterialIds.has(material.id) ? 'Show block' : 'Hide block'}
+                          onClick={() => toggleMaterialVisibility(material.id)}
+                        >
+                          {hiddenMaterialIds.has(material.id) ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+                      {isExpanded && (
+                        <button
+                          type="button"
+                          className="material-breakdown"
+                          aria-label={`Collapse ${material.label} material breakdown`}
+                          onClick={() => toggleMaterialBreakdown(material.id)}
+                        >
+                          <span>{material.label}</span>
+                          <strong>{storageBreakdown(material.count)}</strong>
+                          <small>
+                            <ChevronUp size={14} aria-hidden="true" />
+                            Click to collapse
+                          </small>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
                 {filteredMaterials.length === 0 && (
                   <p className="material-empty">No materials match "{materialSearch.trim()}".</p>
                 )}
               </div>
-              {selectedMaterial && (
-                <div className="material-breakdown">
-                  <span>{selectedMaterial.label}</span>
-                  <strong>{storageBreakdown(selectedMaterial.count)}</strong>
-                </div>
-              )}
             </section>
 
             {model.warnings.length > 0 && (
