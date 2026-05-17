@@ -62,7 +62,7 @@ export function parseSchematic(buffer: ArrayBuffer, options: ParseOptions = {}):
     return parseLitematic(root, options.fileName);
   }
 
-  if (isCompound(schem.Palette) && asByteArray(schem.BlockData)) {
+  if (readSpongeBlockStorage(schem)) {
     return parseSpongeSchematic(schem, options.fileName);
   }
 
@@ -148,16 +148,15 @@ export function createSampleModel(): SchematicModel {
 
 function parseSpongeSchematic(schematic: NbtCompound, fileName = 'Uploaded schematic'): SchematicModel {
   const dimensions = readDimensions(schematic);
-  const palette = schematic.Palette;
-  const blockData = asByteArray(schematic.BlockData);
+  const blockStorage = readSpongeBlockStorage(schematic);
 
-  if (!isCompound(palette) || !blockData) {
+  if (!blockStorage) {
     throw new Error('The .schem file is missing its palette or block data.');
   }
 
-  const paletteEntries = buildPaletteEntries(palette);
+  const paletteEntries = buildPaletteEntries(blockStorage.palette);
   const paletteSize = paletteEntries.filter(Boolean).length;
-  const blockIds = decodeVarInts(blockData, dimensions.width * dimensions.height * dimensions.length);
+  const blockIds = decodeVarInts(blockStorage.data, dimensions.width * dimensions.height * dimensions.length);
   const blocks: VoxelBlock[] = [];
   const warnings: string[] = [];
 
@@ -196,6 +195,25 @@ function parseSpongeSchematic(schematic: NbtCompound, fileName = 'Uploaded schem
     paletteSize,
     warnings,
   });
+}
+
+function readSpongeBlockStorage(schematic: NbtCompound): { palette: NbtCompound; data: Uint8Array } | null {
+  if (isCompound(schematic.Palette)) {
+    const data = asByteArray(schematic.BlockData);
+    if (data) {
+      return { palette: schematic.Palette, data };
+    }
+  }
+
+  const blocks = isCompound(schematic.Blocks) ? schematic.Blocks : null;
+  if (blocks && isCompound(blocks.Palette)) {
+    const data = asByteArray(blocks.Data);
+    if (data) {
+      return { palette: blocks.Palette, data };
+    }
+  }
+
+  return null;
 }
 
 function parseLegacySchematic(schematic: NbtCompound, fileName = 'Uploaded schematic'): SchematicModel {
