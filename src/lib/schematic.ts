@@ -32,11 +32,19 @@ export interface VoxelBlock {
   color: number;
   material: string;
   playerHeadTexture?: PlayerHeadTexture;
+  decoratedPotDecorations?: DecoratedPotDecorations;
 }
 
 export interface PlayerHeadTexture {
   id: string;
   url: string;
+}
+
+export interface DecoratedPotDecorations {
+  back?: string;
+  left?: string;
+  right?: string;
+  front?: string;
 }
 
 export interface SchematicModel {
@@ -164,6 +172,8 @@ function parseSpongeSchematic(schematic: NbtCompound, fileName = 'Uploaded schem
     warnings.push('The block data ended before the declared dimensions were filled.');
   }
 
+  const spongeDecoratedPotDecorations = readSpongeDecoratedPotDecorations(schematic);
+
   for (let index = 0; index < blockIds.length; index += 1) {
     const paletteIndex = blockIds[index];
     const stateKey = paletteEntries[paletteIndex] ?? `unknown_palette_${paletteIndex}`;
@@ -174,6 +184,7 @@ function parseSpongeSchematic(schematic: NbtCompound, fileName = 'Uploaded schem
     const y = Math.floor(index / (dimensions.width * dimensions.length));
     const name = stateKey.split('[')[0];
     const appearance = blockAppearance(name);
+    const decoratedPotDecorations = spongeDecoratedPotDecorations.get(positionKey(x, y, z));
 
     blocks.push({
       x,
@@ -183,6 +194,7 @@ function parseSpongeSchematic(schematic: NbtCompound, fileName = 'Uploaded schem
       stateKey,
       color: appearance.color,
       material: appearance.label,
+      decoratedPotDecorations,
     });
   }
 
@@ -472,6 +484,7 @@ function parseLitematic(root: NbtCompound, fileName = 'Uploaded litematic'): Sch
 
     const paletteEntries = palette.map(readLitematicPaletteEntry);
     const playerHeadTextures = readLitematicPlayerHeadTextures(rawRegion);
+    const decoratedPotDecorations = readLitematicDecoratedPotDecorations(rawRegion);
     const totalBlocks = dimensions.width * dimensions.height * dimensions.length;
     const bitsPerEntry = Math.max(2, Math.ceil(Math.log2(Math.max(1, paletteEntries.length))));
     const blockIds = decodePackedLongArray(blockStates, totalBlocks, bitsPerEntry);
@@ -500,6 +513,7 @@ function parseLitematic(root: NbtCompound, fileName = 'Uploaded litematic'): Sch
         color: appearance.color,
         material: appearance.label,
         playerHeadTexture: playerHeadTextures.get(positionKey(worldX, worldY, worldZ)),
+        decoratedPotDecorations: decoratedPotDecorations.get(positionKey(worldX, worldY, worldZ)),
       });
     }
   }
@@ -653,6 +667,79 @@ function readLitematicPlayerHeadTextures(region: NbtCompound): Map<string, Playe
   }
 
   return texturesByPosition;
+}
+
+function readLitematicDecoratedPotDecorations(region: NbtCompound): Map<string, DecoratedPotDecorations> {
+  return readPositionedDecoratedPotDecorations(asList(region.TileEntities), readBlockEntityXyzPosition);
+}
+
+function readSpongeDecoratedPotDecorations(schematic: NbtCompound): Map<string, DecoratedPotDecorations> {
+  const blocks = isCompound(schematic.Blocks) ? schematic.Blocks : null;
+  return readPositionedDecoratedPotDecorations(
+    asList(schematic.BlockEntities) ?? asList(blocks?.BlockEntities) ?? asList(schematic.TileEntities),
+    readBlockEntityPosArrayPosition,
+  );
+}
+
+function readPositionedDecoratedPotDecorations(
+  tileEntities: unknown[] | null,
+  readPosition: (tileEntity: NbtCompound) => SchematicOrigin | null,
+): Map<string, DecoratedPotDecorations> {
+  const decorationsByPosition = new Map<string, DecoratedPotDecorations>();
+  if (!tileEntities) return decorationsByPosition;
+
+  for (const rawTileEntity of tileEntities) {
+    if (!isCompound(rawTileEntity) || !isDecoratedPotBlockEntityId(asString(rawTileEntity.id))) continue;
+
+    const position = readPosition(rawTileEntity);
+    if (!position) continue;
+
+    const decorations = readDecoratedPotDecorations(rawTileEntity);
+    if (!decorations) continue;
+
+    decorationsByPosition.set(positionKey(position.x, position.y, position.z), decorations);
+  }
+
+  return decorationsByPosition;
+}
+
+function readBlockEntityXyzPosition(tileEntity: NbtCompound): SchematicOrigin | null {
+  const x = asNumber(tileEntity.x, Number.NaN);
+  const y = asNumber(tileEntity.y, Number.NaN);
+  const z = asNumber(tileEntity.z, Number.NaN);
+  return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) ? { x, y, z } : null;
+}
+
+function readBlockEntityPosArrayPosition(tileEntity: NbtCompound): SchematicOrigin | null {
+  const pos = asIntArray(tileEntity.Pos);
+  if (pos && pos.length >= 3) return { x: pos[0], y: pos[1], z: pos[2] };
+  return readBlockEntityXyzPosition(tileEntity);
+}
+
+function isDecoratedPotBlockEntityId(id: string): boolean {
+  const normalized = id.toLowerCase();
+  return normalized === 'minecraft:decorated_pot' || normalized === 'decorated_pot' || normalized === 'decoratedpot';
+}
+
+function readDecoratedPotDecorations(tileEntity: NbtCompound): DecoratedPotDecorations | null {
+  const sherds = asList(tileEntity.sherds ?? tileEntity.Sherds);
+  if (!sherds || sherds.length === 0) return null;
+
+  const [back, left, right, front] = sherds.map((sherd) => normalizeDecoratedPotSherdId(asString(sherd)));
+  const decorations: DecoratedPotDecorations = {};
+  if (back) decorations.back = back;
+  if (left) decorations.left = left;
+  if (right) decorations.right = right;
+  if (front) decorations.front = front;
+
+  return Object.keys(decorations).length > 0 ? decorations : null;
+}
+
+function normalizeDecoratedPotSherdId(id: string): string | undefined {
+  if (!id) return undefined;
+
+  const normalized = id.includes(':') ? id : `minecraft:${id}`;
+  return normalized === 'minecraft:brick' ? undefined : normalized;
 }
 
 function readPlayerHeadTexture(tileEntity: NbtCompound): PlayerHeadTexture | null {

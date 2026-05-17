@@ -432,14 +432,20 @@ function blockPositionKey(block: VoxelBlock): string {
 }
 
 function renderStateKeyForBlock(block: VoxelBlock, playerHeadSelections: Record<string, string>): string {
+  let stateKey = block.stateKey;
+
+  if (block.decoratedPotDecorations) {
+    for (const [side, itemId] of Object.entries(block.decoratedPotDecorations)) {
+      if (itemId) stateKey = setBlockStateProperty(stateKey, `schemview_pot_${side}`, itemId);
+    }
+  }
+
   if (!block.playerHeadTexture && block.name !== 'minecraft:player_head' && block.name !== 'minecraft:player_wall_head') {
-    return block.stateKey;
+    return stateKey;
   }
 
   const textureId = playerHeadSelections[blockPositionKey(block)] ?? block.playerHeadTexture?.id;
-  if (!textureId) return block.stateKey;
-
-  return setBlockStateProperty(block.stateKey, 'schemview_head', textureId);
+  return textureId ? setBlockStateProperty(stateKey, 'schemview_head', textureId) : stateKey;
 }
 
 function setBlockStateProperty(stateKey: string, key: string, value: string): string {
@@ -1128,6 +1134,7 @@ function isAlphaCutoutTexture(textureId: string): boolean {
     || path.includes('mushroom')
     || path.includes('amethyst_bud')
     || path.includes('dripstone')
+    || path.startsWith('entity/decorated_pot/')
     || path === 'block/cobweb'
   );
 }

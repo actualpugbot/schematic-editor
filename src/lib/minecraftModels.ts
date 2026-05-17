@@ -678,6 +678,10 @@ function decoratedPotBlockEntityParts(
 
   const baseTexture = 'minecraft:entity/decorated_pot/decorated_pot_base';
   const sideTexture = 'minecraft:entity/decorated_pot/decorated_pot_side';
+  const frontTexture = decoratedPotSideTexture(properties.schemview_pot_front, sideTexture);
+  const backTexture = decoratedPotSideTexture(properties.schemview_pot_back, sideTexture);
+  const leftTexture = decoratedPotSideTexture(properties.schemview_pot_left, sideTexture);
+  const rightTexture = decoratedPotSideTexture(properties.schemview_pot_right, sideTexture);
   const rotation = {
     x: variantRotation.x,
     y: variantRotation.y + decoratedPotFacingRotation(properties.facing),
@@ -691,7 +695,7 @@ function decoratedPotBlockEntityParts(
       'south',
       [1, 0, 15],
       [15, 16, 15],
-      sideTexture,
+      frontTexture,
       [16, 16],
       [1, 0, 15, 16],
       rotation,
@@ -703,7 +707,7 @@ function decoratedPotBlockEntityParts(
       'north',
       [1, 0, 1],
       [15, 16, 1],
-      sideTexture,
+      backTexture,
       [16, 16],
       [1, 0, 15, 16],
       rotation,
@@ -715,7 +719,7 @@ function decoratedPotBlockEntityParts(
       'west',
       [1, 0, 1],
       [1, 16, 15],
-      sideTexture,
+      leftTexture,
       [16, 16],
       [1, 0, 15, 16],
       rotation,
@@ -727,7 +731,7 @@ function decoratedPotBlockEntityParts(
       'east',
       [15, 0, 1],
       [15, 16, 15],
-      sideTexture,
+      rightTexture,
       [16, 16],
       [1, 0, 15, 16],
       rotation,
@@ -760,7 +764,7 @@ function decoratedPotBlockEntityParts(
       id,
       properties,
       'decorated-pot:neck',
-      { name: 'neck', from: [4.1, 12.1, 4.1], to: [11.9, 14.9, 11.9], textureOrigin: [0, 0] },
+      { name: 'neck', from: [4.1, 17.1, 4.1], to: [11.9, 19.9, 11.9], textureOrigin: [0, 0] },
       baseTexture,
       rotation,
       [32, 32],
@@ -769,12 +773,28 @@ function decoratedPotBlockEntityParts(
       id,
       properties,
       'decorated-pot:rim',
-      { name: 'rim', from: [4.8, 14.8, 4.8], to: [11.2, 16.2, 11.2], textureOrigin: [0, 5] },
+      { name: 'rim', from: [4.8, 15.8, 4.8], to: [11.2, 17.2, 11.2], textureOrigin: [0, 5] },
       baseTexture,
       rotation,
       [32, 32],
     ),
   ];
+}
+
+function decoratedPotSideTexture(itemId: string | undefined, fallbackTexture: string): string {
+  if (!itemId) return fallbackTexture;
+
+  const path = itemId.replace(/^minecraft:/, '');
+  if (!path || path === 'brick') return fallbackTexture;
+
+  const sherd = /^(?<pattern>[a-z0-9_]+)_pottery_sherd$/.exec(path)?.groups?.pattern;
+  if (sherd) return `minecraft:entity/decorated_pot/${sherd}_pottery_pattern`;
+
+  if (path.startsWith('entity/decorated_pot/') && path.endsWith('_pottery_pattern')) {
+    return `minecraft:${path}`;
+  }
+
+  return fallbackTexture;
 }
 
 function decoratedPotFacingRotation(facing: string | undefined): number {
@@ -989,7 +1009,7 @@ function blockEntityCuboidPart(
   }
 
   return {
-    key: `block-entity::${id}::${key}::${variantRotation.x}::${variantRotation.y}`,
+    key: `block-entity::${id}::${key}::${texture}::${variantRotation.x}::${variantRotation.y}`,
     blockId: id,
     blockProperties: properties,
     from: cuboid.from,
@@ -1048,7 +1068,7 @@ function blockEntityPlanePart(
   variantRotation: { x: number; y: number },
 ): ResolvedBlockPart {
   return {
-    key: `block-entity::${id}::${key}::${variantRotation.x}::${variantRotation.y}`,
+    key: `block-entity::${id}::${key}::${texture}::${variantRotation.x}::${variantRotation.y}`,
     blockId: id,
     blockProperties: properties,
     from,
