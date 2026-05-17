@@ -286,6 +286,62 @@ function App() {
           viewerRef={viewerRef}
         />
 
+        {selectedBlock && (
+          <div className="selected-block-card" role="status" aria-live="polite">
+            <div className="selected-block-card-heading">
+              <Box size={16} aria-hidden="true" />
+              <div>
+                <p className="eyebrow">Selection</p>
+                <h2>{formatBlockName(materialIdForBlock(selectedBlock))}</h2>
+              </div>
+            </div>
+            <p>{selectedBlock.name}</p>
+            <dl>
+              <div>
+                <dt>X</dt>
+                <dd>{selectedBlockWorldX}</dd>
+              </div>
+              <div>
+                <dt>Y</dt>
+                <dd>{selectedBlockWorldY}</dd>
+              </div>
+              <div>
+                <dt>Z</dt>
+                <dd>{selectedBlockWorldZ}</dd>
+              </div>
+            </dl>
+            {isPlayerHeadBlock(selectedBlock) && playerHeadOptions.length > 0 && (
+              <div className="player-head-picker">
+                <label htmlFor="player-head-select">Displayed head</label>
+                <select
+                  id="player-head-select"
+                  value={selectedPlayerHeadTextureId}
+                  onChange={(event) => choosePlayerHeadTexture(event.target.value)}
+                >
+                  {playerHeadOptions.map((texture, index) => (
+                    <option key={texture.id} value={texture.id}>
+                      {playerHeadLabel(texture, index)}
+                    </option>
+                  ))}
+                </select>
+                <div className="player-head-options" aria-label="Player head texture choices">
+                  {playerHeadOptions.map((texture, index) => (
+                    <button
+                      className={selectedPlayerHeadTextureId === texture.id ? 'is-selected' : ''}
+                      key={texture.id}
+                      type="button"
+                      onClick={() => choosePlayerHeadTexture(texture.id)}
+                      title={playerHeadLabel(texture, index)}
+                    >
+                      <img src={texture.url} alt="" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="view-presets" aria-label="Camera presets">
           <button type="button" onClick={() => viewerRef.current?.setPreset('front')}>Front</button>
           <button type="button" onClick={() => viewerRef.current?.setPreset('right')}>Right</button>
@@ -313,66 +369,6 @@ function App() {
             <section className="stats-grid" aria-label="Schematic summary">
               <Metric icon={<Box size={17} />} label="Blocks" value={model.blocks.length.toLocaleString()} />
               <Metric icon={<Layers3 size={17} />} label="Height" value={model.dimensions.height.toString()} />
-            </section>
-
-            <section className="selected-block" aria-live="polite">
-              <div className="section-heading compact">
-                <div>
-                  <p className="eyebrow">Selection</p>
-                  <h2>{selectedBlock ? formatBlockName(materialIdForBlock(selectedBlock)) : 'No block selected'}</h2>
-                </div>
-                <Box size={18} />
-              </div>
-              {selectedBlock ? (
-                <div className="selected-block-details">
-                  <p>{selectedBlock.name}</p>
-                  <dl>
-                    <div>
-                      <dt>X</dt>
-                      <dd>{selectedBlockWorldX}</dd>
-                    </div>
-                    <div>
-                      <dt>Y</dt>
-                      <dd>{selectedBlockWorldY}</dd>
-                    </div>
-                    <div>
-                      <dt>Z</dt>
-                      <dd>{selectedBlockWorldZ}</dd>
-                    </div>
-                  </dl>
-                  {isPlayerHeadBlock(selectedBlock) && playerHeadOptions.length > 0 && (
-                    <div className="player-head-picker">
-                      <label htmlFor="player-head-select">Displayed head</label>
-                      <select
-                        id="player-head-select"
-                        value={selectedPlayerHeadTextureId}
-                        onChange={(event) => choosePlayerHeadTexture(event.target.value)}
-                      >
-                        {playerHeadOptions.map((texture, index) => (
-                          <option key={texture.id} value={texture.id}>
-                            {playerHeadLabel(texture, index)}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="player-head-options" aria-label="Player head texture choices">
-                        {playerHeadOptions.map((texture, index) => (
-                          <button
-                            className={selectedPlayerHeadTextureId === texture.id ? 'is-selected' : ''}
-                            key={texture.id}
-                            type="button"
-                            onClick={() => choosePlayerHeadTexture(texture.id)}
-                            title={playerHeadLabel(texture, index)}
-                          >
-                            <img src={texture.url} alt="" />
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <p className="selection-empty">Click a visible block in the viewport.</p>
-              )}
             </section>
 
             <section className="layer-control">
