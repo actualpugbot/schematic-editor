@@ -4,22 +4,17 @@ import {
   ChevronLeft,
   ChevronRight,
   Cuboid,
-  Download,
   Eye,
   EyeOff,
   FileUp,
-  Layers,
   ListFilter,
   LocateFixed,
   Maximize,
-  Moon,
-  MousePointer2,
   Move3D,
   Pencil,
   Rotate3D,
   ScanSearch,
   Search,
-  Settings,
   SlidersHorizontal,
   Sun,
   Upload,
@@ -281,34 +276,17 @@ function App() {
             <button className="ghost-icon" type="button" onClick={() => inputRef.current?.click()} title="Change file">
               <Pencil size={16} />
             </button>
-            {loadState === 'ready' && <span className="save-chip">Saved</span>}
           </div>
         </div>
 
         <div className="topbar-actions">
-          <button className="secondary-button" type="button" onClick={() => inputRef.current?.click()}>
-            <Download size={17} />
-            Import
-          </button>
           <button className="primary-button" type="button" onClick={() => inputRef.current?.click()}>
             <Upload size={17} />
             Upload
           </button>
-          <span className="topbar-divider" aria-hidden="true" />
-          <div className="mode-toggle" aria-label="View mode">
-            <button className="is-active" type="button" onClick={() => viewerRef.current?.spinOnce()}>
-              <Cuboid size={16} />
-              3D
-            </button>
-            <button type="button" onClick={() => setSingleLayer(true)}>
-              <Layers size={16} />
-              Slice
-            </button>
-          </div>
           <button className="ghost-icon" type="button" onClick={() => showPanel('layers')} title="Layer settings">
             <Sun size={18} />
           </button>
-          <div className="avatar" aria-hidden="true">JD</div>
           <input
             ref={inputRef}
             className="file-input"
@@ -324,40 +302,6 @@ function App() {
       </header>
 
       <div className="workspace">
-        <nav className="tool-rail" aria-label="Primary tools">
-          <button className="is-active" type="button" onClick={() => viewerRef.current?.spinOnce()}>
-            <Eye size={24} />
-            <span>View</span>
-          </button>
-          <button type="button" onClick={() => inputRef.current?.click()}>
-            <Pencil size={24} />
-            <span>Edit</span>
-          </button>
-          <button type="button" onClick={() => showPanel('selection')}>
-            <MousePointer2 size={24} />
-            <span>Select</span>
-          </button>
-          <button type="button" onClick={() => showPanel('materials')}>
-            <Cuboid size={24} />
-            <span>Materials</span>
-          </button>
-          <button type="button" onClick={() => showPanel('layers')}>
-            <Layers size={24} />
-            <span>Layers</span>
-          </button>
-          <span className="tool-rail-spacer" />
-          <button type="button" onClick={() => viewerRef.current?.spinOnce()} title="Spin 360 degrees">
-            <Rotate3D size={23} />
-            <span>Spin</span>
-          </button>
-          <button type="button" onClick={() => showPanel('layers')} title="Layer settings">
-            <Settings size={23} />
-          </button>
-          <button type="button" onClick={() => showPanel('materials')} title="Materials">
-            <Moon size={23} />
-          </button>
-        </nav>
-
         <section className="viewport-panel" aria-label="Schematic 3D viewport">
           <div className="camera-card" aria-label="Camera controls">
             <div>
