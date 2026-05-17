@@ -147,18 +147,40 @@ export function parseBlockStateKey(stateKey: string): BlockStateInfo {
 }
 
 function defaultBlockProperties(id: string, properties: Record<string, string>): Record<string, string> {
-  if (!isStairsBlock(id)) return properties;
+  if (isStairsBlock(id)) {
+    return {
+      facing: 'east',
+      half: 'bottom',
+      shape: 'straight',
+      ...properties,
+    };
+  }
 
-  return {
-    facing: 'east',
-    half: 'bottom',
-    shape: 'straight',
-    ...properties,
-  };
+  if (isLanternBlock(id)) {
+    return {
+      hanging: 'false',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:smoker') {
+    return {
+      facing: 'north',
+      lit: 'false',
+      ...properties,
+    };
+  }
+
+  return properties;
 }
 
 function isStairsBlock(id: string): boolean {
   return id.replace(/^minecraft:/, '').endsWith('_stairs');
+}
+
+function isLanternBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path === 'lantern' || path.endsWith('_lantern');
 }
 
 export async function resolveBlockParts(stateKey: string): Promise<ResolvedBlockPart[]> {
@@ -505,6 +527,9 @@ function syntheticBlockParts(
   properties: Record<string, string>,
   variantRotation: { x: number; y: number },
 ): ResolvedBlockPart[] {
+  const decoratedPotParts = syntheticDecoratedPotParts(id, properties, variantRotation);
+  if (decoratedPotParts.length > 0) return decoratedPotParts;
+
   const playerHeadParts = syntheticPlayerHeadParts(id, properties, variantRotation);
   if (playerHeadParts.length > 0) return playerHeadParts;
 
@@ -512,6 +537,22 @@ function syntheticBlockParts(
   if (movingPistonParts.length > 0) return movingPistonParts;
 
   return [];
+}
+
+function syntheticDecoratedPotParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (id !== 'minecraft:decorated_pot') return [];
+
+  const texture = 'minecraft:block/terracotta';
+
+  return [
+    syntheticCuboidPart(id, properties, 'decorated-pot-base', [4, 0, 4], [12, 2, 12], texture, variantRotation),
+    syntheticCuboidPart(id, properties, 'decorated-pot-body', [3, 2, 3], [13, 12, 13], texture, variantRotation),
+    syntheticCuboidPart(id, properties, 'decorated-pot-neck', [5, 12, 5], [11, 16, 11], texture, variantRotation),
+  ];
 }
 
 function syntheticPlayerHeadParts(

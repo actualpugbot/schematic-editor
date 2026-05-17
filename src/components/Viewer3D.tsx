@@ -827,12 +827,16 @@ function createModelElementGeometry(part: ResolvedBlockPart): THREE.BufferGeomet
 const faceCornerOrder = [0, 1, 2, 3];
 
 function modelFacePositions(part: ResolvedBlockPart, face: ModelFaceName): Array<[number, number, number]> {
-  const x1 = part.from[0] / 16 - 0.5;
-  const y1 = part.from[1] / 16 - 0.5;
-  const z1 = part.from[2] / 16 - 0.5;
-  const x2 = part.to[0] / 16 - 0.5;
-  const y2 = part.to[1] / 16 - 0.5;
-  const z2 = part.to[2] / 16 - 0.5;
+  const depthBias = 0.0005;
+  const xBias = part.from[0] === part.to[0] ? depthBias : 0;
+  const yBias = part.from[1] === part.to[1] ? depthBias : 0;
+  const zBias = part.from[2] === part.to[2] ? depthBias : 0;
+  const x1 = part.from[0] / 16 - 0.5 - xBias;
+  const y1 = part.from[1] / 16 - 0.5 - yBias;
+  const z1 = part.from[2] / 16 - 0.5 - zBias;
+  const x2 = part.to[0] / 16 - 0.5 + xBias;
+  const y2 = part.to[1] / 16 - 0.5 + yBias;
+  const z2 = part.to[2] / 16 - 0.5 + zBias;
 
   switch (face) {
     case 'east':
@@ -1059,6 +1063,9 @@ function isGlowingTexture(textureId: string): boolean {
     path === 'block/sea_lantern'
     || path === 'block/lantern'
     || path === 'block/soul_lantern'
+    || path.endsWith('_copper_lantern')
+    || path === 'block/smoker_front_on'
+    || path.endsWith('_emissive')
     || path.startsWith('block/lava_')
     || path.includes('campfire_fire')
   );
@@ -1068,6 +1075,9 @@ function emissiveColor(textureId: string): number {
   const path = textureId.replace(/^minecraft:/, '');
   if (path === 'block/sea_lantern') return 0xcff8e9;
   if (path === 'block/soul_lantern') return 0x64d6ff;
+  if (path.endsWith('_copper_lantern')) return 0xffb95f;
+  if (path === 'block/smoker_front_on') return 0xff8a24;
+  if (path.endsWith('_emissive')) return 0xffffb8;
   if (path.startsWith('block/lava_') || path.includes('campfire_fire')) return 0xff8a24;
   if (path === 'block/lantern') return 0xffc552;
   return 0x65fff5;
