@@ -4,7 +4,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronUp,
   Cuboid,
   Eye,
   EyeOff,
@@ -437,6 +436,7 @@ function App() {
               <div className="material-stack">
                 {filteredMaterials.map((material) => {
                   const isExpanded = expandedMaterialIds.has(material.id);
+                  const breakdownId = `material-breakdown-${material.id}`;
 
                   return (
                     <div className="material-item" key={material.id}>
@@ -445,11 +445,13 @@ function App() {
                           className="material-pick"
                           type="button"
                           aria-expanded={isExpanded}
+                          aria-controls={breakdownId}
                           onClick={() => toggleMaterialBreakdown(material.id)}
                         >
                           <BlockPreview stateKey={material.stateKey} color={material.color} />
                           <span>{material.label}</span>
                           <strong>{material.count.toLocaleString()}</strong>
+                          <ChevronDown className="material-disclosure" size={15} aria-hidden="true" />
                         </button>
                         <button
                           type="button"
@@ -462,19 +464,12 @@ function App() {
                         </button>
                       </div>
                       {isExpanded && (
-                        <button
-                          type="button"
+                        <div
+                          id={breakdownId}
                           className="material-breakdown"
-                          aria-label={`Collapse ${material.label} material breakdown`}
-                          onClick={() => toggleMaterialBreakdown(material.id)}
                         >
-                          <span>{material.label}</span>
-                          <strong>{storageBreakdown(material.count)}</strong>
-                          <small>
-                            <ChevronUp size={14} aria-hidden="true" />
-                            Click to collapse
-                          </small>
-                        </button>
+                          <strong>{storageBreakdown(material.id, material.count)}</strong>
+                        </div>
                       )}
                     </div>
                   );
@@ -621,23 +616,32 @@ function formatBlockName(id: string): string {
     .join(' ');
 }
 
-function storageBreakdown(count: number): string {
-  const shulkers = Math.floor(count / 1728);
-  const afterShulkers = count % 1728;
-  const stacks = Math.floor(afterShulkers / 64);
-  const blocks = afterShulkers % 64;
-  const parts = [
-    quantityLabel(shulkers, 'shulker box', 'shulker boxes'),
-    quantityLabel(stacks, 'stack', 'stacks'),
-    quantityLabel(blocks, 'block', 'blocks'),
-  ].filter(Boolean);
+function storageBreakdown(materialId: string, count: number): string {
+  const stackSize = itemStackSize(materialId);
+  const stacks = Math.floor(count / stackSize);
+  const remainder = count % stackSize;
+  const stackMath = remainder === 0
+    ? `${stacks.toLocaleString()} x ${stackSize}`
+    : `${stacks.toLocaleString()} x ${stackSize} + ${remainder.toLocaleString()}`;
+  const shulkerBoxes = count / (stackSize * 27);
 
-  return parts.join(' + ') || '0 blocks';
+  return `${count.toLocaleString()} = ${stackMath} = ${formatShulkerBoxes(shulkerBoxes)} SB`;
 }
 
-function quantityLabel(value: number, singular: string, plural: string): string {
-  if (value === 0) return '';
-  return `${value.toLocaleString()} ${value === 1 ? singular : plural}`;
+function formatShulkerBoxes(value: number): string {
+  if (value > 0 && value < 0.01) return '<0.01';
+  return value.toLocaleString(undefined, {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: value < 10 ? 2 : 0,
+  });
+}
+
+function itemStackSize(materialId: string): number {
+  const id = materialId.replace(/^minecraft:/, '');
+  if (id.endsWith('_bed') || id.endsWith('shulker_box') || id === 'cake') return 1;
+  if (id.endsWith('_sign') || id.endsWith('_wall_sign') || id.endsWith('_hanging_sign') || id.endsWith('_wall_hanging_sign')) return 16;
+  if (id.endsWith('_banner') || id.endsWith('_wall_banner')) return 16;
+  return 64;
 }
 
 function clamp(value: number, min: number, max: number) {
