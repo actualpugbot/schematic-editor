@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
-  Box,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -8,7 +7,6 @@ import {
   Eye,
   EyeOff,
   FileUp,
-  Layers3,
   Rotate3D,
   ScanSearch,
   Search,
@@ -49,6 +47,7 @@ function App() {
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const viewerRef = useRef<Viewer3DHandle | null>(null);
+  const materialItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const dragDepthRef = useRef(0);
   const visibleWorldY = model ? model.origin.y + visibleLayer : visibleLayer;
   const lowestWorldY = model ? model.origin.y : 0;
@@ -104,6 +103,7 @@ function App() {
 
   const playerHeadOptions = useMemo(() => uniquePlayerHeadTextures(model), [model]);
   const selectedBlockKey = selectedBlock ? blockPositionKey(selectedBlock) : null;
+  const selectedMaterialId = selectedBlock ? materialIdForBlock(selectedBlock) : null;
   const selectedPlayerHeadTextureId = selectedBlock
     ? playerHeadSelections[blockPositionKey(selectedBlock)] ?? selectedBlock.playerHeadTexture?.id ?? playerHeadOptions[0]?.id ?? ''
     : '';
@@ -129,6 +129,25 @@ function App() {
       return next.size === current.size ? current : next;
     });
   }, [materials]);
+
+  useEffect(() => {
+    if (!selectedMaterialId) return;
+
+    const selectedMaterialIsVisible = filteredMaterials.some((material) => material.id === selectedMaterialId);
+    if (!selectedMaterialIsVisible && materialSearch.trim()) {
+      setMaterialSearch('');
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      materialItemRefs.current.get(selectedMaterialId)?.scrollIntoView({
+        block: 'center',
+        behavior: 'smooth',
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [filteredMaterials, materialSearch, selectedMaterialId]);
 
   const handleFile = async (file: File) => {
     setLoadState('loading');
@@ -286,62 +305,6 @@ function App() {
           viewerRef={viewerRef}
         />
 
-        {selectedBlock && (
-          <div className="selected-block-card" role="status" aria-live="polite">
-            <div className="selected-block-card-heading">
-              <Box size={16} aria-hidden="true" />
-              <div>
-                <p className="eyebrow">Selection</p>
-                <h2>{formatBlockName(materialIdForBlock(selectedBlock))}</h2>
-              </div>
-            </div>
-            <p>{selectedBlock.name}</p>
-            <dl>
-              <div>
-                <dt>X</dt>
-                <dd>{selectedBlockWorldX}</dd>
-              </div>
-              <div>
-                <dt>Y</dt>
-                <dd>{selectedBlockWorldY}</dd>
-              </div>
-              <div>
-                <dt>Z</dt>
-                <dd>{selectedBlockWorldZ}</dd>
-              </div>
-            </dl>
-            {isPlayerHeadBlock(selectedBlock) && playerHeadOptions.length > 0 && (
-              <div className="player-head-picker">
-                <label htmlFor="player-head-select">Displayed head</label>
-                <select
-                  id="player-head-select"
-                  value={selectedPlayerHeadTextureId}
-                  onChange={(event) => choosePlayerHeadTexture(event.target.value)}
-                >
-                  {playerHeadOptions.map((texture, index) => (
-                    <option key={texture.id} value={texture.id}>
-                      {playerHeadLabel(texture, index)}
-                    </option>
-                  ))}
-                </select>
-                <div className="player-head-options" aria-label="Player head texture choices">
-                  {playerHeadOptions.map((texture, index) => (
-                    <button
-                      className={selectedPlayerHeadTextureId === texture.id ? 'is-selected' : ''}
-                      key={texture.id}
-                      type="button"
-                      onClick={() => choosePlayerHeadTexture(texture.id)}
-                      title={playerHeadLabel(texture, index)}
-                    >
-                      <img src={texture.url} alt="" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
         <div className="view-presets" aria-label="Camera presets">
           <button type="button" onClick={() => viewerRef.current?.setPreset('front')}>Front</button>
           <button type="button" onClick={() => viewerRef.current?.setPreset('right')}>Right</button>
@@ -366,9 +329,61 @@ function App() {
 
         {model && (
           <>
-            <section className="stats-grid" aria-label="Schematic summary">
-              <Metric icon={<Box size={17} />} label="Blocks" value={model.blocks.length.toLocaleString()} />
-              <Metric icon={<Layers3 size={17} />} label="Height" value={model.dimensions.height.toString()} />
+            <section className="summary-card" aria-label="Schematic summary">
+              <div className="summary-selection" role="status" aria-live="polite">
+                <p className="eyebrow">Selection</p>
+                {selectedBlock ? (
+                  <>
+                    <strong>{selectedBlock.name}</strong>
+                    <dl>
+                      <div>
+                        <dt>X</dt>
+                        <dd>{selectedBlockWorldX}</dd>
+                      </div>
+                      <div>
+                        <dt>Y</dt>
+                        <dd>{selectedBlockWorldY}</dd>
+                      </div>
+                      <div>
+                        <dt>Z</dt>
+                        <dd>{selectedBlockWorldZ}</dd>
+                      </div>
+                    </dl>
+                  </>
+                ) : (
+                  <span>No block selected</span>
+                )}
+              </div>
+
+              {selectedBlock && isPlayerHeadBlock(selectedBlock) && playerHeadOptions.length > 0 && (
+                <div className="player-head-picker">
+                  <label htmlFor="player-head-select">Displayed head</label>
+                  <select
+                    id="player-head-select"
+                    value={selectedPlayerHeadTextureId}
+                    onChange={(event) => choosePlayerHeadTexture(event.target.value)}
+                  >
+                    {playerHeadOptions.map((texture, index) => (
+                      <option key={texture.id} value={texture.id}>
+                        {playerHeadLabel(texture, index)}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="player-head-options" aria-label="Player head texture choices">
+                    {playerHeadOptions.map((texture, index) => (
+                      <button
+                        className={selectedPlayerHeadTextureId === texture.id ? 'is-selected' : ''}
+                        key={texture.id}
+                        type="button"
+                        onClick={() => choosePlayerHeadTexture(texture.id)}
+                        title={playerHeadLabel(texture, index)}
+                      >
+                        <img src={texture.url} alt="" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </section>
 
             <section className="layer-control">
@@ -432,11 +447,22 @@ function App() {
               <div className="material-stack">
                 {filteredMaterials.map((material) => {
                   const isExpanded = expandedMaterialIds.has(material.id);
+                  const isSelected = material.id === selectedMaterialId;
                   const breakdownId = `material-breakdown-${material.id}`;
 
                   return (
-                    <div className="material-item" key={material.id}>
-                      <div className={`material-row${isExpanded ? ' is-selected' : ''}`}>
+                    <div
+                      className="material-item"
+                      key={material.id}
+                      ref={(node) => {
+                        if (node) {
+                          materialItemRefs.current.set(material.id, node);
+                        } else {
+                          materialItemRefs.current.delete(material.id);
+                        }
+                      }}
+                    >
+                      <div className={`material-row${isExpanded ? ' is-expanded' : ''}${isSelected ? ' is-selected' : ''}`}>
                         <button
                           className="material-pick"
                           type="button"
@@ -486,22 +512,6 @@ function App() {
         )}
       </aside>
     </main>
-  );
-}
-
-interface MetricProps {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-}
-
-function Metric({ icon, label, value }: MetricProps) {
-  return (
-    <div className="metric">
-      <span>{icon}</span>
-      <p>{label}</p>
-      <strong>{value}</strong>
-    </div>
   );
 }
 
