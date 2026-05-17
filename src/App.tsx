@@ -8,23 +8,21 @@ import {
   EyeOff,
   FileUp,
   ListFilter,
-  LocateFixed,
-  Maximize,
   Move3D,
   Pencil,
   Rotate3D,
   ScanSearch,
   Search,
-  SlidersHorizontal,
   Sun,
   Upload,
+  X,
 } from 'lucide-react';
 import { Viewer3D, type Viewer3DHandle } from './components/Viewer3D';
 import { createBlockThumbnail } from './lib/blockThumbnails';
 import { createSampleModel, parseSchematic, type PlayerHeadTexture, type SchematicModel, type VoxelBlock } from './lib/schematic';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
-type InspectorTab = 'materials' | 'selection' | 'layers';
+type InspectorTab = 'materials' | 'layers';
 
 interface MaterialSummary {
   id: string;
@@ -52,7 +50,6 @@ function App() {
   const materialItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const materialPanelRef = useRef<HTMLElement | null>(null);
   const layerPanelRef = useRef<HTMLElement | null>(null);
-  const selectionPanelRef = useRef<HTMLElement | null>(null);
   const dragDepthRef = useRef(0);
   const visibleWorldY = model ? model.origin.y + visibleLayer : visibleLayer;
   const selectedBlockWorldX = selectedBlock && model ? model.origin.x + selectedBlock.x : null;
@@ -244,7 +241,7 @@ function App() {
 
   const showPanel = (tab: InspectorTab) => {
     setInspectorTab(tab);
-    const panel = tab === 'materials' ? materialPanelRef : tab === 'layers' ? layerPanelRef : selectionPanelRef;
+    const panel = tab === 'materials' ? materialPanelRef : layerPanelRef;
     window.requestAnimationFrame(() => panel.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
   };
 
@@ -303,26 +300,69 @@ function App() {
 
       <div className="workspace">
         <section className="viewport-panel" aria-label="Schematic 3D viewport">
-          <div className="camera-card" aria-label="Camera controls">
-            <div>
-              <strong>Camera</strong>
-              <ChevronDown size={15} />
-            </div>
-            <div className="camera-buttons">
-              <button type="button" title="Center build" onClick={() => viewerRef.current?.spinOnce()}>
-                <LocateFixed size={18} />
-              </button>
-              <button type="button" title="Frame build" onClick={() => viewerRef.current?.spinOnce()}>
-                <Maximize size={18} />
-              </button>
-              <button type="button" title="Orbit" onClick={() => viewerRef.current?.spinOnce()}>
-                <Move3D size={18} />
-              </button>
-              <button type="button" title="Layer controls" onClick={() => showPanel('layers')}>
-                <SlidersHorizontal size={18} />
-              </button>
-            </div>
-          </div>
+          {selectedBlock && (
+            <section className="selection-inspector-card" aria-label="Selection inspector">
+              <div className="selection-inspector-header">
+                <div>
+                  <p className="eyebrow">Selection Inspector</p>
+                  <strong>{selectedBlock.name}</strong>
+                </div>
+                <button
+                  type="button"
+                  className="selection-inspector-close"
+                  onClick={() => setSelectedBlock(null)}
+                  title="Close selection inspector"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              <dl className="selection-coordinates">
+                <div>
+                  <dt>X</dt>
+                  <dd>{selectedBlockWorldX}</dd>
+                </div>
+                <div>
+                  <dt>Y</dt>
+                  <dd>{selectedBlockWorldY}</dd>
+                </div>
+                <div>
+                  <dt>Z</dt>
+                  <dd>{selectedBlockWorldZ}</dd>
+                </div>
+              </dl>
+
+              {isPlayerHeadBlock(selectedBlock) && playerHeadOptions.length > 0 && (
+                <div className="player-head-picker">
+                  <label htmlFor="player-head-select">Displayed head</label>
+                  <select
+                    id="player-head-select"
+                    value={selectedPlayerHeadTextureId}
+                    onChange={(event) => choosePlayerHeadTexture(event.target.value)}
+                  >
+                    {playerHeadOptions.map((texture, index) => (
+                      <option key={texture.id} value={texture.id}>
+                        {playerHeadLabel(texture, index)}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="player-head-options" aria-label="Player head texture choices">
+                    {playerHeadOptions.map((texture, index) => (
+                      <button
+                        className={selectedPlayerHeadTextureId === texture.id ? 'is-selected' : ''}
+                        key={texture.id}
+                        type="button"
+                        onClick={() => choosePlayerHeadTexture(texture.id)}
+                        title={playerHeadLabel(texture, index)}
+                      >
+                        <img src={texture.url} alt="" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
 
           {model && (
             <section className="build-summary-card" aria-label="Build summary">
@@ -414,15 +454,6 @@ function App() {
               <button
                 type="button"
                 role="tab"
-                aria-selected={inspectorTab === 'selection'}
-                className={inspectorTab === 'selection' ? 'is-active' : ''}
-                onClick={() => showPanel('selection')}
-              >
-                Selection Inspector
-              </button>
-              <button
-                type="button"
-                role="tab"
                 aria-selected={inspectorTab === 'layers'}
                 className={inspectorTab === 'layers' ? 'is-active' : ''}
                 onClick={() => showPanel('layers')}
@@ -430,67 +461,6 @@ function App() {
                 Layer View
               </button>
             </div>
-
-            <section
-              className={`summary-card inspector-panel${inspectorTab === 'selection' ? ' is-active' : ''}`}
-              aria-label="Schematic summary"
-              ref={selectionPanelRef}
-            >
-              <div className="summary-selection" role="status" aria-live="polite">
-                <p className="eyebrow">Selection</p>
-                {selectedBlock ? (
-                  <>
-                    <strong>{selectedBlock.name}</strong>
-                    <dl>
-                      <div>
-                        <dt>X</dt>
-                        <dd>{selectedBlockWorldX}</dd>
-                      </div>
-                      <div>
-                        <dt>Y</dt>
-                        <dd>{selectedBlockWorldY}</dd>
-                      </div>
-                      <div>
-                        <dt>Z</dt>
-                        <dd>{selectedBlockWorldZ}</dd>
-                      </div>
-                    </dl>
-                  </>
-                ) : (
-                  <span>No block selected</span>
-                )}
-              </div>
-
-              {selectedBlock && isPlayerHeadBlock(selectedBlock) && playerHeadOptions.length > 0 && (
-                <div className="player-head-picker">
-                  <label htmlFor="player-head-select">Displayed head</label>
-                  <select
-                    id="player-head-select"
-                    value={selectedPlayerHeadTextureId}
-                    onChange={(event) => choosePlayerHeadTexture(event.target.value)}
-                  >
-                    {playerHeadOptions.map((texture, index) => (
-                      <option key={texture.id} value={texture.id}>
-                        {playerHeadLabel(texture, index)}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="player-head-options" aria-label="Player head texture choices">
-                    {playerHeadOptions.map((texture, index) => (
-                      <button
-                        className={selectedPlayerHeadTextureId === texture.id ? 'is-selected' : ''}
-                        key={texture.id}
-                        type="button"
-                        onClick={() => choosePlayerHeadTexture(texture.id)}
-                        title={playerHeadLabel(texture, index)}
-                      >
-                        <img src={texture.url} alt="" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </section>
 
             <section
               className={`layer-control inspector-panel${inspectorTab === 'layers' ? ' is-active' : ''}`}

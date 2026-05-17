@@ -218,7 +218,7 @@ h2 {
   height: 100%;
 }
 
-.camera-card,
+.selection-inspector-card,
 .build-summary-card,
 .viewport-tools {
   position: absolute;
@@ -230,30 +230,86 @@ h2 {
   backdrop-filter: blur(16px);
 }
 
-.camera-card {
+.selection-inspector-card {
   top: 24px;
   left: 28px;
-  width: min(230px, calc(100% - 56px));
+  display: grid;
+  gap: 14px;
+  width: min(300px, calc(100% - 56px));
+  max-height: calc(100% - 48px);
+  overflow: auto;
   padding: 14px;
 }
 
-.camera-card > div:first-child {
+.selection-inspector-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 13px;
+  gap: 12px;
   color: var(--ink);
-  font-size: 0.83rem;
-  font-weight: 820;
 }
 
-.camera-buttons {
+.selection-inspector-header > div {
+  min-width: 0;
+}
+
+.selection-inspector-header strong {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.selection-inspector-close {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 9px;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--paper-strong);
+  color: #455357;
+  box-shadow: 0 4px 12px rgba(28, 41, 43, 0.06);
+  transition:
+    transform 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
 }
 
-.camera-buttons button,
+.selection-inspector-close:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in oklch, var(--teal), var(--line) 45%);
+  color: var(--teal-strong);
+}
+
+.selection-coordinates {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.selection-coordinates > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px;
+  border-radius: 7px;
+  background: var(--paper-strong);
+}
+
+.selection-coordinates dt {
+  font-size: 0.68rem;
+}
+
+.selection-coordinates dd {
+  overflow-wrap: anywhere;
+}
+
 .viewport-tools button,
 .ghost-icon,
 .icon-button,
@@ -275,7 +331,6 @@ h2 {
     color 160ms ease;
 }
 
-.camera-buttons button:hover,
 .viewport-tools button:hover,
 .ghost-icon:hover,
 .icon-button:hover,
@@ -293,8 +348,7 @@ h2 {
 }
 
 .summary-metrics,
-.storage-metrics,
-.summary-selection dl {
+.storage-metrics {
   margin: 0;
 }
 
@@ -425,7 +479,7 @@ dd {
 
 .inspector-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   flex: 0 0 auto;
   min-height: 58px;
   border-bottom: 1px solid var(--line);
@@ -468,7 +522,6 @@ dd {
   display: flex;
 }
 
-.summary-card,
 .layer-control,
 .material-list,
 .notice {
@@ -476,13 +529,11 @@ dd {
   background: transparent;
 }
 
-.summary-card,
 .layer-control,
 .material-list {
   padding: 18px;
 }
 
-.summary-card,
 .layer-control {
   flex: 0 0 auto;
   flex-direction: column;
@@ -514,54 +565,6 @@ dd {
 .section-heading.compact {
   align-items: center;
   margin-bottom: 12px;
-}
-
-.summary-selection {
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--paper-soft);
-}
-
-.summary-selection strong,
-.summary-selection dd {
-  display: block;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.summary-selection > strong {
-  color: var(--ink);
-  font-size: 0.9rem;
-  line-height: 1.35;
-}
-
-.summary-selection > span {
-  color: var(--muted);
-  font-size: 0.86rem;
-  font-weight: 760;
-}
-
-.summary-selection dl {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.summary-selection dl > div {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-  padding: 9px;
-  border-radius: 7px;
-  background: var(--paper-strong);
-}
-
-.summary-selection dt {
-  font-size: 0.68rem;
 }
 
 .player-head-picker {
@@ -1051,7 +1054,7 @@ dd {
     grid-column: 1;
   }
 
-  .camera-card {
+  .selection-inspector-card {
     left: 12px;
     top: 12px;
   }
@@ -1083,7 +1086,7 @@ dd {
     flex: 1 1 120px;
   }
 
-  .camera-card {
+  .selection-inspector-card {
     width: calc(100% - 84px);
   }
 
