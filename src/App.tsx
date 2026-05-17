@@ -7,7 +7,6 @@ import {
   Eye,
   EyeOff,
   FileUp,
-  ListFilter,
   Move3D,
   Pencil,
   Rotate3D,
@@ -507,14 +506,12 @@ function App() {
             >
               <div className="section-heading compact">
                 <div>
-                  <p className="eyebrow">Materials</p>
                   <h2>
                     {materialSearch.trim()
                       ? `${filteredMaterials.length.toLocaleString()} of ${materials.length.toLocaleString()} materials`
                       : `${materials.length.toLocaleString()} materials`}
                   </h2>
                 </div>
-                <ListFilter size={18} />
               </div>
               <label className="material-search">
                 <Search size={16} aria-hidden="true" />
