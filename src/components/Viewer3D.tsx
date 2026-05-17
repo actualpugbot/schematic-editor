@@ -971,6 +971,7 @@ function materialsForPart(
   hiddenFaces = new Set<ModelFaceName>(),
 ): THREE.Material[] {
   return faceOrder.map((face) => {
+    if (isRailPart(part) && face === 'down') return hiddenMaterial;
     if (hiddenFaces.has(face)) return hiddenMaterial;
 
     const textureId = part.faceTextures[face];
@@ -1003,7 +1004,7 @@ function textureMaterial(textureId: string, tintColor: number | null, shade: boo
   const glass = isGlassTexture(textureId);
   const opacity = translucent ? translucentTextureOpacity(textureId) : 1;
   const depthWrite = !translucent || glass;
-  const side = glass ? THREE.FrontSide : THREE.DoubleSide;
+  const side = THREE.FrontSide;
 
   const material = shade
     ? new THREE.MeshStandardMaterial({
@@ -1039,6 +1040,11 @@ function partHasTranslucentFaces(part: ResolvedBlockPart): boolean {
 
 function isWaterPart(part: ResolvedBlockPart): boolean {
   return part.blockId === 'minecraft:water';
+}
+
+function isRailPart(part: ResolvedBlockPart): boolean {
+  const path = part.blockId.replace(/^minecraft:/, '');
+  return path === 'rail' || path.endsWith('_rail');
 }
 
 function isBeaconCoreTexture(textureId: string): boolean {

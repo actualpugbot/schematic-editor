@@ -49,6 +49,11 @@ type MultipartWhen =
   | Record<string, string | MultipartWhen[]>
   | {
       OR: MultipartWhen[];
+      AND?: never;
+    }
+  | {
+      AND: MultipartWhen[];
+      OR?: never;
     };
 
 interface ModelJson {
@@ -281,9 +286,12 @@ function multipartMatches(when: MultipartWhen, properties: Record<string, string
   if ('OR' in when && Array.isArray(when.OR)) {
     return when.OR.some((item) => multipartMatches(item, properties));
   }
+  if ('AND' in when && Array.isArray(when.AND)) {
+    return when.AND.every((item) => multipartMatches(item, properties));
+  }
 
   for (const [key, rawValue] of Object.entries(when)) {
-    if (key === 'OR') continue;
+    if (key === 'OR' || key === 'AND') continue;
     if (Array.isArray(rawValue)) {
       if (!rawValue.some((item) => multipartMatches(item, properties))) return false;
       continue;
