@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   ChevronDown,
   ChevronLeft,
@@ -16,7 +16,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { Viewer3D, type Viewer3DHandle } from './components/Viewer3D';
+import { Viewer3D, type AxisGizmoOrientation, type Viewer3DHandle } from './components/Viewer3D';
 import { createBlockThumbnail } from './lib/blockThumbnails';
 import { createSampleModel, parseSchematic, type PlayerHeadTexture, type SchematicModel, type VoxelBlock } from './lib/schematic';
 
@@ -47,6 +47,7 @@ function App() {
   const [summaryDismissed, setSummaryDismissed] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const viewerRef = useRef<Viewer3DHandle | null>(null);
+  const axisGizmoRef = useRef<HTMLDivElement | null>(null);
   const materialItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const materialPanelRef = useRef<HTMLElement | null>(null);
   const layerPanelRef = useRef<HTMLElement | null>(null);
@@ -55,6 +56,25 @@ function App() {
   const selectedBlockWorldX = selectedBlock && model ? model.origin.x + selectedBlock.x : null;
   const selectedBlockWorldY = selectedBlock && model ? model.origin.y + selectedBlock.y : null;
   const selectedBlockWorldZ = selectedBlock && model ? model.origin.z + selectedBlock.z : null;
+
+  const updateAxisGizmo = useCallback((orientation: AxisGizmoOrientation) => {
+    const gizmo = axisGizmoRef.current;
+    if (!gizmo) return;
+
+    const originX = 36;
+    const originY = 42;
+    const labelRadius = 40;
+    const lineRadius = 34;
+
+    for (const axis of ['x', 'y', 'z'] as const) {
+      gizmo.style.setProperty(`--axis-${axis}-x`, orientation[axis].x.toString());
+      gizmo.style.setProperty(`--axis-${axis}-y`, orientation[axis].y.toString());
+      gizmo.style.setProperty(`--axis-${axis}-angle`, `${orientation[axis].angle}deg`);
+      gizmo.style.setProperty(`--axis-${axis}-length`, `${Math.max(4, orientation[axis].length * lineRadius)}px`);
+      gizmo.style.setProperty(`--axis-${axis}-label-x`, `${originX + orientation[axis].x * labelRadius}px`);
+      gizmo.style.setProperty(`--axis-${axis}-label-y`, `${originY + orientation[axis].y * labelRadius}px`);
+    }
+  }, []);
 
   const currentLayerBlockCount = useMemo(() => {
     if (!model) return 0;
@@ -408,10 +428,13 @@ function App() {
             </button>
           </div>
 
-          <div className="axis-gizmo" aria-hidden="true">
-            <span className="axis-y">Y</span>
-            <span className="axis-z">Z</span>
-            <span className="axis-x">X</span>
+          <div className="axis-gizmo" aria-hidden="true" ref={axisGizmoRef}>
+            <span className="axis-line axis-line-x" />
+            <span className="axis-line axis-line-y" />
+            <span className="axis-line axis-line-z" />
+            <span className="axis-label axis-y">Y</span>
+            <span className="axis-label axis-z">Z</span>
+            <span className="axis-label axis-x">X</span>
           </div>
 
           <Viewer3D
@@ -424,6 +447,7 @@ function App() {
             playerHeadSelections={playerHeadSelections}
             selectedBlock={selectedBlock}
             onBlockSelect={setSelectedBlock}
+            onAxisOrientationChange={updateAxisGizmo}
             viewerRef={viewerRef}
           />
         </section>

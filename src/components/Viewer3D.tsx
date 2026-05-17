@@ -19,7 +19,21 @@ interface Viewer3DProps {
   showGrid: boolean;
   selectedBlock: VoxelBlock | null;
   onBlockSelect?: (block: VoxelBlock | null) => void;
+  onAxisOrientationChange?: (orientation: AxisGizmoOrientation) => void;
   onReady?: () => void;
+}
+
+export interface AxisGizmoOrientation {
+  x: AxisGizmoVector;
+  y: AxisGizmoVector;
+  z: AxisGizmoVector;
+}
+
+export interface AxisGizmoVector {
+  x: number;
+  y: number;
+  angle: number;
+  length: number;
 }
 
 export interface Viewer3DHandle {
@@ -76,6 +90,7 @@ export function Viewer3D(props: InternalViewerProps) {
   const spinRef = useRef<{ start: number; duration: number; from: number; to: number } | null>(null);
   const latestModelRef = useRef<SchematicModel | null>(props.model);
   const onBlockSelectRef = useRef(props.onBlockSelect);
+  const onAxisOrientationChangeRef = useRef(props.onAxisOrientationChange);
 
   const filteredBlocks = useMemo(() => {
     if (!props.model) return [];
@@ -92,6 +107,10 @@ export function Viewer3D(props: InternalViewerProps) {
   useEffect(() => {
     onBlockSelectRef.current = props.onBlockSelect;
   }, [props.onBlockSelect]);
+
+  useEffect(() => {
+    onAxisOrientationChangeRef.current = props.onAxisOrientationChange;
+  }, [props.onAxisOrientationChange]);
 
   useEffect(() => {
     if (sceneRef.current) {
@@ -200,6 +219,7 @@ export function Viewer3D(props: InternalViewerProps) {
         controlsRef.current.update();
       }
 
+      onAxisOrientationChangeRef.current?.(projectAxisOrientation(camera));
       renderer.render(scene, camera);
       frameRef.current = window.requestAnimationFrame(animate);
     };
@@ -340,6 +360,39 @@ export function Viewer3D(props: InternalViewerProps) {
   }, [props.model]);
 
   return <div className="viewer-canvas" data-testid="viewer-canvas" ref={containerRef} />;
+}
+
+const axisCameraDirection = new THREE.Vector3();
+const axisBasis = {
+  x: new THREE.Vector3(1, 0, 0),
+  y: new THREE.Vector3(0, 1, 0),
+  z: new THREE.Vector3(0, 0, 1),
+};
+
+function projectAxisOrientation(camera: THREE.PerspectiveCamera): AxisGizmoOrientation {
+  return {
+    x: projectAxisVector(camera, axisBasis.x),
+    y: projectAxisVector(camera, axisBasis.y),
+    z: projectAxisVector(camera, axisBasis.z),
+  };
+}
+
+function projectAxisVector(camera: THREE.PerspectiveCamera, axis: THREE.Vector3): AxisGizmoVector {
+  axisCameraDirection.copy(axis).transformDirection(camera.matrixWorldInverse);
+  const x = clampAxisVector(axisCameraDirection.x);
+  const y = clampAxisVector(-axisCameraDirection.y);
+
+  return {
+    x,
+    y,
+    angle: clampAxisVector(Math.atan2(y, x) * (180 / Math.PI)),
+    length: clampAxisVector(Math.hypot(x, y)),
+  };
+}
+
+function clampAxisVector(value: number): number {
+  if (Math.abs(value) < 0.001) return 0;
+  return Number(value.toFixed(4));
 }
 
 async function createBlockMeshes(
