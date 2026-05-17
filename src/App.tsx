@@ -11,6 +11,7 @@ import {
   Layers3,
   Rotate3D,
   ScanSearch,
+  Search,
 } from 'lucide-react';
 import { Viewer3D, type Viewer3DHandle } from './components/Viewer3D';
 import { resolveBlockParts, textureUrl, type ModelFaceName } from './lib/minecraftModels';
@@ -42,6 +43,7 @@ function App() {
   const [singleLayer, setSingleLayer] = useState(false);
   const [selectedBlock, setSelectedBlock] = useState<VoxelBlock | null>(null);
   const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
+  const [materialSearch, setMaterialSearch] = useState('');
   const [hiddenMaterialIds, setHiddenMaterialIds] = useState<Set<string>>(() => new Set());
   const [playerHeadSelections, setPlayerHeadSelections] = useState<Record<string, string>>({});
   const [isDraggingFile, setIsDraggingFile] = useState(false);
@@ -89,6 +91,17 @@ function App() {
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
   }, [model]);
 
+  const filteredMaterials = useMemo(() => {
+    const query = materialSearch.trim().toLocaleLowerCase();
+    if (!query) return materials;
+
+    return materials.filter((material) => {
+      const label = material.label.toLocaleLowerCase();
+      const id = material.id.toLocaleLowerCase();
+      return label.includes(query) || id.includes(query);
+    });
+  }, [materialSearch, materials]);
+
   const selectedMaterial = materials.find((material) => material.id === selectedMaterialId) ?? null;
   const playerHeadOptions = useMemo(() => uniquePlayerHeadTextures(model), [model]);
   const selectedBlockKey = selectedBlock ? blockPositionKey(selectedBlock) : null;
@@ -127,6 +140,7 @@ function App() {
       setSingleLayer(false);
       setSelectedBlock(null);
       setSelectedMaterialId(null);
+      setMaterialSearch('');
       setPlayerHeadSelections({});
       setHiddenMaterialIds(new Set());
       setLoadState('ready');
@@ -387,12 +401,26 @@ function App() {
               <div className="section-heading compact">
                 <div>
                   <p className="eyebrow">Materials</p>
-                  <h2>{materials.length.toLocaleString()} materials</h2>
+                  <h2>
+                    {materialSearch.trim()
+                      ? `${filteredMaterials.length.toLocaleString()} of ${materials.length.toLocaleString()} materials`
+                      : `${materials.length.toLocaleString()} materials`}
+                  </h2>
                 </div>
                 <ChevronDown size={18} />
               </div>
+              <label className="material-search">
+                <Search size={16} aria-hidden="true" />
+                <input
+                  type="search"
+                  value={materialSearch}
+                  onChange={(event) => setMaterialSearch(event.target.value)}
+                  placeholder="Search materials"
+                  aria-label="Search materials"
+                />
+              </label>
               <div className="material-stack">
-                {materials.map((material) => (
+                {filteredMaterials.map((material) => (
                   <div
                     className={`material-row${selectedMaterial?.id === material.id ? ' is-selected' : ''}`}
                     key={material.id}
@@ -413,6 +441,9 @@ function App() {
                     </button>
                   </div>
                 ))}
+                {filteredMaterials.length === 0 && (
+                  <p className="material-empty">No materials match "{materialSearch.trim()}".</p>
+                )}
               </div>
               {selectedMaterial && (
                 <div className="material-breakdown">
