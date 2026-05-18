@@ -21,9 +21,10 @@ interface Viewer3DProps {
   showGrid: boolean;
   theme: 'light' | 'dark';
   selectedBlock: VoxelBlock | null;
+  placementPreviewBlock: VoxelBlock | null;
   cuboidBounds?: CuboidBounds | null;
   cuboidCorners?: CuboidCornerPoints | null;
-  onBlockSelect?: (block: VoxelBlock | null, button: SelectionButton) => void;
+  onBlockSelect?: (block: VoxelBlock | null, button: SelectionButton, placementPoint: PlacementPoint | null) => void;
   onAxisOrientationChange?: (orientation: AxisGizmoOrientation) => void;
   onReady?: () => void;
 }
@@ -68,6 +69,7 @@ export interface Viewer3DHandle {
 
 export type SelectionButton = 'primary' | 'secondary';
 export type CameraMode = 'orbit' | 'spectator';
+export type PlacementPoint = CuboidCornerPoint;
 
 interface SpectatorCameraState {
   position: THREE.Vector3;
@@ -130,11 +132,14 @@ export function Viewer3D(props: InternalViewerProps) {
   const gridRef = useRef<THREE.Group | null>(null);
   const floorRef = useRef<THREE.Mesh | null>(null);
   const selectionBoxRef = useRef<THREE.LineSegments | null>(null);
+  const placementPreviewRef = useRef<THREE.LineSegments | null>(null);
   const cuboidOverlayRef = useRef<THREE.Group | null>(null);
   const cornerLabelRefs = useRef<Record<'a' | 'b', HTMLSpanElement | null>>({ a: null, b: null });
   const frameRef = useRef<number | null>(null);
   const spinRef = useRef<{ start: number; duration: number; from: number; to: number } | null>(null);
   const latestModelRef = useRef<SchematicModel | null>(props.model);
+  const latestBlockKeysRef = useRef<Set<string>>(new Set(props.model?.blocks.map(blockPositionKey) ?? []));
+  const latestPlacementPreviewBlockRef = useRef<VoxelBlock | null>(props.placementPreviewBlock);
   const latestCuboidCornersRef = useRef<CuboidCornerPoints | null | undefined>(props.cuboidCorners);
   const cameraModeRef = useRef<CameraMode>(props.cameraMode);
   const onBlockSelectRef = useRef(props.onBlockSelect);
@@ -155,6 +160,7 @@ export function Viewer3D(props: InternalViewerProps) {
     down: false,
     fast: false,
   });
+  const cameraFitKey = props.model ? modelCameraFitKey(props.model) : null;
 
   const filteredBlocks = useMemo(() => {
     if (!props.model) return [];
@@ -166,7 +172,12 @@ export function Viewer3D(props: InternalViewerProps) {
 
   useEffect(() => {
     latestModelRef.current = props.model;
+    latestBlockKeysRef.current = new Set(props.model?.blocks.map(blockPositionKey) ?? []);
   }, [props.model]);
+
+  useEffect(() => {
+    latestPlacementPreviewBlockRef.current = props.placementPreviewBlock;
+  }, [props.placementPreviewBlock]);
 
   useEffect(() => {
     latestCuboidCornersRef.current = props.cuboidCorners;
@@ -261,6 +272,10 @@ export function Viewer3D(props: InternalViewerProps) {
     selectionBoxRef.current = selectionBox;
     scene.add(selectionBox);
 
+    const placementPreview = createPlacementPreviewBox();
+    placementPreviewRef.current = placementPreview;
+    scene.add(placementPreview);
+
     const cuboidOverlay = createCuboidOverlay(props.theme);
     cuboidOverlayRef.current = cuboidOverlay;
     scene.add(cuboidOverlay);
@@ -294,7 +309,34 @@ export function Viewer3D(props: InternalViewerProps) {
       if (distance > 5) return;
 
       const block = pickBlock(event, renderer, camera, modelGroup);
-      onBlockSelectRef.current?.(block, event.button === 2 ? 'secondary' : 'primary');
+      const placementPoint = pickPlacementPoint(
+        event,
+        renderer,
+        camera,
+        modelGroup,
+        latestModelRef.current,
+        latestBlockKeysRef.current,
+      );
+      onBlockSelectRef.current?.(block, event.button === 2 ? 'secondary' : 'primary', placementPoint);
+    };
+    const handlePointerMove = (event: PointerEvent) => {
+      if (cameraModeRef.current === 'spectator') return;
+      updatePlacementPreview(
+        placementPreview,
+        pickPlacementPoint(
+          event,
+          renderer,
+          camera,
+          modelGroup,
+          latestModelRef.current,
+          latestBlockKeysRef.current,
+        ),
+        latestModelRef.current,
+        latestPlacementPreviewBlockRef.current,
+      );
+    };
+    const handlePointerLeave = () => {
+      placementPreview.visible = false;
     };
     const handleContextMenu = (event: MouseEvent) => {
       event.preventDefault();
@@ -338,6 +380,8 @@ export function Viewer3D(props: InternalViewerProps) {
 
     renderer.domElement.addEventListener('pointerdown', handlePointerDown);
     renderer.domElement.addEventListener('pointerup', handlePointerUp);
+    renderer.domElement.addEventListener('pointermove', handlePointerMove);
+    renderer.domElement.addEventListener('pointerleave', handlePointerLeave);
     renderer.domElement.addEventListener('contextmenu', handleContextMenu);
     document.addEventListener('pointerlockchange', handlePointerLockChange);
     document.addEventListener('mousemove', handleMouseMove);
@@ -403,6 +447,8 @@ export function Viewer3D(props: InternalViewerProps) {
       }
       renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
       renderer.domElement.removeEventListener('pointerup', handlePointerUp);
+      renderer.domElement.removeEventListener('pointermove', handlePointerMove);
+      renderer.domElement.removeEventListener('pointerleave', handlePointerLeave);
       renderer.domElement.removeEventListener('contextmenu', handleContextMenu);
       document.removeEventListener('pointerlockchange', handlePointerLockChange);
       document.removeEventListener('mousemove', handleMouseMove);
@@ -424,6 +470,7 @@ export function Viewer3D(props: InternalViewerProps) {
       controlsRef.current = null;
       floorRef.current = null;
       selectionBoxRef.current = null;
+      placementPreviewRef.current = null;
       cuboidOverlayRef.current = null;
     };
   }, []);
@@ -559,14 +606,20 @@ export function Viewer3D(props: InternalViewerProps) {
   ]);
 
   useEffect(() => {
+    if (!placementPreviewRef.current) return;
+    placementPreviewRef.current.visible = false;
+  }, [props.model, props.placementPreviewBlock]);
+
+  useEffect(() => {
     const camera = cameraRef.current;
     const controls = controlsRef.current;
+    const model = latestModelRef.current;
 
-    if (!props.model || !camera || !controls) return;
+    if (!model || !camera || !controls) return;
 
-    fitCameraToModel(props.model.dimensions, camera, controls);
+    fitCameraToModel(model.dimensions, camera, controls);
     syncSpectatorStateFromCamera(camera, spectatorStateRef.current);
-  }, [props.model]);
+  }, [cameraFitKey]);
 
   useEffect(() => {
     const overlay = cuboidOverlayRef.current;
@@ -1115,6 +1168,20 @@ function createSelectionBox(): THREE.LineSegments {
   return box;
 }
 
+function createPlacementPreviewBox(): THREE.LineSegments {
+  const geometry = createSelectionEdgesGeometry(new Set(faceOrder));
+  const material = new THREE.LineBasicMaterial({
+    color: 0x25d6a2,
+    depthTest: true,
+    transparent: true,
+    opacity: 0.86,
+  });
+  const box = new THREE.LineSegments(geometry, material);
+  box.renderOrder = 22;
+  box.visible = false;
+  return box;
+}
+
 function createCuboidOverlay(theme: 'light' | 'dark'): THREE.Group {
   const group = new THREE.Group();
   const colors = sceneThemeColors(theme);
@@ -1317,6 +1384,69 @@ function pickBlock(
   camera: THREE.PerspectiveCamera,
   modelGroup: THREE.Group,
 ): VoxelBlock | null {
+  const hit = pickModelIntersection(event, renderer, camera, modelGroup);
+  if (!hit || hit.instanceId === undefined) return null;
+
+  const mesh = hit.object as THREE.InstancedMesh;
+  const blocks = mesh.userData.blocks as VoxelBlock[] | undefined;
+  return blocks?.[hit.instanceId] ?? null;
+}
+
+function pickPlacementPoint(
+  event: PointerEvent,
+  renderer: THREE.WebGLRenderer,
+  camera: THREE.PerspectiveCamera,
+  modelGroup: THREE.Group,
+  model: SchematicModel | null,
+  occupiedBlockKeys: Set<string>,
+): PlacementPoint | null {
+  if (!model) return null;
+
+  const hit = pickModelIntersection(event, renderer, camera, modelGroup);
+  if (!hit || hit.instanceId === undefined || !hit.face) return null;
+
+  const mesh = hit.object as THREE.InstancedMesh;
+  const blocks = mesh.userData.blocks as VoxelBlock[] | undefined;
+  const block = blocks?.[hit.instanceId];
+  if (!block) return null;
+
+  const face = faceFromIntersectionNormal(hit, mesh);
+  const offset = faceOffsets[face];
+  const point = {
+    x: block.x + offset[0],
+    y: block.y + offset[1],
+    z: block.z + offset[2],
+  };
+  if (!pointInsideDimensions(point, model.dimensions)) return null;
+
+  return occupiedBlockKeys.has(pointKey(point)) ? null : point;
+}
+
+function updatePlacementPreview(
+  preview: THREE.LineSegments,
+  point: PlacementPoint | null,
+  model: SchematicModel | null,
+  previewBlock: VoxelBlock | null,
+) {
+  if (!point || !model || !previewBlock) {
+    preview.visible = false;
+    return;
+  }
+
+  preview.position.set(
+    point.x - (model.dimensions.width - 1) / 2,
+    point.y,
+    point.z - (model.dimensions.length - 1) / 2,
+  );
+  preview.visible = true;
+}
+
+function pickModelIntersection(
+  event: PointerEvent,
+  renderer: THREE.WebGLRenderer,
+  camera: THREE.PerspectiveCamera,
+  modelGroup: THREE.Group,
+): THREE.Intersection | null {
   const rect = renderer.domElement.getBoundingClientRect();
   const pointer = new THREE.Vector2(
     ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -1326,12 +1456,44 @@ function pickBlock(
   raycaster.setFromCamera(pointer, camera);
 
   const intersections = raycaster.intersectObjects(modelGroup.children, false);
-  const hit = intersections.find((intersection) => intersection.instanceId !== undefined);
-  if (!hit || hit.instanceId === undefined) return null;
+  return intersections.find((intersection) => intersection.instanceId !== undefined) ?? null;
+}
 
-  const mesh = hit.object as THREE.InstancedMesh;
-  const blocks = mesh.userData.blocks as VoxelBlock[] | undefined;
-  return blocks?.[hit.instanceId] ?? null;
+function faceFromIntersectionNormal(hit: THREE.Intersection, mesh: THREE.InstancedMesh): ModelFaceName {
+  const normal = hit.face?.normal.clone() ?? new THREE.Vector3(0, 1, 0);
+  const matrix = new THREE.Matrix4();
+  if (hit.instanceId !== undefined) {
+    mesh.getMatrixAt(hit.instanceId, matrix);
+    normal.transformDirection(matrix);
+  }
+  normal.transformDirection(mesh.matrixWorld).normalize();
+
+  let bestFace: ModelFaceName = 'up';
+  let bestDot = -Infinity;
+  for (const face of faceOrder) {
+    const offset = faceOffsets[face];
+    const dot = normal.dot(new THREE.Vector3(offset[0], offset[1], offset[2]));
+    if (dot > bestDot) {
+      bestDot = dot;
+      bestFace = face;
+    }
+  }
+  return bestFace;
+}
+
+function pointInsideDimensions(point: PlacementPoint, dimensions: SchematicDimensions): boolean {
+  return (
+    point.x >= 0
+    && point.x < dimensions.width
+    && point.y >= 0
+    && point.y < dimensions.height
+    && point.z >= 0
+    && point.z < dimensions.length
+  );
+}
+
+function pointKey(point: PlacementPoint): string {
+  return `${point.x},${point.y},${point.z}`;
 }
 
 function geometryForPart(part: ResolvedBlockPart): THREE.BufferGeometry {
@@ -1854,6 +2016,11 @@ function fitCameraToModel(
   camera.far = Math.max(500, radius * 12);
   camera.updateProjectionMatrix();
   controls.update();
+}
+
+function modelCameraFitKey(model: SchematicModel): string {
+  const { width, height, length } = model.dimensions;
+  return `${width}x${height}x${length}`;
 }
 
 function updateSpin(

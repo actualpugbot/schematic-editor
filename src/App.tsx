@@ -33,6 +33,7 @@ import {
   Viewer3D,
   type AxisGizmoOrientation,
   type CameraMode,
+  type PlacementPoint,
   type SelectionButton,
   type Viewer3DHandle,
 } from './components/Viewer3D';
@@ -568,15 +569,26 @@ function App() {
     showPanel('selection');
   };
 
-  const handleBlockSelect = (block: VoxelBlock | null, button: SelectionButton) => {
-    if (appView === 'edit' && button === 'primary') {
+  const handleBlockSelect = (block: VoxelBlock | null, button: SelectionButton, placementPoint: PlacementPoint | null) => {
+    if (appView === 'edit') {
+      if (button === 'secondary') {
+        if (!placementPoint) {
+          setEditNotice('Choose an open face inside the schematic bounds.');
+          return;
+        }
+        if (selectedBuildBlock === 'minecraft:air') {
+          setEditNotice('Choose a solid block from the library before placing.');
+          return;
+        }
+        setBlockAt(placementPoint.x, placementPoint.y, placementPoint.z, selectedBuildBlock);
+        return;
+      }
+
       if (!block) {
         setSelectedBlock(null);
         return;
       }
-      setSelectedBlock(block);
-      if (editTool === 'paint') paintBlock(block);
-      if (editTool === 'erase') eraseBlock(block);
+      eraseBlock(block);
       return;
     }
 
@@ -639,7 +651,8 @@ function App() {
       if (stateKey === 'minecraft:air') return withoutTarget;
       return [...withoutTarget, createVoxelBlock(x, y, z, stateKey)];
     });
-    setEditNotice(`${formatBlockName(stateKey)} placed at ${model.origin.x + x}, ${model.origin.y + y}, ${model.origin.z + z}.`);
+    const action = stateKey === 'minecraft:air' ? 'Removed block' : `${formatBlockName(stateKey)} placed`;
+    setEditNotice(`${action} at ${model.origin.x + x}, ${model.origin.y + y}, ${model.origin.z + z}.`);
     return true;
   };
 
@@ -1050,6 +1063,7 @@ function App() {
             hiddenMaterialIds={hiddenMaterialIds}
             playerHeadSelections={playerHeadSelections}
             selectedBlock={selectedBlock}
+            placementPreviewBlock={appView === 'edit' && selectedBuildBlock !== 'minecraft:air' ? selectedBuildBlockPreview : null}
             cuboidBounds={cuboidBounds}
             cuboidCorners={cuboidCorners}
             onBlockSelect={handleBlockSelect}
