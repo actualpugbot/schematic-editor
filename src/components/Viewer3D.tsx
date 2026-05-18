@@ -68,7 +68,7 @@ export interface Viewer3DHandle {
 }
 
 export type SelectionButton = 'primary' | 'secondary';
-export type CameraMode = 'orbit' | 'pan' | 'spectator';
+export type CameraMode = 'orbit' | 'spectator';
 
 export interface CameraCoordinates {
   x: number;
@@ -475,9 +475,9 @@ export function Viewer3D(props: InternalViewerProps) {
 
     controls.enabled = props.cameraMode !== 'spectator';
     controls.enableRotate = props.cameraMode === 'orbit';
-    controls.enablePan = props.cameraMode === 'orbit' || props.cameraMode === 'pan';
+    controls.enablePan = props.cameraMode === 'orbit';
     controls.enableZoom = props.cameraMode !== 'spectator';
-    controls.mouseButtons.LEFT = props.cameraMode === 'pan' ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+    controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
     controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
     if (props.cameraMode === 'spectator') {
       spinRef.current = null;

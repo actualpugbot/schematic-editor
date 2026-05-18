@@ -10,6 +10,7 @@ import {
   Eye,
   EyeOff,
   FileUp,
+  Focus,
   Info,
   Moon,
   Pencil,
@@ -45,7 +46,6 @@ type InspectorTab = 'selection' | 'materials' | 'layers';
 type Theme = 'light' | 'dark';
 type MaterialsScope = 'build' | 'cuboid';
 type CuboidCornerId = 'a' | 'b';
-type SpectatorSpeedPreset = 'slow' | 'normal' | 'fast';
 
 interface PendingCuboidCorner {
   corner: CuboidCornerId;
@@ -108,7 +108,6 @@ function App() {
   const [cuboidCorners, setCuboidCorners] = useState<CuboidCorners>(() => emptyCuboidCorners());
   const [materialsScope, setMaterialsScope] = useState<MaterialsScope>('build');
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit');
-  const [spectatorSpeedPreset, setSpectatorSpeedPreset] = useState<SpectatorSpeedPreset>('normal');
   const [cameraCoordinates, setCameraCoordinates] = useState<CameraCoordinates>({ x: 24, y: 20, z: 28 });
   const inputRef = useRef<HTMLInputElement | null>(null);
   const viewerRef = useRef<Viewer3DHandle | null>(null);
@@ -123,7 +122,7 @@ function App() {
   const selectedBlockWorldX = selectedBlock && model ? model.origin.x + selectedBlock.x : null;
   const selectedBlockWorldY = selectedBlock && model ? model.origin.y + selectedBlock.y : null;
   const selectedBlockWorldZ = selectedBlock && model ? model.origin.z + selectedBlock.z : null;
-  const spectatorSpeed = spectatorSpeedPreset === 'slow' ? 5 : spectatorSpeedPreset === 'fast' ? 22 : 11;
+  const spectatorSpeed = 11;
 
   const updateAxisGizmo = useCallback((orientation: AxisGizmoOrientation) => {
     const gizmo = axisGizmoRef.current;
@@ -707,14 +706,6 @@ function App() {
               </button>
               <button
                 type="button"
-                className={cameraMode === 'pan' ? 'is-active' : ''}
-                onClick={() => setCameraMode('pan')}
-                aria-pressed={cameraMode === 'pan'}
-              >
-                Pan
-              </button>
-              <button
-                type="button"
                 className={cameraMode === 'spectator' ? 'is-active' : ''}
                 onClick={() => setCameraMode('spectator')}
                 aria-pressed={cameraMode === 'spectator'}
@@ -722,26 +713,14 @@ function App() {
                 Fly
               </button>
             </div>
-            <label className="camera-speed-control">
-              <span>Speed</span>
-              <select
-                value={spectatorSpeedPreset}
-                onChange={(event) => setSpectatorSpeedPreset(event.target.value as SpectatorSpeedPreset)}
-                disabled={cameraMode !== 'spectator'}
-              >
-                <option value="slow">Slow</option>
-                <option value="normal">Normal</option>
-                <option value="fast">Fast</option>
-              </select>
-            </label>
-            <div className="viewport-icon-tools">
+            <div className="viewport-action-row">
               <button
                 type="button"
                 onClick={() => viewerRef.current?.resetCamera()}
                 title="Reset camera"
                 aria-label="Reset camera"
               >
-                <Rotate3D size={19} />
+                <Focus size={19} />
               </button>
               <button
                 type="button"
@@ -752,22 +731,22 @@ function App() {
               >
                 <Rotate3D size={19} />
               </button>
+              <button
+                type="button"
+                className={cuboidSelectionMode ? 'is-active' : ''}
+                onClick={() => {
+                  setCuboidSelectionMode((current) => !current);
+                  showPanel('selection');
+                }}
+                title={cuboidSelectionMode ? 'Area selection is active' : 'Select area'}
+                aria-pressed={cuboidSelectionMode}
+              >
+                <BoxSelect size={19} />
+              </button>
+              <button type="button" onClick={() => showPanel('materials')} title="Materials">
+                <Cuboid size={19} />
+              </button>
             </div>
-            <button
-              type="button"
-              className={cuboidSelectionMode ? 'is-active' : ''}
-              onClick={() => {
-                setCuboidSelectionMode((current) => !current);
-                showPanel('selection');
-              }}
-              title={cuboidSelectionMode ? 'Area selection is active' : 'Select area'}
-              aria-pressed={cuboidSelectionMode}
-            >
-              <BoxSelect size={19} />
-            </button>
-            <button type="button" onClick={() => showPanel('materials')} title="Materials">
-              <Cuboid size={19} />
-            </button>
           </div>
 
           {cameraMode === 'spectator' && (
