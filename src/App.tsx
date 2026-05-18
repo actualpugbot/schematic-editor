@@ -345,7 +345,7 @@ function App() {
   };
 
   const handleBlockSelect = (block: VoxelBlock | null, button: SelectionButton) => {
-    if (!cuboidSelectionMode) {
+    if (!cuboidSelectionMode || inspectorTab !== 'selection') {
       if (button !== 'primary') return;
       setSelectedBlock(block);
       return;
