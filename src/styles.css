@@ -386,27 +386,45 @@ h2 {
 }
 
 .selection-coordinates {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  display: flex;
+  align-items: center;
+  gap: 0;
   margin: 0;
-}
-
-.selection-coordinates > div {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-  padding: 9px;
+  overflow: hidden;
+  border: 1px solid var(--line);
   border-radius: 7px;
   background: var(--paper-strong);
 }
 
+.selection-coordinates > div {
+  display: inline-flex;
+  flex: 1 1 0;
+  align-items: baseline;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 6px 7px;
+}
+
+.selection-coordinates > div + div {
+  border-left: 1px solid var(--line);
+}
+
 .selection-coordinates dt {
-  font-size: 0.68rem;
+  flex: 0 0 auto;
+  color: var(--stone);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
 }
 
 .selection-coordinates dd {
+  min-width: 0;
   overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82rem;
+  line-height: 1.1;
 }
 
 .viewport-tools button,
