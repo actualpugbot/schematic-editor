@@ -89,6 +89,7 @@ const hiddenMaterial = new THREE.MeshBasicMaterial({
   colorWrite: false,
 });
 const horizontalFaces = new Set<ModelFaceName>(['north', 'south', 'west', 'east']);
+const cuboidOverlayPadding = 0.018;
 
 export function Viewer3D(props: InternalViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -745,10 +746,13 @@ function createCuboidOverlay(): THREE.Group {
   const fill = new THREE.Mesh(
     new THREE.BoxGeometry(1, 1, 1),
     new THREE.MeshBasicMaterial({
-      color: 0x25c6bd,
+      color: 0xffffff,
       transparent: true,
-      opacity: 0.22,
+      opacity: 0.18,
       depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
       side: THREE.DoubleSide,
     }),
   );
@@ -759,9 +763,9 @@ function createCuboidOverlay(): THREE.Group {
   const edges = new THREE.LineSegments(
     new THREE.EdgesGeometry(edgeSourceGeometry),
     new THREE.LineBasicMaterial({
-      color: 0xf7c948,
+      color: 0xffffff,
       transparent: true,
-      opacity: 0.92,
+      opacity: 0.78,
       depthTest: true,
     }),
   );
@@ -786,7 +790,11 @@ function updateCuboidOverlay(
     (bounds.minY + bounds.maxY) / 2,
     (bounds.minZ + bounds.maxZ) / 2 - (dimensions.length - 1) / 2,
   );
-  overlay.scale.set(width, height, length);
+  overlay.scale.set(
+    width + cuboidOverlayPadding * 2,
+    height + cuboidOverlayPadding * 2,
+    length + cuboidOverlayPadding * 2,
+  );
   overlay.visible = true;
 }
 
