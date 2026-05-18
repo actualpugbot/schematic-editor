@@ -355,6 +355,7 @@ async function materialsForPart(part: ResolvedBlockPart, fallbackColor: number):
       tintColorForPart(textureId, part.faceTints[face], part),
       part.shade,
       part.faceTranslucencies[face],
+      textureShouldWriteDepth(textureId, part.faceTranslucencies[face], part),
     );
   }));
 }
@@ -364,16 +365,17 @@ async function textureMaterial(
   tintColor: number | null,
   shade: boolean,
   translucent: boolean,
+  depthWrite: boolean,
 ): Promise<THREE.Material> {
-  const key = `texture::${textureId}::${tintColor ?? 'none'}::shade:${shade}::translucent:${translucent}`;
+  const key = `texture::${textureId}::${tintColor ?? 'none'}::shade:${shade}::translucent:${translucent}::depth:${depthWrite}`;
   const cached = materialCache.get(key);
   if (cached) return cached;
 
   const texture = await loadTexture(textureId);
   const cutout = isAlphaCutoutTexture(textureId);
-  const glowing = isGlowingTexture(textureId);
-  const glass = isGlassTexture(textureId);
-  const opacity = translucent ? translucentTextureOpacity(textureId) : 1;
+  const glowing = isBeaconInnerTexture(textureId) || isGlowingTexture(textureId);
+  const transparent = textureRendersTransparent(textureId, translucent);
+  const opacity = transparent ? translucentTextureOpacity(textureId) : 1;
   const material = shade
     ? new THREE.MeshStandardMaterial({
         map: texture,
@@ -383,25 +385,31 @@ async function textureMaterial(
         emissiveIntensity: glowing ? 0.72 : 0,
         roughness: isWaterTexture(textureId) ? 0.36 : 0.92,
         metalness: isWaterTexture(textureId) ? 0.08 : 0.02,
-        transparent: translucent,
+        transparent,
         opacity,
         alphaTest: cutout ? 0.5 : isWaterTexture(textureId) ? 0.02 : 0.08,
-        depthWrite: !translucent || glass,
+        depthWrite,
         side: THREE.FrontSide,
       })
     : new THREE.MeshBasicMaterial({
         map: texture,
         color: tintColor ?? 0xffffff,
-        transparent: translucent,
+        transparent,
         opacity,
         alphaTest: cutout ? 0.5 : 0.08,
-        depthWrite: !translucent || glass,
+        depthWrite,
         side: THREE.FrontSide,
         toneMapped: false,
       });
 
   materialCache.set(key, material);
   return material;
+}
+
+function textureShouldWriteDepth(textureId: string, translucent: boolean, part: ResolvedBlockPart): boolean {
+  if (!textureRendersTransparent(textureId, translucent)) return true;
+  if (part.blockId === 'minecraft:beacon' && isGlassTexture(textureId)) return false;
+  return isGlassTexture(textureId);
 }
 
 async function loadTexture(textureId: string): Promise<THREE.Texture> {
@@ -456,7 +464,10 @@ function colorMaterial(color: number): THREE.Material {
 }
 
 function partHasTranslucentFaces(part: ResolvedBlockPart): boolean {
-  return faceOrder.some((face) => part.faceTranslucencies[face]);
+  return faceOrder.some((face) => {
+    const textureId = part.faceTextures[face];
+    return textureId !== null && textureRendersTransparent(textureId, part.faceTranslucencies[face]);
+  });
 }
 
 function isRailPart(part: ResolvedBlockPart): boolean {
@@ -493,6 +504,14 @@ function isCrossPlaneFlowerTexture(path: string): boolean {
 
 function isWaterTexture(textureId: string): boolean {
   return textureId.replace(/^minecraft:/, '').startsWith('block/water_');
+}
+
+function isBeaconInnerTexture(textureId: string): boolean {
+  return textureId.replace(/^minecraft:/, '') === 'block/beacon';
+}
+
+function textureRendersTransparent(textureId: string, translucent: boolean): boolean {
+  return translucent;
 }
 
 function isGlassTexture(textureId: string): boolean {

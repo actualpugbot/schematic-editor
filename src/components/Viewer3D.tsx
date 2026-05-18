@@ -1024,7 +1024,7 @@ function occludingFacesForParts(parts: ResolvedBlockPart[]): Set<ModelFaceName> 
 
 function partFaceOccludesNeighbor(part: ResolvedBlockPart, face: ModelFaceName): boolean {
   const textureId = part.faceTextures[face];
-  return textureId !== null && !part.faceTranslucencies[face] && !isAlphaCutoutTexture(textureId);
+  return textureId !== null && !textureRendersTransparent(textureId, part.faceTranslucencies[face]) && !isAlphaCutoutTexture(textureId);
 }
 
 function boundaryFacesForParts(parts: ResolvedBlockPart[], translucentOnly = false): Set<ModelFaceName> {
@@ -1588,12 +1588,19 @@ function materialsForPart(
       tintColorForPart(textureId, part.faceTints[face], part),
       part.shade,
       part.faceTranslucencies[face],
+      textureShouldWriteDepth(textureId, part.faceTranslucencies[face], part),
     );
   });
 }
 
-function textureMaterial(textureId: string, tintColor: number | null, shade: boolean, translucent: boolean): THREE.Material {
-  const key = `texture::${textureId}::${tintColor ?? 'none'}::shade:${shade}::translucent:${translucent}`;
+function textureMaterial(
+  textureId: string,
+  tintColor: number | null,
+  shade: boolean,
+  translucent: boolean,
+  depthWrite: boolean,
+): THREE.Material {
+  const key = `texture::${textureId}::${tintColor ?? 'none'}::shade:${shade}::translucent:${translucent}::depth:${depthWrite}`;
   const cached = materialCache.get(key);
   if (cached) return cached;
 
@@ -1602,12 +1609,10 @@ function textureMaterial(textureId: string, tintColor: number | null, shade: boo
   });
   configureMinecraftTexture(texture, textureId);
   const cutout = isAlphaCutoutTexture(textureId);
-  const beaconCore = isBeaconCoreTexture(textureId);
-  const glowing = beaconCore || isGlowingTexture(textureId);
+  const glowing = isBeaconInnerTexture(textureId) || isGlowingTexture(textureId);
   const water = isWaterTexture(textureId);
-  const glass = isGlassTexture(textureId);
-  const opacity = translucent ? translucentTextureOpacity(textureId) : 1;
-  const depthWrite = !translucent || glass;
+  const transparent = textureRendersTransparent(textureId, translucent);
+  const opacity = transparent ? translucentTextureOpacity(textureId) : 1;
   const side = THREE.FrontSide;
 
   const material = shade
@@ -1619,7 +1624,7 @@ function textureMaterial(textureId: string, tintColor: number | null, shade: boo
         emissiveIntensity: glowing ? 0.72 : 0,
         roughness: water ? 0.36 : 0.92,
         metalness: water ? 0.08 : 0.02,
-        transparent: translucent,
+        transparent,
         opacity,
         alphaTest: cutout ? 0.5 : water ? 0.02 : 0.08,
         depthWrite,
@@ -1628,7 +1633,7 @@ function textureMaterial(textureId: string, tintColor: number | null, shade: boo
     : new THREE.MeshBasicMaterial({
         map: texture,
         color: tintColor ?? 0xffffff,
-        transparent: translucent,
+        transparent,
         opacity,
         alphaTest: cutout ? 0.5 : 0.08,
         depthWrite,
@@ -1637,6 +1642,12 @@ function textureMaterial(textureId: string, tintColor: number | null, shade: boo
       });
   materialCache.set(key, material);
   return material;
+}
+
+function textureShouldWriteDepth(textureId: string, translucent: boolean, part: ResolvedBlockPart): boolean {
+  if (!textureRendersTransparent(textureId, translucent)) return true;
+  if (part.blockId === 'minecraft:beacon' && isGlassTexture(textureId)) return false;
+  return isGlassTexture(textureId);
 }
 
 function configureMinecraftTexture(texture: THREE.Texture, textureId: string) {
@@ -1664,7 +1675,10 @@ function cropAnimatedTextureToFirstFrame(texture: THREE.Texture) {
 }
 
 function partHasTranslucentFaces(part: ResolvedBlockPart): boolean {
-  return faceOrder.some((face) => part.faceTranslucencies[face]);
+  return faceOrder.some((face) => {
+    const textureId = part.faceTextures[face];
+    return textureId !== null && textureRendersTransparent(textureId, part.faceTranslucencies[face]);
+  });
 }
 
 function isWaterPart(part: ResolvedBlockPart): boolean {
@@ -1676,7 +1690,7 @@ function isRailPart(part: ResolvedBlockPart): boolean {
   return path === 'rail' || path.endsWith('_rail');
 }
 
-function isBeaconCoreTexture(textureId: string): boolean {
+function isBeaconInnerTexture(textureId: string): boolean {
   return textureId.replace(/^minecraft:/, '') === 'block/beacon';
 }
 
@@ -1713,6 +1727,10 @@ function isCopperLanternTexturePath(path: string): boolean {
 
 function isWaterTexture(textureId: string): boolean {
   return textureId.replace(/^minecraft:/, '').startsWith('block/water_');
+}
+
+function textureRendersTransparent(textureId: string, translucent: boolean): boolean {
+  return translucent;
 }
 
 function isAlphaCutoutTexture(textureId: string): boolean {
