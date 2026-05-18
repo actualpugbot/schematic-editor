@@ -275,6 +275,7 @@ h2 {
 
 .selection-inspector-card,
 .build-summary-card,
+.build-summary-toggle,
 .viewport-tools {
   position: absolute;
   z-index: 5;
@@ -408,15 +409,23 @@ button:disabled {
 }
 
 .build-summary-card {
-  left: 28px;
-  bottom: 128px;
-  width: min(280px, calc(100% - 56px));
-  padding: 18px;
+  right: 24px;
+  bottom: 24px;
+  width: min(234px, calc(100% - 48px));
+  padding: 12px;
+}
+
+.build-summary-card .section-heading.compact {
+  margin-bottom: 9px;
+}
+
+.build-summary-card .eyebrow {
+  margin-bottom: 0;
 }
 
 .summary-metrics {
   display: grid;
-  gap: 12px;
+  gap: 8px;
   margin: 0;
 }
 
@@ -424,16 +433,25 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 10px;
 }
 
-.summary-dismiss {
+.summary-metrics dt {
+  font-size: 0.72rem;
+}
+
+.summary-metrics dd {
+  font-size: 0.8rem;
+}
+
+.summary-dismiss,
+.build-summary-toggle {
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  width: 28px;
-  min-width: 28px;
-  height: 28px;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
   border: 1px solid var(--line);
   border-radius: 7px;
   background: var(--paper-strong);
@@ -446,7 +464,13 @@ button:disabled {
     color 160ms ease;
 }
 
-.summary-dismiss:hover {
+.build-summary-toggle {
+  right: 24px;
+  bottom: 24px;
+}
+
+.summary-dismiss:hover,
+.build-summary-toggle:hover {
   transform: translateY(-1px);
   border-color: color-mix(in oklch, var(--teal), var(--line) 45%);
   color: var(--teal-strong);
@@ -1324,9 +1348,14 @@ dd {
   }
 
   .build-summary-card {
-    left: 12px;
-    bottom: 116px;
-    width: min(268px, calc(100% - 24px));
+    right: 12px;
+    bottom: 12px;
+    width: min(234px, calc(100% - 24px));
+  }
+
+  .build-summary-toggle {
+    right: 12px;
+    bottom: 12px;
   }
 
   .viewport-tools {
@@ -1363,7 +1392,7 @@ dd {
   }
 
   .build-summary-card {
-    display: none;
+    width: min(224px, calc(100% - 24px));
   }
 }
 

@@ -9,6 +9,7 @@ import {
   Eye,
   EyeOff,
   FileUp,
+  Info,
   Moon,
   Rotate3D,
   ScanSearch,
@@ -62,7 +63,7 @@ function App() {
   const [playerHeadSelections, setPlayerHeadSelections] = useState<Record<string, string>>({});
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('materials');
-  const [summaryDismissed, setSummaryDismissed] = useState(false);
+  const [summaryCollapsed, setSummaryCollapsed] = useState(false);
   const [cuboidSelectionMode, setCuboidSelectionMode] = useState(false);
   const [cuboidAnchor, setCuboidAnchor] = useState<VoxelBlock | null>(null);
   const [cuboidBounds, setCuboidBounds] = useState<CuboidBounds | null>(null);
@@ -228,7 +229,7 @@ function App() {
       setCuboidAnchor(null);
       setCuboidBounds(null);
       setMaterialsScope('build');
-      setSummaryDismissed(false);
+      setSummaryCollapsed(false);
       setLoadState('ready');
     } catch (caught) {
       setLoadState('error');
@@ -481,7 +482,20 @@ function App() {
             </section>
           )}
 
-          {model && !summaryDismissed && (
+          {model && summaryCollapsed && (
+            <button
+              type="button"
+              className="build-summary-toggle"
+              onClick={() => setSummaryCollapsed(false)}
+              title="Show build summary"
+              aria-label="Show build summary"
+              aria-expanded="false"
+            >
+              <Info size={17} />
+            </button>
+          )}
+
+          {model && !summaryCollapsed && (
             <section className="build-summary-card" aria-label="Build summary">
               <div className="section-heading compact">
                 <div>
@@ -490,11 +504,12 @@ function App() {
                 <button
                   type="button"
                   className="summary-dismiss"
-                  onClick={() => setSummaryDismissed(true)}
-                  title="Dismiss build summary"
-                  aria-label="Dismiss build summary"
+                  onClick={() => setSummaryCollapsed(true)}
+                  title="Collapse build summary"
+                  aria-label="Collapse build summary"
+                  aria-expanded="true"
                 >
-                  <X size={14} />
+                  <Info size={15} />
                 </button>
               </div>
               <dl className="summary-metrics">
