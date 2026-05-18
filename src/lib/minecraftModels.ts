@@ -147,6 +147,13 @@ export function parseBlockStateKey(stateKey: string): BlockStateInfo {
 }
 
 function defaultBlockProperties(id: string, properties: Record<string, string>): Record<string, string> {
+  if (isChainBlock(id)) {
+    return {
+      axis: 'y',
+      ...properties,
+    };
+  }
+
   if (isStairsBlock(id)) {
     return {
       facing: 'east',
@@ -186,6 +193,11 @@ function isLanternBlock(id: string): boolean {
 function isDecorativeLanternBlock(id: string): boolean {
   const path = id.replace(/^minecraft:/, '');
   return path !== 'sea_lantern' && path !== 'jack_o_lantern' && isLanternBlock(id);
+}
+
+function isChainBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path === 'chain' || path.endsWith('_chain');
 }
 
 export async function resolveBlockParts(stateKey: string): Promise<ResolvedBlockPart[]> {
@@ -645,8 +657,7 @@ function isBedBlock(id: string): boolean {
 }
 
 function isRenderlessVanillaModelBlock(id: string): boolean {
-  return id === 'minecraft:chain'
-    || id === 'minecraft:lava'
+  return id === 'minecraft:lava'
     || id === 'minecraft:bubble_column'
     || isStandingSignBlock(id)
     || isWallSignBlock(id)
@@ -1406,9 +1417,14 @@ async function fetchJson<T>(url: string): Promise<T | null> {
 function normalizeResourceId(id: string, defaultFolder?: 'block'): string {
   const [rawNamespace, rawPath] = id.includes(':') ? id.split(':', 2) : ['minecraft', id];
   const namespace = rawNamespace || 'minecraft';
-  const path = rawPath || rawNamespace;
+  const path = legacyResourcePathAlias(namespace, rawPath || rawNamespace);
   if (!defaultFolder || path.includes('/')) return `${namespace}:${path}`;
   return `${namespace}:${defaultFolder}/${path}`;
+}
+
+function legacyResourcePathAlias(namespace: string, path: string): string {
+  if (namespace === 'minecraft' && path === 'chain') return 'iron_chain';
+  return path;
 }
 
 function resourcePath(id: string): string {
