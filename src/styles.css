@@ -381,7 +381,9 @@ h2 {
 .selection-inspector-card,
 .build-summary-card,
 .build-summary-toggle,
-.viewport-tools {
+.viewport-tools,
+.spectator-help,
+.camera-status {
   position: absolute;
   z-index: 5;
   background: var(--panel-float);
@@ -619,6 +621,97 @@ dd {
   display: grid;
   gap: 8px;
   padding: 9px;
+  width: min(292px, calc(100% - 48px));
+}
+
+.camera-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper-strong);
+}
+
+.viewport-tools .camera-mode-switch button {
+  width: auto;
+  min-width: 0;
+  height: 32px;
+  border-radius: 6px;
+  box-shadow: none;
+  color: var(--stone);
+  font-size: 0.75rem;
+  font-weight: 830;
+}
+
+.camera-speed-control {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.camera-speed-control select {
+  min-width: 0;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--paper-strong);
+  color: var(--ink);
+  padding-inline: 9px;
+  font-size: 0.76rem;
+  font-weight: 780;
+}
+
+.viewport-icon-tools {
+  display: grid;
+  grid-template-columns: repeat(2, 40px);
+  gap: 8px;
+}
+
+.spectator-help {
+  left: 50%;
+  bottom: 24px;
+  max-width: min(560px, calc(100% - 48px));
+  padding: 9px 12px;
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 780;
+  line-height: 1.25;
+  text-align: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.spectator-crosshair {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 999px;
+  background: rgba(23, 34, 35, 0.52);
+  box-shadow: 0 0 0 1px rgba(23, 34, 35, 0.26);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.camera-status {
+  left: 138px;
+  bottom: 28px;
+  padding: 7px 10px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.76rem;
+  font-weight: 820;
+  line-height: 1;
+  pointer-events: none;
 }
 
 .axis-gizmo {
@@ -1489,6 +1582,17 @@ dd {
   .viewport-tools {
     right: 12px;
     top: 12px;
+    width: min(292px, calc(100% - 24px));
+  }
+
+  .spectator-help {
+    bottom: 12px;
+    max-width: calc(100% - 24px);
+  }
+
+  .camera-status {
+    left: 12px;
+    bottom: 108px;
   }
 
   .axis-gizmo {

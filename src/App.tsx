@@ -21,7 +21,14 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { Viewer3D, type AxisGizmoOrientation, type SelectionButton, type Viewer3DHandle } from './components/Viewer3D';
+import {
+  Viewer3D,
+  type AxisGizmoOrientation,
+  type CameraCoordinates,
+  type CameraMode,
+  type SelectionButton,
+  type Viewer3DHandle,
+} from './components/Viewer3D';
 import { createBlockThumbnail } from './lib/blockThumbnails';
 import { writeNbt, type NbtDocument } from './lib/nbt';
 import {
@@ -38,6 +45,7 @@ type InspectorTab = 'selection' | 'materials' | 'layers';
 type Theme = 'light' | 'dark';
 type MaterialsScope = 'build' | 'cuboid';
 type CuboidCornerId = 'a' | 'b';
+type SpectatorSpeedPreset = 'slow' | 'normal' | 'fast';
 
 interface PendingCuboidCorner {
   corner: CuboidCornerId;
@@ -99,6 +107,9 @@ function App() {
   const [cuboidSelectionMode, setCuboidSelectionMode] = useState(false);
   const [cuboidCorners, setCuboidCorners] = useState<CuboidCorners>(() => emptyCuboidCorners());
   const [materialsScope, setMaterialsScope] = useState<MaterialsScope>('build');
+  const [cameraMode, setCameraMode] = useState<CameraMode>('orbit');
+  const [spectatorSpeedPreset, setSpectatorSpeedPreset] = useState<SpectatorSpeedPreset>('normal');
+  const [cameraCoordinates, setCameraCoordinates] = useState<CameraCoordinates>({ x: 24, y: 20, z: 28 });
   const inputRef = useRef<HTMLInputElement | null>(null);
   const viewerRef = useRef<Viewer3DHandle | null>(null);
   const axisGizmoRef = useRef<HTMLDivElement | null>(null);
@@ -112,6 +123,7 @@ function App() {
   const selectedBlockWorldX = selectedBlock && model ? model.origin.x + selectedBlock.x : null;
   const selectedBlockWorldY = selectedBlock && model ? model.origin.y + selectedBlock.y : null;
   const selectedBlockWorldZ = selectedBlock && model ? model.origin.z + selectedBlock.z : null;
+  const spectatorSpeed = spectatorSpeedPreset === 'slow' ? 5 : spectatorSpeedPreset === 'fast' ? 22 : 11;
 
   const updateAxisGizmo = useCallback((orientation: AxisGizmoOrientation) => {
     const gizmo = axisGizmoRef.current;
@@ -130,6 +142,13 @@ function App() {
       gizmo.style.setProperty(`--axis-${axis}-label-x`, `${originX + orientation[axis].x * labelRadius}px`);
       gizmo.style.setProperty(`--axis-${axis}-label-y`, `${originY + orientation[axis].y * labelRadius}px`);
     }
+  }, []);
+
+  const updateCameraCoordinates = useCallback((coordinates: CameraCoordinates) => {
+    setCameraCoordinates((current) => {
+      if (current.x === coordinates.x && current.y === coordinates.y && current.z === coordinates.z) return current;
+      return coordinates;
+    });
   }, []);
 
   const currentLayerBlockCount = useMemo(() => {
@@ -677,9 +696,63 @@ function App() {
           )}
 
           <div className="viewport-tools" aria-label="Viewport tools">
-            <button type="button" onClick={() => viewerRef.current?.spinOnce()} title="Spin 360 degrees">
-              <Rotate3D size={19} />
-            </button>
+            <div className="camera-mode-switch" role="group" aria-label="Camera mode">
+              <button
+                type="button"
+                className={cameraMode === 'orbit' ? 'is-active' : ''}
+                onClick={() => setCameraMode('orbit')}
+                aria-pressed={cameraMode === 'orbit'}
+              >
+                Orbit
+              </button>
+              <button
+                type="button"
+                className={cameraMode === 'pan' ? 'is-active' : ''}
+                onClick={() => setCameraMode('pan')}
+                aria-pressed={cameraMode === 'pan'}
+              >
+                Pan
+              </button>
+              <button
+                type="button"
+                className={cameraMode === 'spectator' ? 'is-active' : ''}
+                onClick={() => setCameraMode('spectator')}
+                aria-pressed={cameraMode === 'spectator'}
+              >
+                Fly
+              </button>
+            </div>
+            <label className="camera-speed-control">
+              <span>Speed</span>
+              <select
+                value={spectatorSpeedPreset}
+                onChange={(event) => setSpectatorSpeedPreset(event.target.value as SpectatorSpeedPreset)}
+                disabled={cameraMode !== 'spectator'}
+              >
+                <option value="slow">Slow</option>
+                <option value="normal">Normal</option>
+                <option value="fast">Fast</option>
+              </select>
+            </label>
+            <div className="viewport-icon-tools">
+              <button
+                type="button"
+                onClick={() => viewerRef.current?.resetCamera()}
+                title="Reset camera"
+                aria-label="Reset camera"
+              >
+                <Rotate3D size={19} />
+              </button>
+              <button
+                type="button"
+                onClick={() => viewerRef.current?.spinOnce()}
+                title="Spin 360 degrees"
+                aria-label="Spin 360 degrees"
+                disabled={cameraMode === 'spectator'}
+              >
+                <Rotate3D size={19} />
+              </button>
+            </div>
             <button
               type="button"
               className={cuboidSelectionMode ? 'is-active' : ''}
@@ -697,6 +770,19 @@ function App() {
             </button>
           </div>
 
+          {cameraMode === 'spectator' && (
+            <>
+              <div className="spectator-help" aria-live="polite">
+                WASD move · Space up · Shift down · Ctrl faster · Esc release mouse
+              </div>
+              <div className="spectator-crosshair" aria-hidden="true" />
+            </>
+          )}
+
+          <div className="camera-status" aria-label="Camera coordinates">
+            X {cameraCoordinates.x.toFixed(1)} · Y {cameraCoordinates.y.toFixed(1)} · Z {cameraCoordinates.z.toFixed(1)}
+          </div>
+
           <div className="axis-gizmo" aria-hidden="true" ref={axisGizmoRef}>
             <span className="axis-line axis-line-x" />
             <span className="axis-line axis-line-y" />
@@ -708,6 +794,8 @@ function App() {
 
           <Viewer3D
             model={model}
+            cameraMode={cameraMode}
+            spectatorSpeed={spectatorSpeed}
             visibleLayer={visibleLayer}
             singleLayer={singleLayer}
             autoRotate={false}
@@ -720,6 +808,7 @@ function App() {
             cuboidCorners={cuboidCorners}
             onBlockSelect={handleBlockSelect}
             onAxisOrientationChange={updateAxisGizmo}
+            onCameraCoordinatesChange={updateCameraCoordinates}
             viewerRef={viewerRef}
           />
         </section>

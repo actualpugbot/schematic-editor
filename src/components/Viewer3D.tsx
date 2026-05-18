@@ -11,6 +11,8 @@ import type { SchematicDimensions, SchematicModel, VoxelBlock } from '../lib/sch
 
 interface Viewer3DProps {
   model: SchematicModel | null;
+  cameraMode: CameraMode;
+  spectatorSpeed: number;
   visibleLayer: number;
   singleLayer: boolean;
   hiddenMaterialIds: Set<string>;
@@ -23,6 +25,7 @@ interface Viewer3DProps {
   cuboidCorners?: CuboidCornerPoints | null;
   onBlockSelect?: (block: VoxelBlock | null, button: SelectionButton) => void;
   onAxisOrientationChange?: (orientation: AxisGizmoOrientation) => void;
+  onCameraCoordinatesChange?: (coordinates: CameraCoordinates) => void;
   onReady?: () => void;
 }
 
@@ -61,9 +64,28 @@ export interface AxisGizmoVector {
 
 export interface Viewer3DHandle {
   spinOnce: () => void;
+  resetCamera: () => void;
 }
 
 export type SelectionButton = 'primary' | 'secondary';
+export type CameraMode = 'orbit' | 'pan' | 'spectator';
+
+export interface CameraCoordinates {
+  x: number;
+  y: number;
+  z: number;
+}
+
+interface SpectatorCameraState {
+  position: THREE.Vector3;
+  rotation: {
+    yaw: number;
+    pitch: number;
+  };
+  baseSpeed: number;
+  fastMultiplier: number;
+  pointerLocked: boolean;
+}
 
 interface InternalViewerProps extends Viewer3DProps {
   viewerRef: MutableRefObject<Viewer3DHandle | null>;
@@ -121,8 +143,26 @@ export function Viewer3D(props: InternalViewerProps) {
   const spinRef = useRef<{ start: number; duration: number; from: number; to: number } | null>(null);
   const latestModelRef = useRef<SchematicModel | null>(props.model);
   const latestCuboidCornersRef = useRef<CuboidCornerPoints | null | undefined>(props.cuboidCorners);
+  const cameraModeRef = useRef<CameraMode>(props.cameraMode);
   const onBlockSelectRef = useRef(props.onBlockSelect);
   const onAxisOrientationChangeRef = useRef(props.onAxisOrientationChange);
+  const onCameraCoordinatesChangeRef = useRef(props.onCameraCoordinatesChange);
+  const spectatorStateRef = useRef<SpectatorCameraState>({
+    position: new THREE.Vector3(24, 20, 28),
+    rotation: { yaw: 0, pitch: 0 },
+    baseSpeed: props.spectatorSpeed,
+    fastMultiplier: 3,
+    pointerLocked: false,
+  });
+  const spectatorKeysRef = useRef({
+    forward: false,
+    backward: false,
+    left: false,
+    right: false,
+    up: false,
+    down: false,
+    fast: false,
+  });
 
   const filteredBlocks = useMemo(() => {
     if (!props.model) return [];
@@ -141,12 +181,24 @@ export function Viewer3D(props: InternalViewerProps) {
   }, [props.cuboidCorners]);
 
   useEffect(() => {
+    cameraModeRef.current = props.cameraMode;
+  }, [props.cameraMode]);
+
+  useEffect(() => {
+    spectatorStateRef.current.baseSpeed = props.spectatorSpeed;
+  }, [props.spectatorSpeed]);
+
+  useEffect(() => {
     onBlockSelectRef.current = props.onBlockSelect;
   }, [props.onBlockSelect]);
 
   useEffect(() => {
     onAxisOrientationChangeRef.current = props.onAxisOrientationChange;
   }, [props.onAxisOrientationChange]);
+
+  useEffect(() => {
+    onCameraCoordinatesChangeRef.current = props.onCameraCoordinatesChange;
+  }, [props.onCameraCoordinatesChange]);
 
   useEffect(() => {
     if (sceneRef.current) {
@@ -166,12 +218,15 @@ export function Viewer3D(props: InternalViewerProps) {
 
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 1000);
     camera.position.set(24, 20, 28);
+    camera.near = 0.03;
     cameraRef.current = camera;
+    syncSpectatorStateFromCamera(camera, spectatorStateRef.current);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.domElement.tabIndex = 0;
     rendererRef.current = renderer;
     container.appendChild(renderer.domElement);
 
@@ -239,9 +294,14 @@ export function Viewer3D(props: InternalViewerProps) {
     const handlePointerDown = (event: PointerEvent) => {
       pointerStart.x = event.clientX;
       pointerStart.y = event.clientY;
+      renderer.domElement.focus();
+      if (cameraModeRef.current === 'spectator' && event.button === 0) {
+        renderer.domElement.requestPointerLock();
+      }
     };
     const handlePointerUp = (event: PointerEvent) => {
       if (event.button !== 0 && event.button !== 2) return;
+      if (cameraModeRef.current === 'spectator') return;
       const distance = Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y);
       if (distance > 5) return;
 
@@ -251,13 +311,62 @@ export function Viewer3D(props: InternalViewerProps) {
     const handleContextMenu = (event: MouseEvent) => {
       event.preventDefault();
     };
+    const handlePointerLockChange = () => {
+      const pointerLocked = document.pointerLockElement === renderer.domElement;
+      spectatorStateRef.current.pointerLocked = pointerLocked;
+      if (pointerLocked && cameraModeRef.current === 'spectator') {
+        void lockSpectatorKeyboard();
+      } else {
+        resetSpectatorKeys(spectatorKeysRef.current);
+        unlockSpectatorKeyboard();
+      }
+    };
+    const handleMouseMove = (event: MouseEvent) => {
+      if (document.pointerLockElement !== renderer.domElement || cameraModeRef.current !== 'spectator') return;
+      updateSpectatorLook(event.movementX, event.movementY, camera, spectatorStateRef.current);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!shouldCaptureSpectatorKey(event, renderer.domElement, cameraModeRef.current)) return;
+      swallowSpectatorKeyEvent(event);
+      if (event.code === 'Escape' && document.pointerLockElement === renderer.domElement) {
+        document.exitPointerLock();
+        return;
+      }
+      setSpectatorKey(event, spectatorKeysRef.current, true);
+    };
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (!shouldCaptureSpectatorKey(event, renderer.domElement, cameraModeRef.current)) return;
+      swallowSpectatorKeyEvent(event);
+      setSpectatorKey(event, spectatorKeysRef.current, false);
+    };
+    const handleWindowBlur = () => {
+      resetSpectatorKeys(spectatorKeysRef.current);
+    };
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (cameraModeRef.current !== 'spectator' || !spectatorStateRef.current.pointerLocked) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
 
     renderer.domElement.addEventListener('pointerdown', handlePointerDown);
     renderer.domElement.addEventListener('pointerup', handlePointerUp);
     renderer.domElement.addEventListener('contextmenu', handleContextMenu);
+    document.addEventListener('pointerlockchange', handlePointerLockChange);
+    document.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('keydown', handleKeyDown, true);
+    window.addEventListener('keyup', handleKeyUp, true);
+    window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('beforeunload', handleBeforeUnload);
 
+    let previousTime = performance.now();
     const animate = (time: number) => {
-      if (controlsRef.current) {
+      const deltaTime = Math.min(0.08, Math.max(0, (time - previousTime) / 1000));
+      previousTime = time;
+      if (cameraModeRef.current === 'spectator') {
+        updateSpectatorCamera(deltaTime, camera, spectatorStateRef.current, spectatorKeysRef.current);
+      }
+
+      if (controlsRef.current && cameraModeRef.current !== 'spectator') {
         const latestModel = latestModelRef.current;
         if (spinRef.current && latestModel) {
           updateSpin(time, latestModel.dimensions, controlsRef.current, camera, spinRef);
@@ -265,6 +374,11 @@ export function Viewer3D(props: InternalViewerProps) {
         controlsRef.current.update();
       }
 
+      onCameraCoordinatesChangeRef.current?.({
+        x: Number(camera.position.x.toFixed(1)),
+        y: Number(camera.position.y.toFixed(1)),
+        z: Number(camera.position.z.toFixed(1)),
+      });
       onAxisOrientationChangeRef.current?.(projectAxisOrientation(camera));
       updateCuboidCornerLabels(
         cornerLabelRefs.current,
@@ -280,12 +394,19 @@ export function Viewer3D(props: InternalViewerProps) {
     frameRef.current = window.requestAnimationFrame(animate);
     props.viewerRef.current = {
       spinOnce: () => {
+        if (cameraModeRef.current === 'spectator') return;
         spinRef.current = {
           start: performance.now(),
           duration: 4800,
           from: controls.getAzimuthalAngle(),
           to: controls.getAzimuthalAngle() + Math.PI * 2,
         };
+      },
+      resetCamera: () => {
+        const model = latestModelRef.current;
+        if (!model) return;
+        fitCameraToModel(model.dimensions, camera, controls);
+        syncSpectatorStateFromCamera(camera, spectatorStateRef.current);
       },
     };
 
@@ -300,6 +421,16 @@ export function Viewer3D(props: InternalViewerProps) {
       renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
       renderer.domElement.removeEventListener('pointerup', handlePointerUp);
       renderer.domElement.removeEventListener('contextmenu', handleContextMenu);
+      document.removeEventListener('pointerlockchange', handlePointerLockChange);
+      document.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('keydown', handleKeyDown, true);
+      window.removeEventListener('keyup', handleKeyUp, true);
+      window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (document.pointerLockElement === renderer.domElement) {
+        document.exitPointerLock();
+      }
+      unlockSpectatorKeyboard();
       controls.dispose();
       renderer.dispose();
       container.removeChild(renderer.domElement);
@@ -335,6 +466,27 @@ export function Viewer3D(props: InternalViewerProps) {
     if (!controlsRef.current) return;
     controlsRef.current.autoRotate = props.autoRotate;
   }, [props.autoRotate]);
+
+  useEffect(() => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    const renderer = rendererRef.current;
+    if (!camera || !controls) return;
+
+    controls.enabled = props.cameraMode !== 'spectator';
+    controls.enableRotate = props.cameraMode === 'orbit';
+    controls.enablePan = props.cameraMode === 'orbit' || props.cameraMode === 'pan';
+    controls.enableZoom = props.cameraMode !== 'spectator';
+    controls.mouseButtons.LEFT = props.cameraMode === 'pan' ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+    controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
+    if (props.cameraMode === 'spectator') {
+      spinRef.current = null;
+      syncSpectatorStateFromCamera(camera, spectatorStateRef.current);
+    } else if (renderer && document.pointerLockElement === renderer.domElement) {
+      document.exitPointerLock();
+      unlockSpectatorKeyboard();
+    }
+  }, [props.cameraMode]);
 
   useEffect(() => {
     const group = modelGroupRef.current;
@@ -430,6 +582,7 @@ export function Viewer3D(props: InternalViewerProps) {
     if (!props.model || !camera || !controls) return;
 
     fitCameraToModel(props.model.dimensions, camera, controls);
+    syncSpectatorStateFromCamera(camera, spectatorStateRef.current);
   }, [props.model]);
 
   useEffect(() => {
@@ -445,7 +598,7 @@ export function Viewer3D(props: InternalViewerProps) {
   }, [props.cuboidBounds, props.model]);
 
   return (
-    <div className="viewer-canvas" data-testid="viewer-canvas" ref={containerRef}>
+    <div className="viewer-canvas" data-camera-mode={props.cameraMode} data-testid="viewer-canvas" ref={containerRef}>
       <span
         className="cuboid-corner-label cuboid-corner-label-a"
         aria-hidden="true"
@@ -499,6 +652,188 @@ function projectAxisVector(camera: THREE.PerspectiveCamera, axis: THREE.Vector3)
 function clampAxisVector(value: number): number {
   if (Math.abs(value) < 0.001) return 0;
   return Number(value.toFixed(4));
+}
+
+const spectatorForward = new THREE.Vector3();
+const spectatorRight = new THREE.Vector3();
+const spectatorVelocity = new THREE.Vector3();
+const spectatorWorldUp = new THREE.Vector3(0, 1, 0);
+
+function syncSpectatorStateFromCamera(camera: THREE.PerspectiveCamera, state: SpectatorCameraState) {
+  const direction = new THREE.Vector3();
+  camera.getWorldDirection(direction);
+  state.position.copy(camera.position);
+  state.rotation.yaw = Math.atan2(-direction.x, -direction.z);
+  state.rotation.pitch = Math.asin(THREE.MathUtils.clamp(direction.y, -1, 1));
+}
+
+function updateSpectatorLook(
+  movementX: number,
+  movementY: number,
+  camera: THREE.PerspectiveCamera,
+  state: SpectatorCameraState,
+) {
+  const sensitivity = 0.0022;
+  state.rotation.yaw -= movementX * sensitivity;
+  state.rotation.pitch -= movementY * sensitivity;
+  state.rotation.pitch = THREE.MathUtils.clamp(
+    state.rotation.pitch,
+    THREE.MathUtils.degToRad(-89),
+    THREE.MathUtils.degToRad(89),
+  );
+  applySpectatorRotation(camera, state);
+}
+
+function updateSpectatorCamera(
+  deltaTime: number,
+  camera: THREE.PerspectiveCamera,
+  state: SpectatorCameraState,
+  keys: MutableRefObject<{
+    forward: boolean;
+    backward: boolean;
+    left: boolean;
+    right: boolean;
+    up: boolean;
+    down: boolean;
+    fast: boolean;
+  }>['current'],
+) {
+  state.position.copy(camera.position);
+  spectatorForward.set(0, 0, -1).applyQuaternion(camera.quaternion);
+  spectatorRight.crossVectors(spectatorForward, spectatorWorldUp).normalize();
+  spectatorVelocity.set(0, 0, 0);
+
+  if (keys.forward) spectatorVelocity.add(spectatorForward);
+  if (keys.backward) spectatorVelocity.sub(spectatorForward);
+  if (keys.left) spectatorVelocity.sub(spectatorRight);
+  if (keys.right) spectatorVelocity.add(spectatorRight);
+  if (keys.up) spectatorVelocity.y += 1;
+  if (keys.down) spectatorVelocity.y -= 1;
+
+  if (spectatorVelocity.lengthSq() > 0) {
+    const speed = keys.fast ? state.baseSpeed * state.fastMultiplier : state.baseSpeed;
+    spectatorVelocity.normalize().multiplyScalar(speed * deltaTime);
+    state.position.add(spectatorVelocity);
+    camera.position.copy(state.position);
+  }
+  applySpectatorRotation(camera, state);
+}
+
+function applySpectatorRotation(camera: THREE.PerspectiveCamera, state: SpectatorCameraState) {
+  camera.rotation.set(state.rotation.pitch, state.rotation.yaw, 0, 'YXZ');
+}
+
+function shouldCaptureSpectatorKey(event: KeyboardEvent, canvas: HTMLCanvasElement, cameraMode: CameraMode): boolean {
+  if (cameraMode !== 'spectator') return false;
+  if (isEditableElement(event.target)) return false;
+  return document.pointerLockElement === canvas || document.activeElement === canvas;
+}
+
+function swallowSpectatorKeyEvent(event: KeyboardEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+}
+
+interface KeyboardLockApi {
+  lock?: (keyCodes?: string[]) => Promise<void>;
+  unlock?: () => void;
+}
+
+const spectatorKeyboardLockKeys = [
+  'KeyW',
+  'KeyA',
+  'KeyS',
+  'KeyD',
+  'Space',
+  'ShiftLeft',
+  'ShiftRight',
+  'ControlLeft',
+  'ControlRight',
+  'Escape',
+];
+
+function spectatorKeyboard(): KeyboardLockApi | undefined {
+  return (navigator as Navigator & { keyboard?: KeyboardLockApi }).keyboard;
+}
+
+async function lockSpectatorKeyboard() {
+  if (!document.fullscreenElement) return;
+  try {
+    await spectatorKeyboard()?.lock?.(spectatorKeyboardLockKeys);
+  } catch {
+    // Keyboard Lock is best-effort. The capture-phase handler still blocks cancellable shortcuts.
+  }
+}
+
+function unlockSpectatorKeyboard() {
+  spectatorKeyboard()?.unlock?.();
+}
+
+function isEditableElement(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName.toLowerCase();
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
+}
+
+function setSpectatorKey(
+  event: KeyboardEvent,
+  keys: {
+    forward: boolean;
+    backward: boolean;
+    left: boolean;
+    right: boolean;
+    up: boolean;
+    down: boolean;
+    fast: boolean;
+  },
+  value: boolean,
+): boolean {
+  switch (event.code) {
+    case 'KeyW':
+      keys.forward = value;
+      return true;
+    case 'KeyS':
+      keys.backward = value;
+      return true;
+    case 'KeyA':
+      keys.left = value;
+      return true;
+    case 'KeyD':
+      keys.right = value;
+      return true;
+    case 'Space':
+      keys.up = value;
+      return true;
+    case 'ControlLeft':
+    case 'ControlRight':
+      keys.fast = value;
+      return true;
+    case 'ShiftLeft':
+    case 'ShiftRight':
+      keys.down = value;
+      return true;
+    default:
+      return false;
+  }
+}
+
+function resetSpectatorKeys(keys: {
+  forward: boolean;
+  backward: boolean;
+  left: boolean;
+  right: boolean;
+  up: boolean;
+  down: boolean;
+  fast: boolean;
+}) {
+  keys.forward = false;
+  keys.backward = false;
+  keys.left = false;
+  keys.right = false;
+  keys.up = false;
+  keys.down = false;
+  keys.fast = false;
 }
 
 async function createBlockMeshes(
@@ -1508,7 +1843,7 @@ function fitCameraToModel(
   controls.target.copy(target);
   controls.maxDistance = Math.max(240, radius * 6);
   camera.position.set(radius * -1.35, radius * 0.95 + dimensions.height * 0.4, radius * -1.45);
-  camera.near = Math.max(0.1, radius / 100);
+  camera.near = 0.03;
   camera.far = Math.max(500, radius * 12);
   camera.updateProjectionMatrix();
   controls.update();
