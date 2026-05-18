@@ -88,7 +88,7 @@ const defaultSchematicFileName = 'Medieval House.litematic';
 function App() {
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window === 'undefined') return 'light';
-    const savedTheme = window.localStorage.getItem('schemview-theme');
+    const savedTheme = window.localStorage.getItem('schemagic-theme');
     if (savedTheme === 'light' || savedTheme === 'dark') return savedTheme;
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
@@ -264,7 +264,7 @@ function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    window.localStorage.setItem('schemview-theme', theme);
+    window.localStorage.setItem('schemagic-theme', theme);
   }, [theme]);
 
   useEffect(() => {
