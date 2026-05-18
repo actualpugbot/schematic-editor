@@ -1501,7 +1501,7 @@ function fitCameraToModel(
   const radius = Math.max(dimensions.width, dimensions.length, dimensions.height, 8);
   controls.target.copy(target);
   controls.maxDistance = Math.max(240, radius * 6);
-  camera.position.set(radius * 1.35, radius * 0.95 + dimensions.height * 0.4, radius * 1.45);
+  camera.position.set(radius * -1.35, radius * 0.95 + dimensions.height * 0.4, radius * -1.45);
   camera.near = Math.max(0.1, radius / 100);
   camera.far = Math.max(500, radius * 12);
   camera.updateProjectionMatrix();
