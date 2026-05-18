@@ -476,6 +476,7 @@ function isAlphaCutoutTexture(textureId: string): boolean {
     || path.includes('roots')
     || path.includes('vines')
     || path.includes('flower')
+    || isCrossPlaneFlowerTexture(path)
     || path.includes('coral')
     || path.includes('mushroom')
     || path.includes('amethyst_bud')
@@ -483,6 +484,10 @@ function isAlphaCutoutTexture(textureId: string): boolean {
     || path.startsWith('entity/decorated_pot/')
     || path === 'block/cobweb'
   );
+}
+
+function isCrossPlaneFlowerTexture(path: string): boolean {
+  return /^block\/(allium|azure_bluet|blue_orchid|dandelion|golden_dandelion|lily_of_the_valley|oxeye_daisy|poppy|.*_tulip)$/.test(path);
 }
 
 function isWaterTexture(textureId: string): boolean {
