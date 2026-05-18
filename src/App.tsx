@@ -11,6 +11,7 @@ import {
   FileUp,
   Info,
   Moon,
+  Plus,
   Rotate3D,
   ScanSearch,
   Search,
@@ -344,6 +345,15 @@ function App() {
     window.requestAnimationFrame(() => panel.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
   };
 
+  const beginCuboidSelection = (resetSelection = false) => {
+    if (resetSelection) {
+      setCuboidCorners(emptyCuboidCorners());
+      setMaterialsScope('build');
+    }
+    setCuboidSelectionMode(true);
+    showPanel('selection');
+  };
+
   const handleBlockSelect = (block: VoxelBlock | null, button: SelectionButton) => {
     if (!cuboidSelectionMode || inspectorTab !== 'selection') {
       if (button !== 'primary') return;
@@ -660,25 +670,29 @@ function App() {
                         : 'No area selected'}
                   </h2>
                 </div>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={clearCuboidSelection}
-                  title="Clear selected area"
-                  disabled={!hasCuboidSelection}
-                >
-                  <X size={16} />
-                </button>
+                <div className="selection-actions">
+                  <button
+                    type="button"
+                    className={`icon-button${cuboidSelectionMode ? ' is-active' : ''}`}
+                    onClick={() => beginCuboidSelection(hasCuboidSelection)}
+                    title={hasCuboidSelection ? 'Create new selected area' : 'Create selected area'}
+                    aria-label={hasCuboidSelection ? 'Create new selected area' : 'Create selected area'}
+                    aria-pressed={cuboidSelectionMode}
+                  >
+                    <Plus size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    onClick={clearCuboidSelection}
+                    title="Clear selected area"
+                    aria-label="Clear selected area"
+                    disabled={!hasCuboidSelection}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
               </div>
-
-              <label className="toggle-row cuboid-mode-toggle">
-                <input
-                  type="checkbox"
-                  checked={cuboidSelectionMode}
-                  onChange={(event) => setCuboidSelectionMode(event.target.checked)}
-                />
-                <span>Left-click Corner A; right-click Corner B</span>
-              </label>
 
               {cuboidBounds && cuboidDimensions ? (
                 <>
@@ -717,7 +731,9 @@ function App() {
                 <p className="panel-empty">
                   {pendingCuboidCorner
                     ? `${pendingCuboidCorner.corner === 'a' ? 'Corner A' : 'Corner B'} set at ${model.origin.x + pendingCuboidCorner.point.x}, ${model.origin.y + pendingCuboidCorner.point.y}, ${model.origin.z + pendingCuboidCorner.point.z}.`
-                    : 'Turn on area selection, then left-click Corner A and right-click Corner B in the viewport.'}
+                    : cuboidSelectionMode
+                      ? 'Left-click Corner A and right-click Corner B in the viewport.'
+                      : 'Create a selected area, then left-click Corner A and right-click Corner B in the viewport.'}
                 </p>
               )}
             </section>
@@ -786,8 +802,13 @@ function App() {
                 <button
                   type="button"
                   className={materialsScope === 'cuboid' ? 'is-active' : ''}
-                  disabled={!cuboidBounds}
-                  onClick={() => setMaterialsScope('cuboid')}
+                  onClick={() => {
+                    if (cuboidBounds) {
+                      setMaterialsScope('cuboid');
+                    } else {
+                      beginCuboidSelection();
+                    }
+                  }}
                 >
                   Selected Area
                 </button>
