@@ -98,7 +98,7 @@ type TextureReference =
     };
 export type ModelFaceUv = [number, number, number, number];
 
-const assetRoot = '/minecraft-assets/assets/minecraft';
+const assetRoot = `${import.meta.env.BASE_URL}minecraft-assets/assets/minecraft`;
 const playerHeadTexturePrefix = 'schemview:entity/player/head/';
 const solidTexturePrefix = 'schemview:block/solid/';
 const blockstateCache = new Map<string, Promise<BlockstateJson | null>>();
