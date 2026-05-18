@@ -469,6 +469,7 @@ function isAlphaCutoutTexture(textureId: string): boolean {
   return (
     /(^|\/)(wheat|carrots|potatoes|beetroots|nether_wart)_stage\d+$/.test(path)
     || path.includes('crop')
+    || path.includes('leaves')
     || path.includes('sapling')
     || path.includes('grass')
     || path.includes('fern')

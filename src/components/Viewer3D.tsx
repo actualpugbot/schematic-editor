@@ -1013,13 +1013,18 @@ function occludingFacesForParts(parts: ResolvedBlockPart[]): Set<ModelFaceName> 
 
   for (const part of parts) {
     for (const face of faceOrder) {
-      if (part.faceTextures[face] && !part.faceTranslucencies[face] && partFaceCoversBlockBoundary(part, face)) {
+      if (partFaceOccludesNeighbor(part, face) && partFaceCoversBlockBoundary(part, face)) {
         faces.add(rotatedFace(face, part));
       }
     }
   }
 
   return faces;
+}
+
+function partFaceOccludesNeighbor(part: ResolvedBlockPart, face: ModelFaceName): boolean {
+  const textureId = part.faceTextures[face];
+  return textureId !== null && !part.faceTranslucencies[face] && !isAlphaCutoutTexture(textureId);
 }
 
 function boundaryFacesForParts(parts: ResolvedBlockPart[], translucentOnly = false): Set<ModelFaceName> {
@@ -1715,6 +1720,7 @@ function isAlphaCutoutTexture(textureId: string): boolean {
   return (
     /(^|\/)(wheat|carrots|potatoes|beetroots|nether_wart)_stage\d+$/.test(path)
     || path.includes('crop')
+    || path.includes('leaves')
     || path.includes('sapling')
     || path.includes('grass')
     || path.includes('fern')
