@@ -129,74 +129,168 @@ export function renameSchematicDocument(document: NbtDocument, source: Schematic
 }
 
 export function createSampleModel(): SchematicModel {
-  const width = 18;
-  const height = 13;
-  const length = 18;
-  const blocks: VoxelBlock[] = [];
+  const width = 24;
+  const height = 15;
+  const length = 22;
+  const blocksByPosition = new Map<string, VoxelBlock>();
 
-  const add = (x: number, y: number, z: number, name: string) => {
+  const add = (x: number, y: number, z: number, stateKey: string) => {
+    if (x < 0 || x >= width || y < 0 || y >= height || z < 0 || z >= length) return;
+    const name = stateKey.split('[')[0];
     const appearance = blockAppearance(name);
-    blocks.push({ x, y, z, name, stateKey: name, color: appearance.color, material: appearance.label });
+    blocksByPosition.set(positionKey(x, y, z), {
+      x,
+      y,
+      z,
+      name,
+      stateKey,
+      color: appearance.color,
+      material: appearance.label,
+    });
   };
 
-  for (let x = 1; x < width - 1; x += 1) {
-    for (let z = 1; z < length - 1; z += 1) {
-      add(x, 0, z, (x + z) % 5 === 0 ? 'minecraft:moss_block' : 'minecraft:stone_bricks');
-    }
-  }
-
-  for (let y = 1; y <= 6; y += 1) {
-    for (const x of [2, width - 3]) {
-      for (let z = 2; z < length - 2; z += 1) {
-        if (z === 8 || z === 9) continue;
-        add(x, y, z, y % 3 === 0 ? 'minecraft:oak_log' : 'minecraft:oak_planks');
+  const fill = (
+    minX: number,
+    minY: number,
+    minZ: number,
+    maxX: number,
+    maxY: number,
+    maxZ: number,
+    stateKey: string,
+  ) => {
+    for (let x = minX; x <= maxX; x += 1) {
+      for (let y = minY; y <= maxY; y += 1) {
+        for (let z = minZ; z <= maxZ; z += 1) {
+          add(x, y, z, stateKey);
+        }
       }
     }
+  };
 
-    for (const z of [2, length - 3]) {
-      for (let x = 2; x < width - 2; x += 1) {
-        add(x, y, z, y % 3 === 0 ? 'minecraft:oak_log' : 'minecraft:oak_planks');
+  const addTree = (baseX: number, baseZ: number) => {
+    for (let y = 1; y <= 4; y += 1) add(baseX, y, baseZ, 'minecraft:oak_log');
+    for (let x = baseX - 2; x <= baseX + 2; x += 1) {
+      for (let z = baseZ - 2; z <= baseZ + 2; z += 1) {
+        if (Math.abs(x - baseX) + Math.abs(z - baseZ) <= 3) add(x, 5, z, 'minecraft:oak_leaves');
       }
     }
-  }
-
-  for (let y = 1; y <= 5; y += 1) {
-    add(5, y, 5, 'minecraft:stone_bricks');
-    add(12, y, 5, 'minecraft:stone_bricks');
-    add(5, y, 12, 'minecraft:stone_bricks');
-    add(12, y, 12, 'minecraft:stone_bricks');
-  }
-
-  for (let y = 2; y <= 4; y += 1) {
-    add(8, y, 2, 'minecraft:glass');
-    add(9, y, 2, 'minecraft:glass');
-    add(2, y, 8, 'minecraft:glass');
-    add(2, y, 9, 'minecraft:glass');
-    add(15, y, 8, 'minecraft:glass');
-    add(15, y, 9, 'minecraft:glass');
-  }
+    fill(baseX - 1, 6, baseZ - 1, baseX + 1, 6, baseZ + 1, 'minecraft:oak_leaves');
+    add(baseX, 7, baseZ, 'minecraft:oak_leaves');
+  };
 
   for (let x = 0; x < width; x += 1) {
     for (let z = 0; z < length; z += 1) {
-      const edgeDistance = Math.min(x, z, width - 1 - x, length - 1 - z);
-      const roofY = 7 + Math.max(0, 4 - edgeDistance);
-      if (edgeDistance < 6 && roofY < height) {
-        add(x, roofY, z, edgeDistance % 2 ? 'minecraft:dark_oak_stairs' : 'minecraft:dark_oak_planks');
+      const isPath = (x >= 10 && x <= 13 && z < 7) || (x === 11 && z >= 7 && z <= 10);
+      const isPond = x >= 17 && x <= 21 && z >= 2 && z <= 5 && (x - 19) ** 2 + (z - 4) ** 2 <= 7;
+      if (isPond) {
+        add(x, 0, z, 'minecraft:water');
+      } else if (isPath) {
+        add(x, 0, z, 'minecraft:dirt_path');
+      } else {
+        add(x, 0, z, (x + z) % 11 === 0 ? 'minecraft:moss_block' : 'minecraft:grass_block');
       }
     }
   }
 
-  for (let y = 1; y < height; y += 1) {
-    if (y % 2 === 1) add(8, y, 8, 'minecraft:torch');
+  fill(6, 1, 6, 17, 1, 15, 'minecraft:spruce_planks');
+
+  for (let y = 2; y <= 6; y += 1) {
+    for (let x = 6; x <= 17; x += 1) {
+      if (!(x === 11 || x === 12) || y > 4) add(x, y, 6, 'minecraft:oak_planks');
+      add(x, y, 15, 'minecraft:oak_planks');
+    }
+    for (let z = 7; z <= 14; z += 1) {
+      add(6, y, z, 'minecraft:oak_planks');
+      add(17, y, z, 'minecraft:oak_planks');
+    }
   }
 
+  for (const [x, z] of [
+    [6, 6],
+    [17, 6],
+    [6, 15],
+    [17, 15],
+  ]) {
+    for (let y = 1; y <= 7; y += 1) add(x, y, z, 'minecraft:stripped_oak_log');
+  }
+
+  for (const x of [8, 15]) {
+    add(x, 3, 6, 'minecraft:glass_pane');
+    add(x, 4, 6, 'minecraft:glass_pane');
+    add(x, 3, 15, 'minecraft:glass_pane');
+    add(x, 4, 15, 'minecraft:glass_pane');
+  }
+  for (const z of [9, 12]) {
+    add(6, 3, z, 'minecraft:glass_pane');
+    add(6, 4, z, 'minecraft:glass_pane');
+    add(17, 3, z, 'minecraft:glass_pane');
+    add(17, 4, z, 'minecraft:glass_pane');
+  }
+
+  add(11, 2, 6, 'minecraft:oak_door[facing=south,half=lower,hinge=left,open=false,powered=false]');
+  add(11, 3, 6, 'minecraft:oak_door[facing=south,half=upper,hinge=left,open=false,powered=false]');
+  add(12, 2, 6, 'minecraft:oak_door[facing=south,half=lower,hinge=right,open=false,powered=false]');
+  add(12, 3, 6, 'minecraft:oak_door[facing=south,half=upper,hinge=right,open=false,powered=false]');
+  fill(10, 1, 4, 13, 1, 5, 'minecraft:cobblestone');
+
+  for (let z = 4; z <= 17; z += 1) {
+    for (let offset = 0; offset <= 6; offset += 1) {
+      const y = 7 + offset;
+      add(5 + offset, y, z, 'minecraft:dark_oak_stairs[facing=west,half=bottom,shape=straight]');
+      add(18 - offset, y, z, 'minecraft:dark_oak_stairs[facing=east,half=bottom,shape=straight]');
+    }
+    add(11, 13, z, 'minecraft:dark_oak_slab[type=top]');
+    add(12, 13, z, 'minecraft:dark_oak_slab[type=top]');
+  }
+
+  for (const z of [5, 16]) {
+    fill(9, 8, z, 14, 8, z, 'minecraft:spruce_planks');
+    fill(10, 9, z, 13, 9, z, 'minecraft:spruce_planks');
+    fill(11, 10, z, 12, 10, z, 'minecraft:spruce_planks');
+  }
+
+  fill(15, 7, 12, 16, 10, 13, 'minecraft:stone_bricks');
+  add(15, 11, 12, 'minecraft:campfire[lit=true]');
+  add(9, 5, 5, 'minecraft:lantern[hanging=true]');
+  add(14, 5, 5, 'minecraft:lantern[hanging=true]');
+
+  addTree(3, 16);
+  addTree(20, 16);
+  add(18, 1, 8, 'minecraft:oak_log');
+  add(18, 2, 8, 'minecraft:oak_leaves');
+  add(19, 2, 8, 'minecraft:oak_leaves');
+  add(18, 2, 9, 'minecraft:oak_leaves');
+
+  for (const [x, z, flower] of [
+    [4, 5, 'minecraft:poppy'],
+    [5, 4, 'minecraft:dandelion'],
+    [3, 7, 'minecraft:azure_bluet'],
+    [19, 9, 'minecraft:cornflower'],
+    [21, 8, 'minecraft:oxeye_daisy'],
+    [15, 3, 'minecraft:fern'],
+    [7, 18, 'minecraft:tall_grass'],
+  ] as const) {
+    add(x, 1, z, flower);
+  }
+
+  for (const [x, z] of [
+    [9, 6],
+    [14, 6],
+    [6, 11],
+    [17, 11],
+  ]) {
+    add(x, 5, z, 'minecraft:torch');
+  }
+
+  const blocks = [...blocksByPosition.values()].sort((a, b) => a.y - b.y || a.z - b.z || a.x - b.x);
+
   return finalizeModel({
-    name: 'Sample workshop house',
+    name: 'Sample cottage garden',
     source: 'Sample',
     dimensions: { width, height, length },
     origin: { x: 0, y: 0, z: 0 },
     blocks,
-    paletteSize: 9,
+    paletteSize: new Set(blocks.map((block) => block.stateKey)).size,
     warnings: [],
   });
 }

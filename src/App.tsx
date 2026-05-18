@@ -80,7 +80,7 @@ function App() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
   const [model, setModel] = useState<SchematicModel | null>(() => createSampleModel());
-  const [schematicName, setSchematicName] = useState('Sample workshop house');
+  const [schematicName, setSchematicName] = useState('Sample cottage garden');
   const [isEditingSchematicName, setIsEditingSchematicName] = useState(false);
   const [schematicDocument, setSchematicDocument] = useState<NbtDocument | null>(null);
   const [schematicExtension, setSchematicExtension] = useState('.schem');
