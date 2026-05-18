@@ -99,8 +99,8 @@ type TextureReference =
 export type ModelFaceUv = [number, number, number, number];
 
 const assetRoot = `${import.meta.env.BASE_URL}minecraft-assets/assets/minecraft`;
-const playerHeadTexturePrefix = 'ScheMagic:entity/player/head/';
-const solidTexturePrefix = 'ScheMagic:block/solid/';
+const playerHeadTexturePrefix = 'SchematicEditor:entity/player/head/';
+const solidTexturePrefix = 'SchematicEditor:block/solid/';
 const blockstateCache = new Map<string, Promise<BlockstateJson | null>>();
 const modelCache = new Map<string, Promise<ModelJson | null>>();
 const resolvedModelCache = new Map<string, Promise<ResolvedModel | null>>();
@@ -594,7 +594,7 @@ function syntheticPlayerHeadParts(
   const hatCuboid: BlockEntityCuboid = wallMounted
     ? { name: 'hat', from: [3.5, 3.5, -0.5], to: [12.5, 12.5, 8.5], textureOrigin: [32, 0] }
     : { name: 'hat', from: [3.5, -0.5, 3.5], to: [12.5, 8.5, 12.5], textureOrigin: [32, 0] };
-  const texture = playerHeadTextureId(properties.ScheMagic_head);
+  const texture = playerHeadTextureId(properties.SchematicEditor_head);
 
   return [baseCuboid, hatCuboid].map((cuboid) =>
     blockEntityCuboidPart(id, properties, `player-head:${wallMounted ? 'wall' : 'floor'}:${cuboid.name}`, cuboid, texture, headRotation),
@@ -606,7 +606,7 @@ function isPlayerHeadBlock(id: string): boolean {
 }
 
 function playerHeadTextureId(textureHash: string | undefined): string {
-  return textureHash ? `${playerHeadTexturePrefix}${textureHash}` : 'ScheMagic:entity/player/default';
+  return textureHash ? `${playerHeadTexturePrefix}${textureHash}` : 'SchematicEditor:entity/player/default';
 }
 
 function headRotationFromProperty(rotation: string | undefined): number {
@@ -689,10 +689,10 @@ function decoratedPotBlockEntityParts(
 
   const baseTexture = 'minecraft:entity/decorated_pot/decorated_pot_base';
   const sideTexture = 'minecraft:entity/decorated_pot/decorated_pot_side';
-  const frontTexture = decoratedPotSideTexture(properties.ScheMagic_pot_front, sideTexture);
-  const backTexture = decoratedPotSideTexture(properties.ScheMagic_pot_back, sideTexture);
-  const leftTexture = decoratedPotSideTexture(properties.ScheMagic_pot_left, sideTexture);
-  const rightTexture = decoratedPotSideTexture(properties.ScheMagic_pot_right, sideTexture);
+  const frontTexture = decoratedPotSideTexture(properties.SchematicEditor_pot_front, sideTexture);
+  const backTexture = decoratedPotSideTexture(properties.SchematicEditor_pot_back, sideTexture);
+  const leftTexture = decoratedPotSideTexture(properties.SchematicEditor_pot_left, sideTexture);
+  const rightTexture = decoratedPotSideTexture(properties.SchematicEditor_pot_right, sideTexture);
   const rotation = {
     x: variantRotation.x,
     y: variantRotation.y + decoratedPotFacingRotation(properties.facing),
@@ -1441,7 +1441,7 @@ export function textureUrl(textureId: string): string {
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   }
 
-  if (normalized === 'ScheMagic:entity/player/default') {
+  if (normalized === 'SchematicEditor:entity/player/default') {
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(defaultPlayerSkinSvg)}`;
   }
 

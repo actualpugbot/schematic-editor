@@ -84,11 +84,12 @@ interface MaterialSummary {
 
 const schematicFileExtensions = new Set(['.litematic', '.schem', '.schematic', '.nbt']);
 const defaultSchematicFileName = 'Medieval House.litematic';
+const themeStorageKey = 'schematic-editor-theme';
 
 function App() {
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window === 'undefined') return 'light';
-    const savedTheme = window.localStorage.getItem('schemagic-theme');
+    const savedTheme = window.localStorage.getItem(themeStorageKey);
     if (savedTheme === 'light' || savedTheme === 'dark') return savedTheme;
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
@@ -264,7 +265,7 @@ function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    window.localStorage.setItem('schemagic-theme', theme);
+    window.localStorage.setItem(themeStorageKey, theme);
   }, [theme]);
 
   useEffect(() => {
@@ -546,7 +547,7 @@ function App() {
             <div className="brand-mark" aria-hidden="true">
               <Cuboid size={22} />
             </div>
-            <strong>ScheMagic</strong>
+            <strong>schematic-editor</strong>
           </div>
           <div className="file-lockup">
             {model ? (

@@ -1,8 +1,8 @@
-# ScheMagic
+# schematic-editor
 
 A browser-based Minecraft schematic viewer. Upload or drag in a `.litematic`, `.schem`, `.schematic`, or NBT schematic file and inspect it as a 3D Minecraft model with orbit controls, layer-by-layer viewing, and one-click 360 degree rotation.
 
-ScheMagic runs entirely in the browser, so schematic files stay on your machine.
+schematic-editor runs entirely in the browser, so schematic files stay on your machine.
 
 ## Run Locally
 
