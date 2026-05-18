@@ -17,6 +17,7 @@ interface Viewer3DProps {
   playerHeadSelections: Record<string, string>;
   autoRotate: boolean;
   showGrid: boolean;
+  theme: 'light' | 'dark';
   selectedBlock: VoxelBlock | null;
   onBlockSelect?: (block: VoxelBlock | null) => void;
   onAxisOrientationChange?: (orientation: AxisGizmoOrientation) => void;
@@ -85,6 +86,7 @@ export function Viewer3D(props: InternalViewerProps) {
   const controlsRef = useRef<OrbitControls | null>(null);
   const modelGroupRef = useRef<THREE.Group | null>(null);
   const gridRef = useRef<THREE.Group | null>(null);
+  const floorRef = useRef<THREE.Mesh | null>(null);
   const selectionBoxRef = useRef<THREE.LineSegments | null>(null);
   const frameRef = useRef<number | null>(null);
   const spinRef = useRef<{ start: number; duration: number; from: number; to: number } | null>(null);
@@ -123,7 +125,8 @@ export function Viewer3D(props: InternalViewerProps) {
     if (!container) return;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf4f8f8);
+    const colors = sceneThemeColors(props.theme);
+    scene.background = new THREE.Color(colors.background);
     scene.fog = null;
     sceneRef.current = scene;
 
@@ -161,8 +164,9 @@ export function Viewer3D(props: InternalViewerProps) {
 
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(400, 400),
-      new THREE.MeshStandardMaterial({ color: 0xe8eeee, roughness: 0.94, metalness: 0.02 }),
+      new THREE.MeshStandardMaterial({ color: colors.floor, roughness: 0.94, metalness: 0.02 }),
     );
+    floorRef.current = floor;
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.56;
     floor.receiveShadow = true;
@@ -254,9 +258,23 @@ export function Viewer3D(props: InternalViewerProps) {
       cameraRef.current = null;
       rendererRef.current = null;
       controlsRef.current = null;
+      floorRef.current = null;
       selectionBoxRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const colors = sceneThemeColors(props.theme);
+    if (sceneRef.current) {
+      sceneRef.current.background = new THREE.Color(colors.background);
+    }
+
+    const floorMaterial = floorRef.current?.material;
+    if (floorMaterial instanceof THREE.MeshStandardMaterial) {
+      floorMaterial.color.setHex(colors.floor);
+      floorMaterial.needsUpdate = true;
+    }
+  }, [props.theme]);
 
   useEffect(() => {
     if (!controlsRef.current) return;
@@ -295,10 +313,10 @@ export function Viewer3D(props: InternalViewerProps) {
 
     if (!props.model || !props.showGrid) return;
 
-    const helper = createFootprintGrid(props.model.dimensions);
+    const helper = createFootprintGrid(props.model.dimensions, props.theme);
     gridGroup.add(helper);
     centerGroup(gridGroup, props.model.dimensions);
-  }, [props.model, props.showGrid]);
+  }, [props.model, props.showGrid, props.theme]);
 
   useEffect(() => {
     const selectionBox = selectionBoxRef.current;
@@ -1316,9 +1334,19 @@ function centerGroup(group: THREE.Group, dimensions: SchematicDimensions) {
   group.position.set(-(dimensions.width - 1) / 2, 0, -(dimensions.length - 1) / 2);
 }
 
-function createFootprintGrid(dimensions: SchematicDimensions): THREE.LineSegments {
+function sceneThemeColors(theme: 'light' | 'dark') {
+  return theme === 'dark'
+    ? { background: 0x101719, floor: 0x131d1f, grid: 0x6f8987 }
+    : { background: 0xf4f8f8, floor: 0xe8eeee, grid: 0x4d5b54 };
+}
+
+function createFootprintGrid(dimensions: SchematicDimensions, theme: 'light' | 'dark'): THREE.LineSegments {
   const vertices: number[] = [];
-  const material = new THREE.LineBasicMaterial({ color: 0x4d5b54, transparent: true, opacity: 0.28 });
+  const material = new THREE.LineBasicMaterial({
+    color: sceneThemeColors(theme).grid,
+    transparent: true,
+    opacity: theme === 'dark' ? 0.34 : 0.28,
+  });
   const y = -0.55;
 
   for (let x = -0.5; x <= dimensions.width - 0.5; x += 1) {

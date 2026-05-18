@@ -8,6 +8,7 @@ import {
   EyeOff,
   FileUp,
   Move3D,
+  Moon,
   Pencil,
   Rotate3D,
   ScanSearch,
@@ -22,6 +23,7 @@ import { createSampleModel, parseSchematic, type PlayerHeadTexture, type Schemat
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 type InspectorTab = 'materials' | 'layers';
+type Theme = 'light' | 'dark';
 
 interface MaterialSummary {
   id: string;
@@ -32,6 +34,12 @@ interface MaterialSummary {
 }
 
 function App() {
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window === 'undefined') return 'light';
+    const savedTheme = window.localStorage.getItem('schemview-theme');
+    if (savedTheme === 'light' || savedTheme === 'dark') return savedTheme;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
   const [model, setModel] = useState<SchematicModel | null>(() => createSampleModel());
   const [loadState, setLoadState] = useState<LoadState>('ready');
   const [error, setError] = useState('');
@@ -121,6 +129,12 @@ function App() {
     ? playerHeadSelections[blockPositionKey(selectedBlock)] ?? selectedBlock.playerHeadTexture?.id ?? playerHeadOptions[0]?.id ?? ''
     : '';
   const totalBlocks = model?.blocks.length ?? 0;
+  const isDarkTheme = theme === 'dark';
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem('schemview-theme', theme);
+  }, [theme]);
 
   useEffect(() => {
     if (!model || !selectedBlock) {
@@ -258,6 +272,10 @@ function App() {
     }));
   };
 
+  const toggleTheme = () => {
+    setTheme((current) => (current === 'dark' ? 'light' : 'dark'));
+  };
+
   const showPanel = (tab: InspectorTab) => {
     setInspectorTab(tab);
     const panel = tab === 'materials' ? materialPanelRef : layerPanelRef;
@@ -300,8 +318,15 @@ function App() {
             <Upload size={17} />
             Upload
           </button>
-          <button className="ghost-icon" type="button" onClick={() => showPanel('layers')} title="Layer settings">
-            <Sun size={18} />
+          <button
+            className="ghost-icon"
+            type="button"
+            onClick={toggleTheme}
+            title={isDarkTheme ? 'Use light theme' : 'Use dark theme'}
+            aria-label={isDarkTheme ? 'Use light theme' : 'Use dark theme'}
+            aria-pressed={isDarkTheme}
+          >
+            {isDarkTheme ? <Sun size={18} /> : <Moon size={18} />}
           </button>
           <input
             ref={inputRef}
@@ -443,6 +468,7 @@ function App() {
             singleLayer={singleLayer}
             autoRotate={false}
             showGrid
+            theme={theme}
             hiddenMaterialIds={hiddenMaterialIds}
             playerHeadSelections={playerHeadSelections}
             selectedBlock={selectedBlock}

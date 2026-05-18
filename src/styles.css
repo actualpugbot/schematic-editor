@@ -13,6 +13,24 @@
   --stone: #5d6867;
   --moss: #688548;
   --copper: #a4653e;
+  --body-glow: rgba(255, 255, 255, 0.98);
+  --body-glow-soft: rgba(246, 250, 249, 0.92);
+  --body-gradient-start: #e8eeee;
+  --body-gradient-mid: #f6f8f7;
+  --body-gradient-end: #edf2f1;
+  --panel-glass: rgba(251, 252, 251, 0.92);
+  --panel-float: rgba(251, 252, 251, 0.9);
+  --panel-border-glass: rgba(206, 217, 214, 0.82);
+  --icon-color: #455357;
+  --tab-color: #6c787b;
+  --row-color: #657174;
+  --row-border: #e7edeb;
+  --row-hover: #f2f6f5;
+  --slider-track: #dbe4e2;
+  --breakdown-bg: #eef5f3;
+  --error-bg: #fff0e5;
+  --error-text: #7e3322;
+  --block-border: rgba(37, 40, 36, 0.18);
   --shadow-soft: 0 18px 54px rgba(26, 43, 45, 0.12);
   --shadow-card: 0 12px 34px rgba(23, 34, 35, 0.12);
   font-family:
@@ -26,6 +44,43 @@
   text-rendering: geometricPrecision;
 }
 
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --paper: #11191a;
+  --paper-strong: #182426;
+  --paper-soft: #142022;
+  --ink: #ecf6f4;
+  --muted: #94a7a5;
+  --line: #2a3d3f;
+  --line-strong: #365052;
+  --teal: #28c4bd;
+  --teal-strong: #62e4df;
+  --teal-soft: #173f40;
+  --stone: #a3b3b1;
+  --moss: #9fc36d;
+  --copper: #d08a5f;
+  --body-glow: rgba(49, 85, 85, 0.32);
+  --body-glow-soft: rgba(26, 48, 50, 0.42);
+  --body-gradient-start: #0d1415;
+  --body-gradient-mid: #111b1d;
+  --body-gradient-end: #0f1718;
+  --panel-glass: rgba(24, 36, 38, 0.9);
+  --panel-float: rgba(24, 36, 38, 0.88);
+  --panel-border-glass: rgba(67, 95, 96, 0.68);
+  --icon-color: #b4c6c4;
+  --tab-color: #94a7a5;
+  --row-color: #a5b7b5;
+  --row-border: #26383a;
+  --row-hover: #1d2d2f;
+  --slider-track: #293e40;
+  --breakdown-bg: #17292b;
+  --error-bg: #332019;
+  --error-text: #ffbf9f;
+  --block-border: rgba(230, 246, 242, 0.2);
+  --shadow-soft: 0 18px 54px rgba(0, 0, 0, 0.32);
+  --shadow-card: 0 12px 34px rgba(0, 0, 0, 0.3);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -35,8 +90,8 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background:
-    radial-gradient(circle at 38% 24%, rgba(255, 255, 255, 0.98) 0 12%, rgba(246, 250, 249, 0.92) 33%, transparent 58%),
-    linear-gradient(180deg, #e8eeee 0%, #f6f8f7 44%, #edf2f1 100%);
+    radial-gradient(circle at 38% 24%, var(--body-glow) 0 12%, var(--body-glow-soft) 33%, transparent 58%),
+    linear-gradient(180deg, var(--body-gradient-start) 0%, var(--body-gradient-mid) 44%, var(--body-gradient-end) 100%);
 }
 
 button,
@@ -100,8 +155,8 @@ h2 {
   gap: 18px;
   min-width: 0;
   padding: 12px 20px;
-  background: rgba(251, 252, 251, 0.92);
-  border: 1px solid rgba(206, 217, 214, 0.82);
+  background: var(--panel-glass);
+  border: 1px solid var(--panel-border-glass);
   border-radius: 8px;
   box-shadow: var(--shadow-soft);
   backdrop-filter: blur(18px);
@@ -127,7 +182,7 @@ h2 {
 }
 
 .brand-lockup > strong {
-  color: #101819;
+  color: var(--ink);
   font-size: 1.22rem;
   font-weight: 900;
   white-space: nowrap;
@@ -223,7 +278,7 @@ h2 {
 .viewport-tools {
   position: absolute;
   z-index: 5;
-  background: rgba(251, 252, 251, 0.9);
+  background: var(--panel-float);
   border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: var(--shadow-card);
@@ -271,7 +326,7 @@ h2 {
   border: 1px solid var(--line);
   border-radius: 7px;
   background: var(--paper-strong);
-  color: #455357;
+  color: var(--icon-color);
   box-shadow: 0 4px 12px rgba(28, 41, 43, 0.06);
   transition:
     transform 160ms ease,
@@ -322,7 +377,7 @@ h2 {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--paper-strong);
-  color: #455357;
+  color: var(--icon-color);
   box-shadow: 0 5px 16px rgba(28, 41, 43, 0.07);
   transition:
     transform 160ms ease,
@@ -370,7 +425,7 @@ h2 {
   border: 1px solid var(--line);
   border-radius: 7px;
   background: var(--paper-strong);
-  color: #455357;
+  color: var(--icon-color);
   box-shadow: 0 4px 12px rgba(28, 41, 43, 0.06);
   transition:
     transform 160ms ease,
@@ -510,7 +565,7 @@ dd {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  background: rgba(251, 252, 251, 0.92);
+  background: var(--panel-glass);
   border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: var(--shadow-soft);
@@ -529,7 +584,7 @@ dd {
   min-width: 0;
   padding: 0 10px;
   background: transparent;
-  color: #6c787b;
+  color: var(--tab-color);
   font-size: 0.78rem;
   font-weight: 820;
   overflow: hidden;
@@ -706,7 +761,7 @@ dd {
   appearance: none;
   border-radius: 999px;
   background:
-    linear-gradient(90deg, var(--teal) 0 var(--layer-progress), #dbe4e2 var(--layer-progress) 100%);
+    linear-gradient(90deg, var(--teal) 0 var(--layer-progress), var(--slider-track) var(--layer-progress) 100%);
 }
 
 .slider-wrap input[type='range']::-webkit-slider-thumb {
@@ -808,8 +863,8 @@ dd {
   align-items: center;
   min-height: 42px;
   padding: 4px 6px;
-  border-bottom: 1px solid #e7edeb;
-  color: #657174;
+  border-bottom: 1px solid var(--row-border);
+  color: var(--row-color);
   font-size: 0.86rem;
   transition:
     background-color 160ms ease,
@@ -818,7 +873,7 @@ dd {
 
 .material-row:hover,
 .material-row.is-expanded {
-  background: #f2f6f5;
+  background: var(--row-hover);
 }
 
 .material-row.is-selected {
@@ -894,7 +949,7 @@ dd {
   background-position: center;
   background-size: contain;
   image-rendering: pixelated;
-  border: 1px solid rgba(37, 40, 36, 0.18);
+  border: 1px solid var(--block-border);
   transform: none;
 }
 
@@ -909,7 +964,7 @@ dd {
   background-repeat: repeat;
   background-size: 100% 100%;
   image-rendering: pixelated;
-  border: 1px solid rgba(37, 40, 36, 0.18);
+  border: 1px solid var(--block-border);
 }
 
 .block-preview-top {
@@ -969,7 +1024,7 @@ dd {
   margin: -1px 6px 7px;
   padding: 8px 12px 9px 50px;
   text-align: left;
-  background: #eef5f3;
+  background: var(--breakdown-bg);
   border: 1px solid var(--line);
   border-top: 0;
   border-radius: 0 0 8px 8px;
@@ -1011,8 +1066,8 @@ dd {
   margin: 14px;
   border: 1px solid color-mix(in oklch, var(--copper), white 35%);
   border-radius: 8px;
-  background: #fff0e5;
-  color: #7e3322;
+  background: var(--error-bg);
+  color: var(--error-text);
 }
 
 @media (max-width: 1180px) {
