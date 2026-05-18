@@ -673,6 +673,14 @@ dd {
   pointer-events: none;
 }
 
+.spectator-help span {
+  display: block;
+}
+
+.spectator-help span + span {
+  margin-top: 3px;
+}
+
 .spectator-crosshair {
   position: absolute;
   z-index: 4;

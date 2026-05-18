@@ -752,15 +752,18 @@ function App() {
           {cameraMode === 'spectator' && (
             <>
               <div className="spectator-help" aria-live="polite">
-                WASD move · Space up · Shift down · Ctrl faster · Esc release mouse
+                <span>WASD move · Space up · Shift down · Ctrl faster</span>
+                <span>Esc release mouse</span>
               </div>
               <div className="spectator-crosshair" aria-hidden="true" />
             </>
           )}
 
-          <div className="camera-status" aria-label="Camera coordinates">
-            X {cameraCoordinates.x.toFixed(1)} · Y {cameraCoordinates.y.toFixed(1)} · Z {cameraCoordinates.z.toFixed(1)}
-          </div>
+          {cameraMode !== 'spectator' && (
+            <div className="camera-status" aria-label="Camera coordinates">
+              X {cameraCoordinates.x.toFixed(1)} · Y {cameraCoordinates.y.toFixed(1)} · Z {cameraCoordinates.z.toFixed(1)}
+            </div>
+          )}
 
           <div className="axis-gizmo" aria-hidden="true" ref={axisGizmoRef}>
             <span className="axis-line axis-line-x" />
