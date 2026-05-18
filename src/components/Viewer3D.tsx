@@ -20,7 +20,7 @@ interface Viewer3DProps {
   theme: 'light' | 'dark';
   selectedBlock: VoxelBlock | null;
   cuboidBounds?: CuboidBounds | null;
-  onBlockSelect?: (block: VoxelBlock | null) => void;
+  onBlockSelect?: (block: VoxelBlock | null, button: SelectionButton) => void;
   onAxisOrientationChange?: (orientation: AxisGizmoOrientation) => void;
   onReady?: () => void;
 }
@@ -50,6 +50,8 @@ export interface AxisGizmoVector {
 export interface Viewer3DHandle {
   spinOnce: () => void;
 }
+
+export type SelectionButton = 'primary' | 'secondary';
 
 interface InternalViewerProps extends Viewer3DProps {
   viewerRef: MutableRefObject<Viewer3DHandle | null>;
@@ -218,16 +220,20 @@ export function Viewer3D(props: InternalViewerProps) {
       pointerStart.y = event.clientY;
     };
     const handlePointerUp = (event: PointerEvent) => {
-      if (event.button !== 0) return;
+      if (event.button !== 0 && event.button !== 2) return;
       const distance = Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y);
       if (distance > 5) return;
 
       const block = pickBlock(event, renderer, camera, modelGroup);
-      onBlockSelectRef.current?.(block);
+      onBlockSelectRef.current?.(block, event.button === 2 ? 'secondary' : 'primary');
+    };
+    const handleContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
     };
 
     renderer.domElement.addEventListener('pointerdown', handlePointerDown);
     renderer.domElement.addEventListener('pointerup', handlePointerUp);
+    renderer.domElement.addEventListener('contextmenu', handleContextMenu);
 
     const animate = (time: number) => {
       if (controlsRef.current) {
@@ -265,6 +271,7 @@ export function Viewer3D(props: InternalViewerProps) {
       }
       renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
       renderer.domElement.removeEventListener('pointerup', handlePointerUp);
+      renderer.domElement.removeEventListener('contextmenu', handleContextMenu);
       controls.dispose();
       renderer.dispose();
       container.removeChild(renderer.domElement);

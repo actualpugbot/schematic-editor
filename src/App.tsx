@@ -18,7 +18,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { Viewer3D, type AxisGizmoOrientation, type Viewer3DHandle } from './components/Viewer3D';
+import { Viewer3D, type AxisGizmoOrientation, type SelectionButton, type Viewer3DHandle } from './components/Viewer3D';
 import { createBlockThumbnail } from './lib/blockThumbnails';
 import { createSampleModel, parseSchematic, type PlayerHeadTexture, type SchematicModel, type VoxelBlock } from './lib/schematic';
 
@@ -26,6 +26,12 @@ type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 type InspectorTab = 'selection' | 'materials' | 'layers';
 type Theme = 'light' | 'dark';
 type MaterialsScope = 'build' | 'cuboid';
+type CuboidCornerEdge = 'min' | 'max';
+
+interface PendingCuboidCorner {
+  edge: CuboidCornerEdge;
+  block: VoxelBlock;
+}
 
 export interface CuboidBounds {
   minX: number;
@@ -65,7 +71,7 @@ function App() {
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('materials');
   const [summaryCollapsed, setSummaryCollapsed] = useState(false);
   const [cuboidSelectionMode, setCuboidSelectionMode] = useState(false);
-  const [cuboidAnchor, setCuboidAnchor] = useState<VoxelBlock | null>(null);
+  const [pendingCuboidCorner, setPendingCuboidCorner] = useState<PendingCuboidCorner | null>(null);
   const [cuboidBounds, setCuboidBounds] = useState<CuboidBounds | null>(null);
   const [materialsScope, setMaterialsScope] = useState<MaterialsScope>('build');
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -119,7 +125,7 @@ function App() {
   }, [cuboidBoundsKey, model]);
 
   const activeMaterials = materialsScope === 'cuboid' ? cuboidMaterials : materials;
-  const activeMaterialsLabel = materialsScope === 'cuboid' ? 'Selected Cuboid' : 'Entire Build';
+  const activeMaterialsLabel = materialsScope === 'cuboid' ? 'Selected Area' : 'Entire Build';
 
   const filteredMaterials = useMemo(() => {
     const query = materialSearch.trim().toLocaleLowerCase();
@@ -153,9 +159,9 @@ function App() {
   }, [cuboidBounds, materialsScope]);
 
   useEffect(() => {
-    if (!cuboidAnchor || !model || model.blocks.includes(cuboidAnchor)) return;
-    setCuboidAnchor(null);
-  }, [cuboidAnchor, model]);
+    if (!pendingCuboidCorner || !model || model.blocks.includes(pendingCuboidCorner.block)) return;
+    setPendingCuboidCorner(null);
+  }, [pendingCuboidCorner, model]);
 
   useEffect(() => {
     if (!model || !cuboidBounds) return;
@@ -226,7 +232,7 @@ function App() {
       setMaterialSearch('');
       setPlayerHeadSelections({});
       setHiddenMaterialIds(new Set());
-      setCuboidAnchor(null);
+      setPendingCuboidCorner(null);
       setCuboidBounds(null);
       setMaterialsScope('build');
       setSummaryCollapsed(false);
@@ -319,8 +325,9 @@ function App() {
     window.requestAnimationFrame(() => panel.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
   };
 
-  const handleBlockSelect = (block: VoxelBlock | null) => {
+  const handleBlockSelect = (block: VoxelBlock | null, button: SelectionButton) => {
     if (!cuboidSelectionMode) {
+      if (button !== 'primary') return;
       setSelectedBlock(block);
       return;
     }
@@ -331,22 +338,32 @@ function App() {
     }
 
     setSelectedBlock(block);
-    if (!cuboidAnchor) {
-      setCuboidAnchor(block);
+    const edge = button === 'secondary' ? 'max' : 'min';
+    if (cuboidBounds) {
+      setCuboidBounds(boundsWithCorner(cuboidBounds, block, edge, model));
+      setPendingCuboidCorner(null);
+      setMaterialsScope('cuboid');
+      setInspectorTab('selection');
+      return;
+    }
+
+    if (!pendingCuboidCorner || pendingCuboidCorner.edge === edge) {
+      setPendingCuboidCorner({ edge, block });
       setCuboidBounds(null);
       setInspectorTab('selection');
       return;
     }
 
-    const nextBounds = normalizeCuboidBounds(cuboidAnchor, block, model);
-    setCuboidBounds(nextBounds);
-    setCuboidAnchor(null);
+    const cornerA = edge === 'min' ? block : pendingCuboidCorner.block;
+    const cornerB = edge === 'max' ? block : pendingCuboidCorner.block;
+    setCuboidBounds(normalizeCuboidBounds(cornerA, cornerB, model));
+    setPendingCuboidCorner(null);
     setMaterialsScope('cuboid');
     setInspectorTab('selection');
   };
 
   const clearCuboidSelection = () => {
-    setCuboidAnchor(null);
+    setPendingCuboidCorner(null);
     setCuboidBounds(null);
     setMaterialsScope('build');
   };
@@ -540,7 +557,7 @@ function App() {
                 setCuboidSelectionMode((current) => !current);
                 showPanel('selection');
               }}
-              title={cuboidSelectionMode ? 'Cuboid selection is active' : 'Select cuboid'}
+              title={cuboidSelectionMode ? 'Area selection is active' : 'Select area'}
               aria-pressed={cuboidSelectionMode}
             >
               <BoxSelect size={19} />
@@ -622,15 +639,21 @@ function App() {
             >
               <div className="section-heading">
                 <div>
-                  <p className="eyebrow">Cuboid Selection</p>
-                  <h2>{cuboidBounds ? 'Selected region' : cuboidAnchor ? 'Pick opposite corner' : 'No cuboid selected'}</h2>
+                  <p className="eyebrow">Area Selection</p>
+                  <h2>
+                    {cuboidBounds
+                      ? 'Selected area'
+                      : pendingCuboidCorner
+                        ? `Pick ${pendingCuboidCorner.edge === 'min' ? 'Corner B' : 'Corner A'}`
+                        : 'No area selected'}
+                  </h2>
                 </div>
                 <button
                   type="button"
                   className="icon-button"
                   onClick={clearCuboidSelection}
-                  title="Clear cuboid selection"
-                  disabled={!cuboidBounds && !cuboidAnchor}
+                  title="Clear selected area"
+                  disabled={!cuboidBounds && !pendingCuboidCorner}
                 >
                   <X size={16} />
                 </button>
@@ -642,21 +665,21 @@ function App() {
                   checked={cuboidSelectionMode}
                   onChange={(event) => setCuboidSelectionMode(event.target.checked)}
                 />
-                <span>Click two blocks for cuboid mode</span>
+                <span>Left-click Corner A; right-click Corner B</span>
               </label>
 
               {cuboidBounds && cuboidDimensions ? (
                 <>
-                  <div className="cuboid-corner-editor" aria-label="Cuboid corner coordinates">
+                  <div className="cuboid-corner-editor" aria-label="Selected area corner coordinates">
                     <CuboidCornerControls
-                      title="Min Corner"
+                      title="Corner A"
                       edge="min"
                       bounds={cuboidBounds}
                       model={model}
                       onStep={stepCuboidCorner}
                     />
                     <CuboidCornerControls
-                      title="Max Corner"
+                      title="Corner B"
                       edge="max"
                       bounds={cuboidBounds}
                       model={model}
@@ -680,9 +703,9 @@ function App() {
                 </>
               ) : (
                 <p className="panel-empty">
-                  {cuboidAnchor
-                    ? `First corner set at ${model.origin.x + cuboidAnchor.x}, ${model.origin.y + cuboidAnchor.y}, ${model.origin.z + cuboidAnchor.z}.`
-                    : 'Turn on cuboid mode, then click two blocks in the viewport.'}
+                  {pendingCuboidCorner
+                    ? `${pendingCuboidCorner.edge === 'min' ? 'Corner A' : 'Corner B'} set at ${model.origin.x + pendingCuboidCorner.block.x}, ${model.origin.y + pendingCuboidCorner.block.y}, ${model.origin.z + pendingCuboidCorner.block.z}.`
+                    : 'Turn on area selection, then left-click Corner A and right-click Corner B in the viewport.'}
                 </p>
               )}
             </section>
@@ -754,7 +777,7 @@ function App() {
                   disabled={!cuboidBounds}
                   onClick={() => setMaterialsScope('cuboid')}
                 >
-                  Selected Cuboid
+                  Selected Area
                 </button>
               </div>
               <label className="material-search">
@@ -822,10 +845,10 @@ function App() {
                 {filteredMaterials.length === 0 && (
                   <p className="material-empty">
                     {materialsScope === 'cuboid' && !cuboidBounds
-                      ? 'Select a cuboid to list materials for that region.'
+                      ? 'Select an area to list materials for that region.'
                       : materialSearch.trim()
                         ? `No materials match "${materialSearch.trim()}".`
-                        : 'No non-air blocks in this cuboid.'}
+                        : 'No non-air blocks in this area.'}
                   </p>
                 )}
               </div>
@@ -972,6 +995,35 @@ function normalizeCuboidBounds(a: VoxelBlock, b: VoxelBlock, model: SchematicMod
       maxX: Math.max(a.x, b.x),
       maxY: Math.max(a.y, b.y),
       maxZ: Math.max(a.z, b.z),
+    },
+    model,
+  );
+}
+
+function boundsWithCorner(
+  bounds: CuboidBounds,
+  block: VoxelBlock,
+  edge: CuboidCornerEdge,
+  model: SchematicModel,
+): CuboidBounds {
+  if (edge === 'min') {
+    return clampBoundsToModel(
+      {
+        ...bounds,
+        minX: Math.min(block.x, bounds.maxX),
+        minY: Math.min(block.y, bounds.maxY),
+        minZ: Math.min(block.z, bounds.maxZ),
+      },
+      model,
+    );
+  }
+
+  return clampBoundsToModel(
+    {
+      ...bounds,
+      maxX: Math.max(block.x, bounds.minX),
+      maxY: Math.max(block.y, bounds.minY),
+      maxZ: Math.max(block.z, bounds.minZ),
     },
     model,
   );
