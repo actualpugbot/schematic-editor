@@ -26,7 +26,6 @@ import {
 import {
   Viewer3D,
   type AxisGizmoOrientation,
-  type CameraCoordinates,
   type CameraMode,
   type SelectionButton,
   type Viewer3DHandle,
@@ -109,7 +108,6 @@ function App() {
   const [cuboidCorners, setCuboidCorners] = useState<CuboidCorners>(() => emptyCuboidCorners());
   const [materialsScope, setMaterialsScope] = useState<MaterialsScope>('build');
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit');
-  const [cameraCoordinates, setCameraCoordinates] = useState<CameraCoordinates>({ x: 24, y: 20, z: 28 });
   const inputRef = useRef<HTMLInputElement | null>(null);
   const viewerRef = useRef<Viewer3DHandle | null>(null);
   const axisGizmoRef = useRef<HTMLDivElement | null>(null);
@@ -142,13 +140,6 @@ function App() {
       gizmo.style.setProperty(`--axis-${axis}-label-x`, `${originX + orientation[axis].x * labelRadius}px`);
       gizmo.style.setProperty(`--axis-${axis}-label-y`, `${originY + orientation[axis].y * labelRadius}px`);
     }
-  }, []);
-
-  const updateCameraCoordinates = useCallback((coordinates: CameraCoordinates) => {
-    setCameraCoordinates((current) => {
-      if (current.x === coordinates.x && current.y === coordinates.y && current.z === coordinates.z) return current;
-      return coordinates;
-    });
   }, []);
 
   const currentLayerBlockCount = useMemo(() => {
@@ -760,12 +751,6 @@ function App() {
             </>
           )}
 
-          {cameraMode !== 'spectator' && (
-            <div className="camera-status" aria-label="Camera coordinates">
-              X {cameraCoordinates.x.toFixed(1)} · Y {cameraCoordinates.y.toFixed(1)} · Z {cameraCoordinates.z.toFixed(1)}
-            </div>
-          )}
-
           <div className="axis-gizmo" aria-hidden="true" ref={axisGizmoRef}>
             <span className="axis-line axis-line-x" />
             <span className="axis-line axis-line-y" />
@@ -791,7 +776,6 @@ function App() {
             cuboidCorners={cuboidCorners}
             onBlockSelect={handleBlockSelect}
             onAxisOrientationChange={updateAxisGizmo}
-            onCameraCoordinatesChange={updateCameraCoordinates}
             viewerRef={viewerRef}
           />
         </section>

@@ -384,8 +384,7 @@ h2 {
 .build-summary-card,
 .build-summary-toggle,
 .viewport-tools,
-.spectator-help,
-.camera-status {
+.spectator-help {
   position: absolute;
   z-index: 5;
   background: var(--panel-float);
@@ -693,18 +692,6 @@ dd {
   background: rgba(23, 34, 35, 0.52);
   box-shadow: 0 0 0 1px rgba(23, 34, 35, 0.26);
   transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-
-.camera-status {
-  left: 138px;
-  bottom: 28px;
-  padding: 7px 10px;
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
-  font-size: 0.76rem;
-  font-weight: 820;
-  line-height: 1;
   pointer-events: none;
 }
 
@@ -1691,11 +1678,6 @@ dd {
   .spectator-help {
     bottom: 12px;
     max-width: calc(100% - 24px);
-  }
-
-  .camera-status {
-    left: 12px;
-    bottom: 108px;
   }
 
   .axis-gizmo {

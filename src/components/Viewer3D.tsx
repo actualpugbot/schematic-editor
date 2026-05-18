@@ -25,7 +25,6 @@ interface Viewer3DProps {
   cuboidCorners?: CuboidCornerPoints | null;
   onBlockSelect?: (block: VoxelBlock | null, button: SelectionButton) => void;
   onAxisOrientationChange?: (orientation: AxisGizmoOrientation) => void;
-  onCameraCoordinatesChange?: (coordinates: CameraCoordinates) => void;
   onReady?: () => void;
 }
 
@@ -69,12 +68,6 @@ export interface Viewer3DHandle {
 
 export type SelectionButton = 'primary' | 'secondary';
 export type CameraMode = 'orbit' | 'spectator';
-
-export interface CameraCoordinates {
-  x: number;
-  y: number;
-  z: number;
-}
 
 interface SpectatorCameraState {
   position: THREE.Vector3;
@@ -146,7 +139,6 @@ export function Viewer3D(props: InternalViewerProps) {
   const cameraModeRef = useRef<CameraMode>(props.cameraMode);
   const onBlockSelectRef = useRef(props.onBlockSelect);
   const onAxisOrientationChangeRef = useRef(props.onAxisOrientationChange);
-  const onCameraCoordinatesChangeRef = useRef(props.onCameraCoordinatesChange);
   const spectatorStateRef = useRef<SpectatorCameraState>({
     position: new THREE.Vector3(24, 20, 28),
     rotation: { yaw: 0, pitch: 0 },
@@ -195,10 +187,6 @@ export function Viewer3D(props: InternalViewerProps) {
   useEffect(() => {
     onAxisOrientationChangeRef.current = props.onAxisOrientationChange;
   }, [props.onAxisOrientationChange]);
-
-  useEffect(() => {
-    onCameraCoordinatesChangeRef.current = props.onCameraCoordinatesChange;
-  }, [props.onCameraCoordinatesChange]);
 
   useEffect(() => {
     if (sceneRef.current) {
@@ -374,11 +362,6 @@ export function Viewer3D(props: InternalViewerProps) {
         controlsRef.current.update();
       }
 
-      onCameraCoordinatesChangeRef.current?.({
-        x: Number(camera.position.x.toFixed(1)),
-        y: Number(camera.position.y.toFixed(1)),
-        z: Number(camera.position.z.toFixed(1)),
-      });
       onAxisOrientationChangeRef.current?.(projectAxisOrientation(camera));
       updateCuboidCornerLabels(
         cornerLabelRefs.current,
