@@ -913,7 +913,7 @@ function renderStateKeyForBlock(block: VoxelBlock, playerHeadSelections: Record<
 
   if (block.decoratedPotDecorations) {
     for (const [side, itemId] of Object.entries(block.decoratedPotDecorations)) {
-      if (itemId) stateKey = setBlockStateProperty(stateKey, `schemview_pot_${side}`, itemId);
+      if (itemId) stateKey = setBlockStateProperty(stateKey, `ScheMagic_pot_${side}`, itemId);
     }
   }
 
@@ -922,7 +922,7 @@ function renderStateKeyForBlock(block: VoxelBlock, playerHeadSelections: Record<
   }
 
   const textureId = playerHeadSelections[blockPositionKey(block)] ?? block.playerHeadTexture?.id;
-  return textureId ? setBlockStateProperty(stateKey, 'schemview_head', textureId) : stateKey;
+  return textureId ? setBlockStateProperty(stateKey, 'ScheMagic_head', textureId) : stateKey;
 }
 
 function setBlockStateProperty(stateKey: string, key: string, value: string): string {
