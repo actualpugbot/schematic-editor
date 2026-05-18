@@ -607,20 +607,20 @@ function App() {
               <button
                 type="button"
                 role="tab"
-                aria-selected={inspectorTab === 'selection'}
-                className={inspectorTab === 'selection' ? 'is-active' : ''}
-                onClick={() => showPanel('selection')}
-              >
-                Selection
-              </button>
-              <button
-                type="button"
-                role="tab"
                 aria-selected={inspectorTab === 'materials'}
                 className={inspectorTab === 'materials' ? 'is-active' : ''}
                 onClick={() => showPanel('materials')}
               >
                 Materials List
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={inspectorTab === 'selection'}
+                className={inspectorTab === 'selection' ? 'is-active' : ''}
+                onClick={() => showPanel('selection')}
+              >
+                Selection
               </button>
               <button
                 type="button"
