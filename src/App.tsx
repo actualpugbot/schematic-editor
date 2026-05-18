@@ -42,6 +42,7 @@ import {
 } from './lib/schematic';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
+type DraggedFileKind = 'none' | 'unsupported-file' | 'unknown-file' | 'schematic-file';
 type InspectorTab = 'selection' | 'materials' | 'layers';
 type Theme = 'light' | 'dark';
 type MaterialsScope = 'build' | 'cuboid';
@@ -79,6 +80,8 @@ interface MaterialSummary {
   color: number;
   stateKey: string;
 }
+
+const schematicFileExtensions = new Set(['.litematic', '.schem', '.schematic', '.nbt']);
 
 function App() {
   const [theme, setTheme] = useState<Theme>(() => {
@@ -122,7 +125,7 @@ function App() {
   const selectedBlockWorldY = selectedBlock && model ? model.origin.y + selectedBlock.y : null;
   const selectedBlockWorldZ = selectedBlock && model ? model.origin.z + selectedBlock.z : null;
   const spectatorSpeed = 11;
-  const showUploadOverlay = isDraggingFile || loadState === 'loading';
+  const showUploadOverlay = isDraggingFile;
 
   const updateAxisGizmo = useCallback((orientation: AxisGizmoOrientation) => {
     const gizmo = axisGizmoRef.current;
@@ -338,23 +341,27 @@ function App() {
   };
 
   const handleDragEnter = (event: React.DragEvent<HTMLElement>) => {
-    if (!hasFiles(event)) return;
+    const draggedFileKind = getDraggedFileKind(event.dataTransfer);
+    if (draggedFileKind === 'none') return;
     event.preventDefault();
     dragDepthRef.current += 1;
-    setIsDraggingFile(true);
+    setIsDraggingFile(draggedFileKind !== 'unsupported-file');
   };
 
   const handleDragOver = (event: React.DragEvent<HTMLElement>) => {
-    if (!hasFiles(event)) return;
+    const draggedFileKind = getDraggedFileKind(event.dataTransfer);
+    if (draggedFileKind === 'none') return;
     event.preventDefault();
-    event.dataTransfer.dropEffect = 'copy';
-    if (!isDraggingFile) {
+    event.dataTransfer.dropEffect = draggedFileKind === 'unsupported-file' ? 'none' : 'copy';
+    if (draggedFileKind === 'unsupported-file') {
+      setIsDraggingFile(false);
+    } else if (!isDraggingFile) {
       setIsDraggingFile(true);
     }
   };
 
   const handleDragLeave = (event: React.DragEvent<HTMLElement>) => {
-    if (!hasFiles(event)) return;
+    if (getDraggedFileKind(event.dataTransfer) === 'none') return;
     event.preventDefault();
     dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
     if (dragDepthRef.current === 0) {
@@ -363,13 +370,13 @@ function App() {
   };
 
   const handleDrop = (event: React.DragEvent<HTMLElement>) => {
-    if (!hasFiles(event)) return;
+    if (getDraggedFileKind(event.dataTransfer) === 'none') return;
     event.preventDefault();
     dragDepthRef.current = 0;
     setIsDraggingFile(false);
 
     const file = event.dataTransfer.files[0];
-    if (file) void handleFile(file);
+    if (file && isSchematicFileName(file.name)) void handleFile(file);
   };
 
   const stepLayer = (delta: number) => {
@@ -485,8 +492,8 @@ function App() {
       <div className="drop-overlay" aria-hidden={!showUploadOverlay} aria-live="polite">
         <div>
           <FileUp size={38} />
-          <strong>{loadState === 'loading' ? 'Uploading schematic' : 'Drop schematic file'}</strong>
-          <span>{loadState === 'loading' ? 'Reading file in your browser' : '.litematic, .schem, .schematic, or NBT'}</span>
+          <strong>Drop schematic file</strong>
+          <span>.litematic, .schem, .schematic, or NBT</span>
         </div>
       </div>
       <header className="topbar">
@@ -1387,8 +1394,40 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-function hasFiles(event: React.DragEvent<HTMLElement>) {
-  return Array.from(event.dataTransfer.types).includes('Files');
+function getDraggedFileKind(dataTransfer: DataTransfer): DraggedFileKind {
+  if (!hasFileTransfer(dataTransfer)) return 'none';
+
+  let hasFileItem = false;
+  let hasNamedFile = false;
+
+  for (let index = 0; index < dataTransfer.items.length; index += 1) {
+    const item = dataTransfer.items[index];
+    if (item.kind !== 'file') continue;
+
+    hasFileItem = true;
+    const file = item.getAsFile();
+    if (!file?.name) continue;
+
+    hasNamedFile = true;
+    if (isSchematicFileName(file.name)) {
+      return 'schematic-file';
+    }
+  }
+
+  if (hasNamedFile) return 'unsupported-file';
+  return 'unknown-file';
+}
+
+function hasFileTransfer(dataTransfer: DataTransfer) {
+  for (let index = 0; index < dataTransfer.types.length; index += 1) {
+    if (dataTransfer.types[index] === 'Files') return true;
+  }
+
+  return false;
+}
+
+function isSchematicFileName(fileName: string) {
+  return schematicFileExtensions.has(fileExtension(fileName).toLowerCase());
 }
 
 function fileExtension(fileName: string): string {
