@@ -40,6 +40,7 @@ import {
   type SchematicModel,
   type VoxelBlock,
 } from './lib/schematic';
+import defaultSchematicUrl from '../Medieval House.litematic?url';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 type DraggedFileKind = 'none' | 'unsupported-file' | 'unknown-file' | 'schematic-file';
@@ -82,6 +83,7 @@ interface MaterialSummary {
 }
 
 const schematicFileExtensions = new Set(['.litematic', '.schem', '.schematic', '.nbt']);
+const defaultSchematicFileName = 'Medieval House.litematic';
 
 function App() {
   const [theme, setTheme] = useState<Theme>(() => {
@@ -90,12 +92,12 @@ function App() {
     if (savedTheme === 'light' || savedTheme === 'dark') return savedTheme;
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
-  const [model, setModel] = useState<SchematicModel | null>(() => createSampleModel());
-  const [schematicName, setSchematicName] = useState('Sample cottage garden');
+  const [model, setModel] = useState<SchematicModel | null>(null);
+  const [schematicName, setSchematicName] = useState('');
   const [isEditingSchematicName, setIsEditingSchematicName] = useState(false);
   const [schematicDocument, setSchematicDocument] = useState<NbtDocument | null>(null);
   const [schematicExtension, setSchematicExtension] = useState('.schem');
-  const [loadState, setLoadState] = useState<LoadState>('ready');
+  const [loadState, setLoadState] = useState<LoadState>('loading');
   const [error, setError] = useState('');
   const [visibleLayer, setVisibleLayer] = useState(model?.dimensions.height ? model.dimensions.height - 1 : 0);
   const [singleLayer, setSingleLayer] = useState(false);
@@ -212,6 +214,44 @@ function App() {
   }, [cuboidBounds, materialsScope]);
 
   useEffect(() => {
+    let isCancelled = false;
+
+    const loadDefaultSchematic = async () => {
+      setLoadState('loading');
+      setError('');
+
+      try {
+        const response = await fetch(defaultSchematicUrl);
+        if (!response.ok) {
+          throw new Error(`Could not load ${defaultSchematicFileName}.`);
+        }
+
+        const buffer = await response.arrayBuffer();
+        const parsed = parseSchematicDocument(buffer, { fileName: defaultSchematicFileName });
+        if (isCancelled) return;
+        applySchematic(parsed.model, parsed.nbt, fileExtension(defaultSchematicFileName));
+      } catch (caught) {
+        if (isCancelled) return;
+
+        const fallback = createSampleModel();
+        setModel(fallback);
+        setSchematicName(fallback.name);
+        setSchematicDocument(null);
+        setSchematicExtension('.schem');
+        setVisibleLayer(fallback.dimensions.height - 1);
+        setLoadState('ready');
+        setError(caught instanceof Error ? caught.message : 'Could not load the default schematic.');
+      }
+    };
+
+    void loadDefaultSchematic();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!model) return;
     setCuboidCorners((current) => {
       const next = {
@@ -279,6 +319,25 @@ function App() {
     return () => window.cancelAnimationFrame(frame);
   }, [filteredMaterials, materialSearch, selectedMaterialId]);
 
+  const applySchematic = (nextModel: SchematicModel, nextDocument: NbtDocument | null, nextExtension: string) => {
+    setModel(nextModel);
+    setSchematicName(nextModel.name);
+    setIsEditingSchematicName(false);
+    setSchematicDocument(nextDocument);
+    setSchematicExtension(nextExtension);
+    setVisibleLayer(nextModel.dimensions.height - 1);
+    setSingleLayer(false);
+    setSelectedBlock(null);
+    setExpandedMaterialIds(new Set());
+    setMaterialSearch('');
+    setPlayerHeadSelections({});
+    setHiddenMaterialIds(new Set());
+    setCuboidCorners(emptyCuboidCorners());
+    setMaterialsScope('build');
+    setSummaryCollapsed(false);
+    setLoadState('ready');
+  };
+
   const handleFile = async (file: File) => {
     setLoadState('loading');
     setError('');
@@ -286,22 +345,7 @@ function App() {
     try {
       const buffer = await file.arrayBuffer();
       const parsed = parseSchematicDocument(buffer, { fileName: file.name });
-      setModel(parsed.model);
-      setSchematicName(parsed.model.name);
-      setIsEditingSchematicName(false);
-      setSchematicDocument(parsed.nbt);
-      setSchematicExtension(fileExtension(file.name));
-      setVisibleLayer(parsed.model.dimensions.height - 1);
-      setSingleLayer(false);
-      setSelectedBlock(null);
-      setExpandedMaterialIds(new Set());
-      setMaterialSearch('');
-      setPlayerHeadSelections({});
-      setHiddenMaterialIds(new Set());
-      setCuboidCorners(emptyCuboidCorners());
-      setMaterialsScope('build');
-      setSummaryCollapsed(false);
-      setLoadState('ready');
+      applySchematic(parsed.model, parsed.nbt, fileExtension(file.name));
     } catch (caught) {
       setLoadState('error');
       setError(caught instanceof Error ? caught.message : 'Could not read this schematic file.');
