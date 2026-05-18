@@ -26,11 +26,22 @@ type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 type InspectorTab = 'selection' | 'materials' | 'layers';
 type Theme = 'light' | 'dark';
 type MaterialsScope = 'build' | 'cuboid';
-type CuboidCornerEdge = 'min' | 'max';
+type CuboidCornerId = 'a' | 'b';
 
 interface PendingCuboidCorner {
-  edge: CuboidCornerEdge;
-  block: VoxelBlock;
+  corner: CuboidCornerId;
+  point: CuboidPoint;
+}
+
+interface CuboidCorners {
+  a: CuboidPoint | null;
+  b: CuboidPoint | null;
+}
+
+interface CuboidPoint {
+  x: number;
+  y: number;
+  z: number;
 }
 
 export interface CuboidBounds {
@@ -71,8 +82,7 @@ function App() {
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('materials');
   const [summaryCollapsed, setSummaryCollapsed] = useState(false);
   const [cuboidSelectionMode, setCuboidSelectionMode] = useState(false);
-  const [pendingCuboidCorner, setPendingCuboidCorner] = useState<PendingCuboidCorner | null>(null);
-  const [cuboidBounds, setCuboidBounds] = useState<CuboidBounds | null>(null);
+  const [cuboidCorners, setCuboidCorners] = useState<CuboidCorners>(() => emptyCuboidCorners());
   const [materialsScope, setMaterialsScope] = useState<MaterialsScope>('build');
   const inputRef = useRef<HTMLInputElement | null>(null);
   const viewerRef = useRef<Viewer3DHandle | null>(null);
@@ -117,6 +127,18 @@ function App() {
     return summarizeMaterials(model.blocks);
   }, [model]);
 
+  const cuboidBounds = useMemo(() => {
+    if (!model || !cuboidCorners.a || !cuboidCorners.b) return null;
+    return normalizeCuboidBounds(cuboidCorners.a, cuboidCorners.b, model);
+  }, [cuboidCorners, model]);
+  const pendingCuboidCorner: PendingCuboidCorner | null = cuboidBounds
+    ? null
+    : cuboidCorners.a
+      ? { corner: 'a', point: cuboidCorners.a }
+      : cuboidCorners.b
+        ? { corner: 'b', point: cuboidCorners.b }
+        : null;
+  const hasCuboidSelection = Boolean(cuboidCorners.a || cuboidCorners.b);
   const cuboidBoundsKey = cuboidBounds ? boundsKey(cuboidBounds) : '';
   const cuboidMaterials = useMemo<MaterialSummary[]>(() => {
     if (!model || !cuboidBounds) return [];
@@ -159,17 +181,15 @@ function App() {
   }, [cuboidBounds, materialsScope]);
 
   useEffect(() => {
-    if (!pendingCuboidCorner || !model || model.blocks.includes(pendingCuboidCorner.block)) return;
-    setPendingCuboidCorner(null);
-  }, [pendingCuboidCorner, model]);
-
-  useEffect(() => {
-    if (!model || !cuboidBounds) return;
-    const clamped = clampBoundsToModel(cuboidBounds, model);
-    if (boundsKey(clamped) !== boundsKey(cuboidBounds)) {
-      setCuboidBounds(clamped);
-    }
-  }, [cuboidBounds, model]);
+    if (!model) return;
+    setCuboidCorners((current) => {
+      const next = {
+        a: current.a ? clampPointToModel(current.a, model) : null,
+        b: current.b ? clampPointToModel(current.b, model) : null,
+      };
+      return cuboidCornersKey(next) === cuboidCornersKey(current) ? current : next;
+    });
+  }, [model]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -232,8 +252,7 @@ function App() {
       setMaterialSearch('');
       setPlayerHeadSelections({});
       setHiddenMaterialIds(new Set());
-      setPendingCuboidCorner(null);
-      setCuboidBounds(null);
+      setCuboidCorners(emptyCuboidCorners());
       setMaterialsScope('build');
       setSummaryCollapsed(false);
       setLoadState('ready');
@@ -338,41 +357,33 @@ function App() {
     }
 
     setSelectedBlock(block);
-    const edge = button === 'secondary' ? 'max' : 'min';
-    if (cuboidBounds) {
-      setCuboidBounds(boundsWithCorner(cuboidBounds, block, edge, model));
-      setPendingCuboidCorner(null);
-      setMaterialsScope('cuboid');
-      setInspectorTab('selection');
-      return;
-    }
-
-    if (!pendingCuboidCorner || pendingCuboidCorner.edge === edge) {
-      setPendingCuboidCorner({ edge, block });
-      setCuboidBounds(null);
-      setInspectorTab('selection');
-      return;
-    }
-
-    const cornerA = edge === 'min' ? block : pendingCuboidCorner.block;
-    const cornerB = edge === 'max' ? block : pendingCuboidCorner.block;
-    setCuboidBounds(normalizeCuboidBounds(cornerA, cornerB, model));
-    setPendingCuboidCorner(null);
-    setMaterialsScope('cuboid');
+    const corner = button === 'secondary' ? 'b' : 'a';
+    const otherCorner = corner === 'a' ? cuboidCorners.b : cuboidCorners.a;
+    setCuboidCorners((current) => ({
+      ...current,
+      [corner]: pointFromBlock(block),
+    }));
+    if (otherCorner) setMaterialsScope('cuboid');
     setInspectorTab('selection');
   };
 
   const clearCuboidSelection = () => {
-    setPendingCuboidCorner(null);
-    setCuboidBounds(null);
+    setCuboidCorners(emptyCuboidCorners());
     setMaterialsScope('build');
   };
 
-  const stepCuboidCorner = (edge: 'min' | 'max', axis: 'x' | 'y' | 'z', delta: number) => {
+  const stepCuboidCorner = (corner: CuboidCornerId, axis: 'x' | 'y' | 'z', delta: number) => {
     if (!model) return;
-    setCuboidBounds((current) => {
-      if (!current) return current;
-      return stepBoundsCoordinate(current, model, edge, axis, delta);
+    setCuboidCorners((current) => {
+      const point = current[corner];
+      if (!point) return current;
+      return {
+        ...current,
+        [corner]: {
+          ...point,
+          [axis]: clamp(point[axis] + delta, 0, maxCoordinateForAxis(model, axis)),
+        },
+      };
     });
   };
 
@@ -587,6 +598,7 @@ function App() {
             playerHeadSelections={playerHeadSelections}
             selectedBlock={selectedBlock}
             cuboidBounds={cuboidBounds}
+            cuboidCorners={cuboidCorners}
             onBlockSelect={handleBlockSelect}
             onAxisOrientationChange={updateAxisGizmo}
             viewerRef={viewerRef}
@@ -644,7 +656,7 @@ function App() {
                     {cuboidBounds
                       ? 'Selected area'
                       : pendingCuboidCorner
-                        ? `Pick ${pendingCuboidCorner.edge === 'min' ? 'Corner B' : 'Corner A'}`
+                        ? `Pick ${pendingCuboidCorner.corner === 'a' ? 'Corner B' : 'Corner A'}`
                         : 'No area selected'}
                   </h2>
                 </div>
@@ -653,7 +665,7 @@ function App() {
                   className="icon-button"
                   onClick={clearCuboidSelection}
                   title="Clear selected area"
-                  disabled={!cuboidBounds && !pendingCuboidCorner}
+                  disabled={!hasCuboidSelection}
                 >
                   <X size={16} />
                 </button>
@@ -673,15 +685,15 @@ function App() {
                   <div className="cuboid-corner-editor" aria-label="Selected area corner coordinates">
                     <CuboidCornerControls
                       title="Corner A"
-                      edge="min"
-                      bounds={cuboidBounds}
+                      corner="a"
+                      point={cuboidCorners.a}
                       model={model}
                       onStep={stepCuboidCorner}
                     />
                     <CuboidCornerControls
                       title="Corner B"
-                      edge="max"
-                      bounds={cuboidBounds}
+                      corner="b"
+                      point={cuboidCorners.b}
                       model={model}
                       onStep={stepCuboidCorner}
                     />
@@ -704,7 +716,7 @@ function App() {
               ) : (
                 <p className="panel-empty">
                   {pendingCuboidCorner
-                    ? `${pendingCuboidCorner.edge === 'min' ? 'Corner A' : 'Corner B'} set at ${model.origin.x + pendingCuboidCorner.block.x}, ${model.origin.y + pendingCuboidCorner.block.y}, ${model.origin.z + pendingCuboidCorner.block.z}.`
+                    ? `${pendingCuboidCorner.corner === 'a' ? 'Corner A' : 'Corner B'} set at ${model.origin.x + pendingCuboidCorner.point.x}, ${model.origin.y + pendingCuboidCorner.point.y}, ${model.origin.z + pendingCuboidCorner.point.z}.`
                     : 'Turn on area selection, then left-click Corner A and right-click Corner B in the viewport.'}
                 </p>
               )}
@@ -909,34 +921,34 @@ function BlockPreview({ stateKey, color }: { stateKey: string; color: number }) 
 
 function CuboidCornerControls({
   title,
-  edge,
-  bounds,
+  corner,
+  point,
   model,
   onStep,
 }: {
   title: string;
-  edge: 'min' | 'max';
-  bounds: CuboidBounds;
+  corner: CuboidCornerId;
+  point: CuboidPoint | null;
   model: SchematicModel;
-  onStep: (edge: 'min' | 'max', axis: 'x' | 'y' | 'z', delta: number) => void;
+  onStep: (corner: CuboidCornerId, axis: 'x' | 'y' | 'z', delta: number) => void;
 }) {
   return (
     <section className="cuboid-corner-group" aria-label={title}>
       <h3>{title}</h3>
       {(['x', 'y', 'z'] as const).map((axis) => {
-        const coordinate = boundsCoordinate(bounds, edge, axis);
+        const coordinate = point ? point[axis] : 0;
         const worldCoordinate = originCoordinate(model, axis) + coordinate;
-        const minAllowed = edge === 'min' ? 0 : boundsCoordinate(bounds, 'min', axis);
-        const maxAllowed = edge === 'min' ? boundsCoordinate(bounds, 'max', axis) : maxCoordinateForAxis(model, axis);
+        const minAllowed = 0;
+        const maxAllowed = maxCoordinateForAxis(model, axis);
 
         return (
-          <div className="cuboid-axis-stepper" key={`${edge}-${axis}`}>
+          <div className="cuboid-axis-stepper" key={`${corner}-${axis}`}>
             <span>{axis.toUpperCase()}</span>
             <strong>{worldCoordinate}</strong>
             <div className="cuboid-axis-buttons">
               <button
                 type="button"
-                onClick={() => onStep(edge, axis, 1)}
+                onClick={() => onStep(corner, axis, 1)}
                 disabled={coordinate >= maxAllowed}
                 title={`Increase ${title} ${axis.toUpperCase()}`}
                 aria-label={`Increase ${title} ${axis.toUpperCase()}`}
@@ -945,7 +957,7 @@ function CuboidCornerControls({
               </button>
               <button
                 type="button"
-                onClick={() => onStep(edge, axis, -1)}
+                onClick={() => onStep(corner, axis, -1)}
                 disabled={coordinate <= minAllowed}
                 title={`Decrease ${title} ${axis.toUpperCase()}`}
                 aria-label={`Decrease ${title} ${axis.toUpperCase()}`}
@@ -986,7 +998,31 @@ function blockPositionKey(block: VoxelBlock): string {
   return `${block.x},${block.y},${block.z}`;
 }
 
-function normalizeCuboidBounds(a: VoxelBlock, b: VoxelBlock, model: SchematicModel): CuboidBounds {
+function emptyCuboidCorners(): CuboidCorners {
+  return { a: null, b: null };
+}
+
+function pointFromBlock(block: VoxelBlock): CuboidPoint {
+  return { x: block.x, y: block.y, z: block.z };
+}
+
+function clampPointToModel(point: CuboidPoint, model: SchematicModel): CuboidPoint {
+  return {
+    x: clamp(point.x, 0, maxCoordinateForAxis(model, 'x')),
+    y: clamp(point.y, 0, maxCoordinateForAxis(model, 'y')),
+    z: clamp(point.z, 0, maxCoordinateForAxis(model, 'z')),
+  };
+}
+
+function cuboidCornersKey(corners: CuboidCorners): string {
+  return `${corners.a ? pointKey(corners.a) : 'none'}:${corners.b ? pointKey(corners.b) : 'none'}`;
+}
+
+function pointKey(point: CuboidPoint): string {
+  return `${point.x},${point.y},${point.z}`;
+}
+
+function normalizeCuboidBounds(a: CuboidPoint, b: CuboidPoint, model: SchematicModel): CuboidBounds {
   return clampBoundsToModel(
     {
       minX: Math.min(a.x, b.x),
@@ -995,35 +1031,6 @@ function normalizeCuboidBounds(a: VoxelBlock, b: VoxelBlock, model: SchematicMod
       maxX: Math.max(a.x, b.x),
       maxY: Math.max(a.y, b.y),
       maxZ: Math.max(a.z, b.z),
-    },
-    model,
-  );
-}
-
-function boundsWithCorner(
-  bounds: CuboidBounds,
-  block: VoxelBlock,
-  edge: CuboidCornerEdge,
-  model: SchematicModel,
-): CuboidBounds {
-  if (edge === 'min') {
-    return clampBoundsToModel(
-      {
-        ...bounds,
-        minX: Math.min(block.x, bounds.maxX),
-        minY: Math.min(block.y, bounds.maxY),
-        minZ: Math.min(block.z, bounds.maxZ),
-      },
-      model,
-    );
-  }
-
-  return clampBoundsToModel(
-    {
-      ...bounds,
-      maxX: Math.max(block.x, bounds.minX),
-      maxY: Math.max(block.y, bounds.minY),
-      maxZ: Math.max(block.z, bounds.minZ),
     },
     model,
   );
@@ -1045,32 +1052,6 @@ function clampBoundsToModel(bounds: CuboidBounds, model: SchematicModel): Cuboid
     maxY: clamp(Math.max(bounds.minY, bounds.maxY), minY, maxY),
     maxZ: clamp(Math.max(bounds.minZ, bounds.maxZ), minZ, maxZ),
   };
-}
-
-function stepBoundsCoordinate(
-  bounds: CuboidBounds,
-  model: SchematicModel,
-  edge: 'min' | 'max',
-  axis: 'x' | 'y' | 'z',
-  delta: number,
-): CuboidBounds {
-  const coordinateKey = boundsCoordinateKey(edge, axis);
-  const minAllowed = edge === 'min' ? 0 : bounds[boundsCoordinateKey('min', axis)];
-  const maxAllowed = edge === 'min' ? bounds[boundsCoordinateKey('max', axis)] : maxCoordinateForAxis(model, axis);
-  return {
-    ...bounds,
-    [coordinateKey]: clamp(bounds[coordinateKey] + delta, minAllowed, maxAllowed),
-  };
-}
-
-function boundsCoordinate(bounds: CuboidBounds, edge: 'min' | 'max', axis: 'x' | 'y' | 'z'): number {
-  return bounds[boundsCoordinateKey(edge, axis)];
-}
-
-function boundsCoordinateKey(edge: 'min' | 'max', axis: 'x' | 'y' | 'z'): keyof CuboidBounds {
-  if (axis === 'x') return edge === 'min' ? 'minX' : 'maxX';
-  if (axis === 'y') return edge === 'min' ? 'minY' : 'maxY';
-  return edge === 'min' ? 'minZ' : 'maxZ';
 }
 
 function originCoordinate(model: SchematicModel, axis: 'x' | 'y' | 'z'): number {

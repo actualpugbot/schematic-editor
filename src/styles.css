@@ -273,6 +273,49 @@ h2 {
   height: 100%;
 }
 
+.cuboid-corner-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 3;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--accent-strong) 64%, var(--panel));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 88%, var(--accent-soft));
+  box-shadow: 0 10px 22px rgba(22, 18, 14, 0.26);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease, box-shadow 140ms ease;
+  will-change: transform, opacity;
+}
+
+.cuboid-corner-label::after {
+  position: absolute;
+  top: calc(100% - 2px);
+  left: 50%;
+  width: 1px;
+  height: 16px;
+  background: color-mix(in srgb, var(--accent-strong) 70%, transparent);
+  content: '';
+  transform: translateX(-50%);
+}
+
+.cuboid-corner-label.is-visible {
+  opacity: 1;
+}
+
+.cuboid-corner-label-b {
+  border-color: color-mix(in srgb, #4d8a7d 70%, var(--panel));
+  background: color-mix(in srgb, var(--panel) 84%, #9bc6b9);
+}
+
 .selection-inspector-card,
 .build-summary-card,
 .build-summary-toggle,

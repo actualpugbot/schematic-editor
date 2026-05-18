@@ -20,6 +20,7 @@ interface Viewer3DProps {
   theme: 'light' | 'dark';
   selectedBlock: VoxelBlock | null;
   cuboidBounds?: CuboidBounds | null;
+  cuboidCorners?: CuboidCornerPoints | null;
   onBlockSelect?: (block: VoxelBlock | null, button: SelectionButton) => void;
   onAxisOrientationChange?: (orientation: AxisGizmoOrientation) => void;
   onReady?: () => void;
@@ -32,6 +33,17 @@ export interface CuboidBounds {
   maxX: number;
   maxY: number;
   maxZ: number;
+}
+
+export interface CuboidCornerPoints {
+  a: CuboidCornerPoint | null;
+  b: CuboidCornerPoint | null;
+}
+
+export interface CuboidCornerPoint {
+  x: number;
+  y: number;
+  z: number;
 }
 
 export interface AxisGizmoOrientation {
@@ -90,6 +102,8 @@ const hiddenMaterial = new THREE.MeshBasicMaterial({
 });
 const horizontalFaces = new Set<ModelFaceName>(['north', 'south', 'west', 'east']);
 const cuboidOverlayPadding = 0.018;
+const cornerLabelOffset = 0.86;
+const labelProjectionVector = new THREE.Vector3();
 
 export function Viewer3D(props: InternalViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -102,9 +116,11 @@ export function Viewer3D(props: InternalViewerProps) {
   const floorRef = useRef<THREE.Mesh | null>(null);
   const selectionBoxRef = useRef<THREE.LineSegments | null>(null);
   const cuboidOverlayRef = useRef<THREE.Group | null>(null);
+  const cornerLabelRefs = useRef<Record<'a' | 'b', HTMLSpanElement | null>>({ a: null, b: null });
   const frameRef = useRef<number | null>(null);
   const spinRef = useRef<{ start: number; duration: number; from: number; to: number } | null>(null);
   const latestModelRef = useRef<SchematicModel | null>(props.model);
+  const latestCuboidCornersRef = useRef<CuboidCornerPoints | null | undefined>(props.cuboidCorners);
   const onBlockSelectRef = useRef(props.onBlockSelect);
   const onAxisOrientationChangeRef = useRef(props.onAxisOrientationChange);
 
@@ -119,6 +135,10 @@ export function Viewer3D(props: InternalViewerProps) {
   useEffect(() => {
     latestModelRef.current = props.model;
   }, [props.model]);
+
+  useEffect(() => {
+    latestCuboidCornersRef.current = props.cuboidCorners;
+  }, [props.cuboidCorners]);
 
   useEffect(() => {
     onBlockSelectRef.current = props.onBlockSelect;
@@ -246,6 +266,13 @@ export function Viewer3D(props: InternalViewerProps) {
       }
 
       onAxisOrientationChangeRef.current?.(projectAxisOrientation(camera));
+      updateCuboidCornerLabels(
+        cornerLabelRefs.current,
+        latestCuboidCornersRef.current,
+        latestModelRef.current,
+        camera,
+        renderer,
+      );
       renderer.render(scene, camera);
       frameRef.current = window.requestAnimationFrame(animate);
     };
@@ -413,7 +440,28 @@ export function Viewer3D(props: InternalViewerProps) {
     updateCuboidOverlay(overlay, props.cuboidBounds, props.model.dimensions);
   }, [props.cuboidBounds, props.model]);
 
-  return <div className="viewer-canvas" data-testid="viewer-canvas" ref={containerRef} />;
+  return (
+    <div className="viewer-canvas" data-testid="viewer-canvas" ref={containerRef}>
+      <span
+        className="cuboid-corner-label cuboid-corner-label-a"
+        aria-hidden="true"
+        ref={(node) => {
+          cornerLabelRefs.current.a = node;
+        }}
+      >
+        A
+      </span>
+      <span
+        className="cuboid-corner-label cuboid-corner-label-b"
+        aria-hidden="true"
+        ref={(node) => {
+          cornerLabelRefs.current.b = node;
+        }}
+      >
+        B
+      </span>
+    </div>
+  );
 }
 
 const axisCameraDirection = new THREE.Vector3();
@@ -796,6 +844,46 @@ function updateCuboidOverlay(
     length + cuboidOverlayPadding * 2,
   );
   overlay.visible = true;
+}
+
+function updateCuboidCornerLabels(
+  labels: Record<'a' | 'b', HTMLSpanElement | null>,
+  corners: CuboidCornerPoints | null | undefined,
+  model: SchematicModel | null,
+  camera: THREE.PerspectiveCamera,
+  renderer: THREE.WebGLRenderer,
+) {
+  for (const corner of ['a', 'b'] as const) {
+    const label = labels[corner];
+    const point = corners?.[corner];
+    if (!label || !point || !model) {
+      if (label) label.classList.remove('is-visible');
+      continue;
+    }
+
+    labelProjectionVector.set(
+      point.x - (model.dimensions.width - 1) / 2,
+      point.y + cornerLabelOffset,
+      point.z - (model.dimensions.length - 1) / 2,
+    );
+    labelProjectionVector.project(camera);
+
+    if (
+      labelProjectionVector.z < -1
+      || labelProjectionVector.z > 1
+      || Math.abs(labelProjectionVector.x) > 1.2
+      || Math.abs(labelProjectionVector.y) > 1.2
+    ) {
+      label.classList.remove('is-visible');
+      continue;
+    }
+
+    const canvas = renderer.domElement;
+    const x = (labelProjectionVector.x * 0.5 + 0.5) * canvas.clientWidth;
+    const y = (-labelProjectionVector.y * 0.5 + 0.5) * canvas.clientHeight;
+    label.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -100%)`;
+    label.classList.add('is-visible');
+  }
 }
 
 async function createSelectionBoxGeometry(
