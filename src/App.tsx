@@ -122,6 +122,7 @@ function App() {
   const selectedBlockWorldY = selectedBlock && model ? model.origin.y + selectedBlock.y : null;
   const selectedBlockWorldZ = selectedBlock && model ? model.origin.z + selectedBlock.z : null;
   const spectatorSpeed = 11;
+  const showUploadOverlay = isDraggingFile || loadState === 'loading';
 
   const updateAxisGizmo = useCallback((orientation: AxisGizmoOrientation) => {
     const gizmo = axisGizmoRef.current;
@@ -347,6 +348,9 @@ function App() {
     if (!hasFiles(event)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'copy';
+    if (!isDraggingFile) {
+      setIsDraggingFile(true);
+    }
   };
 
   const handleDragLeave = (event: React.DragEvent<HTMLElement>) => {
@@ -472,17 +476,17 @@ function App() {
 
   return (
     <main
-      className={`app-shell${isDraggingFile ? ' is-dragging-file' : ''}`}
+      className={`app-shell${showUploadOverlay ? ' is-upload-message-visible' : ''}`}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <div className="drop-overlay" aria-hidden={!isDraggingFile}>
+      <div className="drop-overlay" aria-hidden={!showUploadOverlay} aria-live="polite">
         <div>
-          <FileUp size={28} />
-          <strong>Drop schematic file</strong>
-          <span>.litematic, .schem, .schematic, or NBT</span>
+          <FileUp size={38} />
+          <strong>{loadState === 'loading' ? 'Uploading schematic' : 'Drop schematic file'}</strong>
+          <span>{loadState === 'loading' ? 'Reading file in your browser' : '.litematic, .schem, .schematic, or NBT'}</span>
         </div>
       </div>
       <header className="topbar">

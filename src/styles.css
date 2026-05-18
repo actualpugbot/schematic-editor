@@ -278,7 +278,7 @@ h2 {
 
 .drop-overlay {
   position: fixed;
-  inset: 14px;
+  inset: 10px;
   z-index: 30;
   display: grid;
   place-items: center;
@@ -287,14 +287,17 @@ h2 {
   border-radius: 10px;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 160ms ease;
+  transition: opacity 60ms ease;
 }
 
 .drop-overlay div {
   display: grid;
   justify-items: center;
-  gap: 7px;
-  padding: 22px 26px;
+  gap: 13px;
+  width: min(560px, calc(100vw - 52px));
+  min-height: 250px;
+  align-content: center;
+  padding: 42px 46px;
   background: var(--paper-strong);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -303,16 +306,19 @@ h2 {
 }
 
 .drop-overlay strong {
-  font-size: 1.05rem;
+  font-size: clamp(1.45rem, 3vw, 2.15rem);
+  line-height: 1.05;
+  text-align: center;
 }
 
 .drop-overlay span {
   color: var(--muted);
-  font-size: 0.86rem;
+  font-size: clamp(0.95rem, 1.5vw, 1.1rem);
   font-weight: 780;
+  text-align: center;
 }
 
-.is-dragging-file .drop-overlay {
+.is-upload-message-visible .drop-overlay {
   opacity: 1;
 }
 
