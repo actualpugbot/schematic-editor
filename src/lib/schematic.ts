@@ -128,6 +128,76 @@ export function renameSchematicDocument(document: NbtDocument, source: Schematic
   return document;
 }
 
+export function createVoxelBlock(x: number, y: number, z: number, stateKey: string): VoxelBlock {
+  const name = stateKey.split('[', 1)[0];
+  const appearance = blockAppearance(name);
+
+  return {
+    x,
+    y,
+    z,
+    name,
+    stateKey,
+    color: appearance.color,
+    material: appearance.label,
+  };
+}
+
+export function finalizeSchematicModel(model: Omit<SchematicModel, 'layerCounts'>): SchematicModel {
+  return finalizeModel(model);
+}
+
+export function createSpongeSchematicDocument(model: SchematicModel, name: string): NbtDocument {
+  const paletteEntries = buildModelPaletteEntries(model.blocks);
+  const palette: NbtCompound = {};
+  paletteEntries.forEach((stateKey, index) => {
+    palette[stateKey] = index;
+  });
+  const paletteIndexes = new Map(paletteEntries.map((stateKey, index) => [stateKey, index]));
+  const totalBlocks = model.dimensions.width * model.dimensions.height * model.dimensions.length;
+  const blockIds = Array.from({ length: totalBlocks }, () => paletteIndexes.get('minecraft:air') ?? 0);
+
+  for (const block of model.blocks) {
+    if (
+      block.x < 0
+      || block.x >= model.dimensions.width
+      || block.y < 0
+      || block.y >= model.dimensions.height
+      || block.z < 0
+      || block.z >= model.dimensions.length
+    ) {
+      continue;
+    }
+
+    const index = block.x + block.z * model.dimensions.width + block.y * model.dimensions.width * model.dimensions.length;
+    blockIds[index] = paletteIndexes.get(block.stateKey) ?? 0;
+  }
+
+  const schematic: NbtCompound = {
+    Version: 2,
+    DataVersion: 4189,
+    Width: model.dimensions.width,
+    Height: model.dimensions.height,
+    Length: model.dimensions.length,
+    Offset: new Int32Array([model.origin.x, model.origin.y, model.origin.z]),
+    PaletteMax: paletteEntries.length,
+    Palette: palette,
+    BlockData: encodeVarInts(blockIds),
+    BlockEntities: [],
+    Entities: [],
+    Metadata: {
+      Name: name,
+    },
+  };
+
+  return {
+    name: 'Schematic',
+    value: {
+      Schematic: schematic,
+    },
+  };
+}
+
 export function createSampleModel(): SchematicModel {
   const width = 24;
   const height = 15;
@@ -136,17 +206,7 @@ export function createSampleModel(): SchematicModel {
 
   const add = (x: number, y: number, z: number, stateKey: string) => {
     if (x < 0 || x >= width || y < 0 || y >= height || z < 0 || z >= length) return;
-    const name = stateKey.split('[')[0];
-    const appearance = blockAppearance(name);
-    blocksByPosition.set(positionKey(x, y, z), {
-      x,
-      y,
-      z,
-      name,
-      stateKey,
-      color: appearance.color,
-      material: appearance.label,
-    });
+    blocksByPosition.set(positionKey(x, y, z), createVoxelBlock(x, y, z, stateKey));
   };
 
   const fill = (
@@ -745,6 +805,35 @@ function buildPaletteEntries(palette: NbtCompound): string[] {
   }
 
   return entries;
+}
+
+function buildModelPaletteEntries(blocks: VoxelBlock[]): string[] {
+  const states = new Set(['minecraft:air']);
+  for (const block of blocks) {
+    if (!isAirBlock(block.stateKey)) states.add(block.stateKey);
+  }
+
+  return Array.from(states);
+}
+
+function encodeVarInts(values: number[]): Int8Array {
+  const bytes: number[] = [];
+
+  for (const initialValue of values) {
+    let value = initialValue >>> 0;
+
+    while (true) {
+      if ((value & ~0x7f) === 0) {
+        bytes.push(value);
+        break;
+      }
+
+      bytes.push((value & 0x7f) | 0x80);
+      value >>>= 7;
+    }
+  }
+
+  return Int8Array.from(bytes);
 }
 
 function decodeVarInts(bytes: Uint8Array, expectedLength: number): number[] {

@@ -269,6 +269,38 @@ h2 {
   gap: 8px;
 }
 
+.view-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  min-width: 190px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper-soft);
+}
+
+.view-switch button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 840;
+}
+
+.view-switch button.is-active {
+  background: var(--paper-strong);
+  color: var(--teal-strong);
+  box-shadow: 0 2px 8px rgba(28, 41, 43, 0.08);
+}
+
 .workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(340px, 468px);
@@ -678,6 +710,52 @@ dd {
   pointer-events: none;
 }
 
+.edit-hotbar {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  bottom: 22px;
+  display: grid;
+  grid-template-columns: repeat(9, 42px);
+  gap: 6px;
+  max-width: calc(100% - 48px);
+  padding: 7px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-float);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(16px);
+  transform: translateX(-50%);
+}
+
+.edit-hotbar button {
+  position: relative;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--paper-strong);
+  color: var(--muted);
+}
+
+.edit-hotbar button.is-active {
+  border-color: var(--teal);
+  background: var(--teal-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--teal), white 45%);
+}
+
+.edit-hotbar button > span:last-child {
+  position: absolute;
+  right: 4px;
+  bottom: 3px;
+  color: var(--stone);
+  font-size: 0.6rem;
+  font-weight: 900;
+}
+
 .spectator-help span {
   display: block;
 }
@@ -866,7 +944,8 @@ dd {
 
 .layer-control,
 .selection-panel,
-.material-list {
+.material-list,
+.edit-panel {
   padding: 18px;
 }
 
@@ -880,6 +959,15 @@ dd {
   flex: 1 1 auto;
   min-height: 0;
   flex-direction: column;
+}
+
+.edit-panel {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  gap: 16px;
+  overflow: auto;
 }
 
 .eyebrow {
@@ -1178,6 +1266,146 @@ dd {
   background: var(--paper-strong);
   color: var(--teal-strong);
   box-shadow: 0 2px 8px rgba(28, 41, 43, 0.08);
+}
+
+.edit-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.edit-tool-grid button,
+.placement-grid button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper-strong);
+  color: var(--icon-color);
+  font-size: 0.78rem;
+  font-weight: 840;
+  transition:
+    transform 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.edit-tool-grid button:hover,
+.placement-grid button:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in oklch, var(--teal), var(--line) 45%);
+  color: var(--teal-strong);
+}
+
+.edit-tool-grid button.is-active {
+  border-color: color-mix(in oklch, var(--teal), var(--line) 28%);
+  background: var(--teal-soft);
+  color: var(--teal-strong);
+}
+
+.edit-placement-panel,
+.edit-library,
+.replace-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.placement-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.block-library-list {
+  display: grid;
+  max-height: 310px;
+  min-height: 160px;
+  overflow: auto;
+  border-top: 1px solid var(--row-border);
+}
+
+.block-library-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  gap: 8px;
+  align-items: center;
+  min-height: 42px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--row-border);
+}
+
+.block-library-row:hover,
+.block-library-row.is-selected {
+  background: var(--row-hover);
+}
+
+.block-library-row.is-selected {
+  box-shadow: inset 3px 0 0 var(--teal);
+}
+
+.block-library-pick {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  background: transparent;
+  color: var(--row-color);
+  text-align: left;
+}
+
+.block-library-pick span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.86rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.replace-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.replace-grid label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 850;
+}
+
+.replace-grid select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper-strong);
+  color: var(--ink);
+  font-weight: 760;
+}
+
+.replace-submit {
+  width: 100%;
+}
+
+.edit-notice {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--breakdown-bg);
+  color: var(--stone);
+  font-size: 0.82rem;
+  font-weight: 760;
+  line-height: 1.35;
 }
 
 .secondary-button {
@@ -1603,6 +1831,10 @@ dd {
     flex-wrap: wrap;
   }
 
+  .view-switch {
+    width: min(280px, 100%);
+  }
+
   .workspace {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(58vh, 66vh) auto;
@@ -1689,6 +1921,15 @@ dd {
   .axis-gizmo {
     left: 22px;
     bottom: 18px;
+  }
+
+  .edit-hotbar {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    grid-template-columns: repeat(9, 42px);
+    max-width: none;
+    transform: none;
   }
 
   .inspector-tabs button {

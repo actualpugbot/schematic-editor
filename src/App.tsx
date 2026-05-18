@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   BoxSelect,
+  Brush,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -9,16 +10,21 @@ import {
   Download,
   Eye,
   EyeOff,
+  Eraser,
   FileUp,
   Focus,
   Info,
   Layers,
+  MousePointer2,
   Moon,
   Pencil,
   Plus,
+  Replace,
   Rotate3D,
   ScanSearch,
   Search,
+  Star,
+  StarOff,
   Sun,
   Upload,
   X,
@@ -33,7 +39,10 @@ import {
 import { createBlockThumbnail } from './lib/blockThumbnails';
 import { writeNbt, type NbtDocument } from './lib/nbt';
 import {
+  createSpongeSchematicDocument,
+  createVoxelBlock,
   createSampleModel,
+  finalizeSchematicModel,
   parseSchematicDocument,
   renameSchematicDocument,
   type PlayerHeadTexture,
@@ -45,9 +54,12 @@ import defaultSchematicUrl from '../Medieval House.litematic?url';
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 type DraggedFileKind = 'none' | 'unsupported-file' | 'unknown-file' | 'schematic-file';
 type InspectorTab = 'selection' | 'materials' | 'layers';
+type AppView = 'inspect' | 'edit';
+type EditTool = 'select' | 'paint' | 'erase';
 type Theme = 'light' | 'dark';
 type MaterialsScope = 'build' | 'cuboid';
 type CuboidCornerId = 'a' | 'b';
+type Direction = 'up' | 'down' | 'north' | 'south' | 'west' | 'east';
 
 interface PendingCuboidCorner {
   corner: CuboidCornerId;
@@ -85,6 +97,40 @@ interface MaterialSummary {
 const schematicFileExtensions = new Set(['.litematic', '.schem', '.schematic', '.nbt']);
 const defaultSchematicFileName = 'Medieval House.litematic';
 const themeStorageKey = 'schematic-editor-theme';
+const defaultHotbarBlocks = [
+  'minecraft:stone',
+  'minecraft:oak_planks',
+  'minecraft:glass',
+  'minecraft:oak_log',
+  'minecraft:torch',
+  'minecraft:dirt',
+  'minecraft:grass_block',
+  'minecraft:cobblestone',
+  'minecraft:water',
+];
+const commonBuildBlocks = [
+  'minecraft:air',
+  ...defaultHotbarBlocks,
+  'minecraft:spruce_planks',
+  'minecraft:birch_planks',
+  'minecraft:dark_oak_planks',
+  'minecraft:stone_bricks',
+  'minecraft:bricks',
+  'minecraft:smooth_stone',
+  'minecraft:deepslate_bricks',
+  'minecraft:sandstone',
+  'minecraft:oak_stairs',
+  'minecraft:oak_slab',
+  'minecraft:oak_door',
+  'minecraft:lantern',
+  'minecraft:redstone',
+  'minecraft:white_wool',
+  'minecraft:black_concrete',
+];
+const blockstateFiles = import.meta.glob('/public/minecraft-assets/assets/minecraft/blockstates/*.json', {
+  query: '?url',
+  import: 'default',
+});
 
 function App() {
   const [theme, setTheme] = useState<Theme>(() => {
@@ -94,10 +140,12 @@ function App() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
   const [model, setModel] = useState<SchematicModel | null>(null);
+  const [appView, setAppView] = useState<AppView>('inspect');
   const [schematicName, setSchematicName] = useState('');
   const [isEditingSchematicName, setIsEditingSchematicName] = useState(false);
   const [schematicDocument, setSchematicDocument] = useState<NbtDocument | null>(null);
   const [schematicExtension, setSchematicExtension] = useState('.schem');
+  const [hasEditChanges, setHasEditChanges] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [error, setError] = useState('');
   const [visibleLayer, setVisibleLayer] = useState(model?.dimensions.height ? model.dimensions.height - 1 : 0);
@@ -114,6 +162,13 @@ function App() {
   const [cuboidCorners, setCuboidCorners] = useState<CuboidCorners>(() => emptyCuboidCorners());
   const [materialsScope, setMaterialsScope] = useState<MaterialsScope>('build');
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit');
+  const [editTool, setEditTool] = useState<EditTool>('select');
+  const [selectedBuildBlock, setSelectedBuildBlock] = useState(defaultHotbarBlocks[0]);
+  const [hotbarBlocks, setHotbarBlocks] = useState<string[]>(defaultHotbarBlocks);
+  const [blockSearch, setBlockSearch] = useState('');
+  const [replaceFromBlock, setReplaceFromBlock] = useState('');
+  const [replaceToBlock, setReplaceToBlock] = useState(defaultHotbarBlocks[0]);
+  const [editNotice, setEditNotice] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
   const viewerRef = useRef<Viewer3DHandle | null>(null);
   const axisGizmoRef = useRef<HTMLDivElement | null>(null);
@@ -206,7 +261,27 @@ function App() {
     : '';
   const totalBlocks = model?.blocks.length ?? 0;
   const isDarkTheme = theme === 'dark';
-  const canSaveSchematic = Boolean(model && schematicDocument && schematicName.trim());
+  const canSaveSchematic = Boolean(model && schematicName.trim());
+  const selectedBuildBlockPreview = useMemo(() => createVoxelBlock(0, 0, 0, selectedBuildBlock), [selectedBuildBlock]);
+  const editAvailableBlocks = useMemo(() => {
+    const fromAssets = Object.keys(blockstateFiles)
+      .map((path) => {
+        const fileName = path.split('/').at(-1) ?? '';
+        return fileName.endsWith('.json') ? `minecraft:${fileName.slice(0, -5)}` : '';
+      })
+      .filter(Boolean);
+    const fromModel = model?.blocks.map((block) => block.stateKey) ?? [];
+    const allBlocks = new Set([...commonBuildBlocks, ...fromModel, ...fromAssets]);
+    const query = blockSearch.trim().toLocaleLowerCase();
+
+    return Array.from(allBlocks)
+      .filter((stateKey) => {
+        if (!query) return true;
+        const label = formatBlockName(stateKey).toLocaleLowerCase();
+        return stateKey.toLocaleLowerCase().includes(query) || label.includes(query);
+      })
+      .sort((a, b) => formatBlockName(a).localeCompare(formatBlockName(b)));
+  }, [blockSearch, model]);
 
   useEffect(() => {
     if (materialsScope === 'cuboid' && !cuboidBounds) {
@@ -326,6 +401,7 @@ function App() {
     setIsEditingSchematicName(false);
     setSchematicDocument(nextDocument);
     setSchematicExtension(nextExtension);
+    setHasEditChanges(false);
     setVisibleLayer(nextModel.dimensions.height - 1);
     setSingleLayer(false);
     setSelectedBlock(null);
@@ -336,6 +412,13 @@ function App() {
     setCuboidCorners(emptyCuboidCorners());
     setMaterialsScope('build');
     setSummaryCollapsed(false);
+    setEditTool('select');
+    setSelectedBuildBlock(defaultHotbarBlocks[0]);
+    setHotbarBlocks(defaultHotbarBlocks);
+    setBlockSearch('');
+    setReplaceFromBlock(nextModel.blocks[0]?.stateKey ?? '');
+    setReplaceToBlock(defaultHotbarBlocks[0]);
+    setEditNotice('');
     setLoadState('ready');
   };
 
@@ -363,19 +446,21 @@ function App() {
   };
 
   const exportRenamedSchematic = () => {
-    if (!model || !schematicDocument) return;
+    if (!model) return;
 
     const nextName = schematicName.trim();
     try {
-      renameSchematicDocument(schematicDocument, model.source, nextName);
-      const bytes = writeNbt(schematicDocument);
+      const exportDocument = hasEditChanges || !schematicDocument
+        ? createSpongeSchematicDocument({ ...model, name: nextName }, nextName)
+        : renameSchematicDocument(schematicDocument, model.source, nextName);
+      const bytes = writeNbt(exportDocument);
       const arrayBuffer = new ArrayBuffer(bytes.byteLength);
       new Uint8Array(arrayBuffer).set(bytes);
       const blob = new Blob([arrayBuffer], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${safeFileBaseName(nextName)}${schematicExtension}`;
+      link.download = `${safeFileBaseName(nextName)}${hasEditChanges ? '.schem' : schematicExtension}`;
       link.click();
       URL.revokeObjectURL(url);
       setModel((current) => (current ? { ...current, name: nextName } : current));
@@ -484,6 +569,17 @@ function App() {
   };
 
   const handleBlockSelect = (block: VoxelBlock | null, button: SelectionButton) => {
+    if (appView === 'edit' && button === 'primary') {
+      if (!block) {
+        setSelectedBlock(null);
+        return;
+      }
+      setSelectedBlock(block);
+      if (editTool === 'paint') paintBlock(block);
+      if (editTool === 'erase') eraseBlock(block);
+      return;
+    }
+
     if (!cuboidSelectionMode || inspectorTab !== 'selection') {
       if (button !== 'primary') return;
       setSelectedBlock(block);
@@ -509,6 +605,87 @@ function App() {
   const clearCuboidSelection = () => {
     setCuboidCorners(emptyCuboidCorners());
     setMaterialsScope('build');
+  };
+
+  const updateModelBlocks = (updater: (blocks: VoxelBlock[], currentModel: SchematicModel) => VoxelBlock[]) => {
+    setModel((current) => {
+      if (!current) return current;
+
+      const selectedKey = selectedBlock ? blockPositionKey(selectedBlock) : null;
+      const blocks = updater(current.blocks, current)
+        .filter((block) => blockInsideModel(block, current))
+        .sort(compareBlocks);
+      const nextModel = finalizeSchematicModel({
+        ...current,
+        source: 'Sponge .schem',
+        blocks,
+        paletteSize: new Set(blocks.map((block) => block.stateKey)).size,
+        warnings: current.warnings,
+      });
+      if (selectedKey) {
+        setSelectedBlock(blocks.find((block) => blockPositionKey(block) === selectedKey) ?? null);
+      }
+      setHasEditChanges(true);
+      setSchematicExtension('.schem');
+      return nextModel;
+    });
+  };
+
+  const setBlockAt = (x: number, y: number, z: number, stateKey: string) => {
+    if (!model || !pointInsideModel({ x, y, z }, model)) return false;
+    const key = pointKey({ x, y, z });
+    updateModelBlocks((blocks) => {
+      const withoutTarget = blocks.filter((block) => blockPositionKey(block) !== key);
+      if (stateKey === 'minecraft:air') return withoutTarget;
+      return [...withoutTarget, createVoxelBlock(x, y, z, stateKey)];
+    });
+    setEditNotice(`${formatBlockName(stateKey)} placed at ${model.origin.x + x}, ${model.origin.y + y}, ${model.origin.z + z}.`);
+    return true;
+  };
+
+  const paintBlock = (block: VoxelBlock, stateKey = selectedBuildBlock) => {
+    setBlockAt(block.x, block.y, block.z, stateKey);
+  };
+
+  const eraseBlock = (block: VoxelBlock) => {
+    setBlockAt(block.x, block.y, block.z, 'minecraft:air');
+  };
+
+  const placeAdjacentBlock = (direction: Direction) => {
+    if (!selectedBlock) return;
+    const offset = directionOffset(direction);
+    const nextPoint = {
+      x: selectedBlock.x + offset.x,
+      y: selectedBlock.y + offset.y,
+      z: selectedBlock.z + offset.z,
+    };
+    const placed = setBlockAt(nextPoint.x, nextPoint.y, nextPoint.z, selectedBuildBlock);
+    if (!placed) setEditNotice('That adjacent position is outside the schematic bounds.');
+  };
+
+  const replaceBlocks = () => {
+    if (!model || !replaceFromBlock || !replaceToBlock) return;
+    const bounds = materialsScope === 'cuboid' ? cuboidBounds : null;
+    const replaceableBlocks = model.blocks.filter((block) => {
+      if (block.stateKey !== replaceFromBlock && materialIdForBlock(block) !== replaceFromBlock) return false;
+      return !bounds || blockInBounds(block, bounds);
+    });
+    const replacedCount = replaceableBlocks.length;
+
+    updateModelBlocks((blocks) => blocks.flatMap((block) => {
+      if (block.stateKey !== replaceFromBlock && materialIdForBlock(block) !== replaceFromBlock) return [block];
+      if (bounds && !blockInBounds(block, bounds)) return [block];
+      if (replaceToBlock === 'minecraft:air') return [];
+      return [createVoxelBlock(block.x, block.y, block.z, replaceToBlock)];
+    }));
+    setEditNotice(`${replacedCount.toLocaleString()} block${replacedCount === 1 ? '' : 's'} replaced.`);
+  };
+
+  const toggleHotbarBlock = (stateKey: string) => {
+    setHotbarBlocks((current) => {
+      if (current.includes(stateKey)) return current.filter((block) => block !== stateKey);
+      return [...current.slice(-(8 - 1)), stateKey];
+    });
   };
 
   const stepCuboidCorner = (corner: CuboidCornerId, axis: 'x' | 'y' | 'z', delta: number) => {
@@ -588,6 +765,26 @@ function App() {
               <h1>Minecraft schematic viewer</h1>
             )}
           </div>
+          <div className="view-switch" role="tablist" aria-label="Schematic view">
+            <button
+              type="button"
+              className={appView === 'inspect' ? 'is-active' : ''}
+              onClick={() => setAppView('inspect')}
+              aria-selected={appView === 'inspect'}
+            >
+              <Eye size={15} />
+              Inspect
+            </button>
+            <button
+              type="button"
+              className={appView === 'edit' ? 'is-active' : ''}
+              onClick={() => setAppView('edit')}
+              aria-selected={appView === 'edit'}
+            >
+              <Brush size={15} />
+              Edit
+            </button>
+          </div>
         </div>
 
         <div className="topbar-actions">
@@ -596,7 +793,7 @@ function App() {
             type="button"
             onClick={exportRenamedSchematic}
             disabled={!canSaveSchematic}
-            title={schematicDocument ? 'Export schematic with current name' : 'Upload a schematic before exporting'}
+            title={hasEditChanges ? 'Export edited build as .schem' : 'Export schematic with current name'}
           >
             <Download size={16} />
             Export
@@ -742,6 +939,31 @@ function App() {
             </section>
           )}
 
+          {model && appView === 'edit' && (
+            <div className="edit-hotbar" role="toolbar" aria-label="Favorite build blocks">
+              {hotbarBlocks.map((stateKey, index) => {
+                const preview = createVoxelBlock(0, 0, 0, stateKey);
+                return (
+                  <button
+                    type="button"
+                    key={`${stateKey}-${index}`}
+                    className={selectedBuildBlock === stateKey ? 'is-active' : ''}
+                    onClick={() => {
+                      setSelectedBuildBlock(stateKey);
+                      setReplaceToBlock(stateKey);
+                    }}
+                    title={formatBlockName(stateKey)}
+                    aria-label={`Use ${formatBlockName(stateKey)}`}
+                    aria-pressed={selectedBuildBlock === stateKey}
+                  >
+                    <BlockPreview stateKey={stateKey} color={preview.color} />
+                    <span>{index + 1}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           <div className="viewport-tools" aria-label="Viewport tools">
             <div className="camera-mode-switch" role="group" aria-label="Camera mode">
               <button
@@ -846,6 +1068,8 @@ function App() {
 
         {model && (
           <>
+            {appView === 'inspect' ? (
+              <>
             <div className="inspector-tabs" role="tablist" aria-label="Inspector panels">
               <button
                 type="button"
@@ -1107,6 +1331,189 @@ function App() {
                 )}
               </div>
             </section>
+              </>
+            ) : (
+              <section className="edit-panel" aria-label="Edit controls">
+                <div className="section-heading">
+                  <div>
+                    <p className="eyebrow">Edit View</p>
+                    <h2>{formatBlockName(selectedBuildBlock)}</h2>
+                  </div>
+                  <BlockPreview stateKey={selectedBuildBlock} color={selectedBuildBlockPreview.color} />
+                </div>
+
+                <div className="edit-tool-grid" role="group" aria-label="Edit tool">
+                  <button
+                    type="button"
+                    className={editTool === 'select' ? 'is-active' : ''}
+                    onClick={() => setEditTool('select')}
+                    aria-pressed={editTool === 'select'}
+                  >
+                    <MousePointer2 size={17} />
+                    Select
+                  </button>
+                  <button
+                    type="button"
+                    className={editTool === 'paint' ? 'is-active' : ''}
+                    onClick={() => setEditTool('paint')}
+                    aria-pressed={editTool === 'paint'}
+                  >
+                    <Brush size={17} />
+                    Paint
+                  </button>
+                  <button
+                    type="button"
+                    className={editTool === 'erase' ? 'is-active' : ''}
+                    onClick={() => setEditTool('erase')}
+                    aria-pressed={editTool === 'erase'}
+                  >
+                    <Eraser size={17} />
+                    Erase
+                  </button>
+                </div>
+
+                {selectedBlock ? (
+                  <section className="edit-placement-panel" aria-label="Place adjacent block">
+                    <div className="section-heading compact">
+                      <div>
+                        <h2>Selected Block</h2>
+                        <p className="eyebrow">
+                          {selectedBlockWorldX}, {selectedBlockWorldY}, {selectedBlockWorldZ}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => paintBlock(selectedBlock)}
+                      >
+                        <Brush size={15} />
+                        Paint Here
+                      </button>
+                    </div>
+                    <div className="placement-grid" aria-label="Adjacent placement directions">
+                      {(['up', 'down', 'north', 'south', 'west', 'east'] as Direction[]).map((direction) => (
+                        <button type="button" key={direction} onClick={() => placeAdjacentBlock(direction)}>
+                          {directionLabel(direction)}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                ) : (
+                  <p className="panel-empty">Select a block in the viewport, then paint it or place the active block beside it.</p>
+                )}
+
+                <section className="edit-library" aria-label="Block library">
+                  <div className="section-heading compact">
+                    <div>
+                      <h2>Block Library</h2>
+                      <p className="eyebrow">{editAvailableBlocks.length.toLocaleString()} blocks</p>
+                    </div>
+                  </div>
+                  <label className="material-search">
+                    <Search size={16} aria-hidden="true" />
+                    <input
+                      type="search"
+                      value={blockSearch}
+                      onChange={(event) => setBlockSearch(event.target.value)}
+                      placeholder="Find any block"
+                      aria-label="Find any block"
+                    />
+                  </label>
+                  <div className="block-library-list">
+                    {editAvailableBlocks.slice(0, 180).map((stateKey) => {
+                      const preview = createVoxelBlock(0, 0, 0, stateKey);
+                      const isHotbar = hotbarBlocks.includes(stateKey);
+
+                      return (
+                        <div className={`block-library-row${selectedBuildBlock === stateKey ? ' is-selected' : ''}`} key={stateKey}>
+                          <button
+                            type="button"
+                            className="block-library-pick"
+                            onClick={() => {
+                              setSelectedBuildBlock(stateKey);
+                              setReplaceToBlock(stateKey);
+                            }}
+                          >
+                            <BlockPreview stateKey={stateKey} color={preview.color} />
+                            <span>{formatBlockName(stateKey)}</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="material-visibility"
+                            onClick={() => toggleHotbarBlock(stateKey)}
+                            title={isHotbar ? 'Remove from hotbar' : 'Add to hotbar'}
+                            aria-label={isHotbar ? `Remove ${formatBlockName(stateKey)} from hotbar` : `Add ${formatBlockName(stateKey)} to hotbar`}
+                          >
+                            {isHotbar ? <StarOff size={15} /> : <Star size={15} />}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                <section className="replace-panel" aria-label="Find and replace blocks">
+                  <div className="section-heading compact">
+                    <div>
+                      <h2>Find & Replace</h2>
+                      <p className="eyebrow">{materialsScope === 'cuboid' && cuboidBounds ? 'Selected area' : 'Entire build'}</p>
+                    </div>
+                    <Replace size={18} />
+                  </div>
+                  <div className="replace-grid">
+                    <label>
+                      <span>Find</span>
+                      <select value={replaceFromBlock} onChange={(event) => setReplaceFromBlock(event.target.value)}>
+                        <option value="">Choose block</option>
+                        {materials.map((material) => (
+                          <option key={material.stateKey} value={material.stateKey}>{material.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Replace With</span>
+                      <select value={replaceToBlock} onChange={(event) => setReplaceToBlock(event.target.value)}>
+                        {editAvailableBlocks.slice(0, 400).map((stateKey) => (
+                          <option key={stateKey} value={stateKey}>{formatBlockName(stateKey)}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="segmented-control" role="group" aria-label="Replace scope">
+                    <button
+                      type="button"
+                      className={materialsScope === 'build' ? 'is-active' : ''}
+                      onClick={() => setMaterialsScope('build')}
+                    >
+                      Entire Build
+                    </button>
+                    <button
+                      type="button"
+                      className={materialsScope === 'cuboid' ? 'is-active' : ''}
+                      onClick={() => {
+                        if (cuboidBounds) setMaterialsScope('cuboid');
+                        else {
+                          setAppView('inspect');
+                          beginCuboidSelection();
+                        }
+                      }}
+                    >
+                      Selected Area
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    className="primary-button replace-submit"
+                    onClick={replaceBlocks}
+                    disabled={!replaceFromBlock || !replaceToBlock}
+                  >
+                    <Replace size={16} />
+                    Replace Blocks
+                  </button>
+                  {editNotice && <p className="edit-notice">{editNotice}</p>}
+                </section>
+              </section>
+            )}
 
             {model.warnings.length > 0 && (
               <section className="notice">
@@ -1317,6 +1724,59 @@ function blockInBounds(block: VoxelBlock, bounds: CuboidBounds): boolean {
     && block.z >= bounds.minZ
     && block.z <= bounds.maxZ
   );
+}
+
+function blockInsideModel(block: VoxelBlock, model: SchematicModel): boolean {
+  return pointInsideModel(block, model);
+}
+
+function pointInsideModel(point: CuboidPoint, model: SchematicModel): boolean {
+  return (
+    point.x >= 0
+    && point.x < model.dimensions.width
+    && point.y >= 0
+    && point.y < model.dimensions.height
+    && point.z >= 0
+    && point.z < model.dimensions.length
+  );
+}
+
+function compareBlocks(a: VoxelBlock, b: VoxelBlock): number {
+  return a.y - b.y || a.z - b.z || a.x - b.x;
+}
+
+function directionOffset(direction: Direction): CuboidPoint {
+  switch (direction) {
+    case 'up':
+      return { x: 0, y: 1, z: 0 };
+    case 'down':
+      return { x: 0, y: -1, z: 0 };
+    case 'north':
+      return { x: 0, y: 0, z: -1 };
+    case 'south':
+      return { x: 0, y: 0, z: 1 };
+    case 'west':
+      return { x: -1, y: 0, z: 0 };
+    case 'east':
+      return { x: 1, y: 0, z: 0 };
+  }
+}
+
+function directionLabel(direction: Direction): string {
+  switch (direction) {
+    case 'up':
+      return '+Y';
+    case 'down':
+      return '-Y';
+    case 'north':
+      return '-Z';
+    case 'south':
+      return '+Z';
+    case 'west':
+      return '-X';
+    case 'east':
+      return '+X';
+  }
 }
 
 function dimensionsForBounds(bounds: CuboidBounds) {
