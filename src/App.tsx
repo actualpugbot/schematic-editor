@@ -546,7 +546,7 @@ function App() {
             <div className="brand-mark" aria-hidden="true">
               <Cuboid size={22} />
             </div>
-            <strong>SchemView</strong>
+            <strong>ScheMagic</strong>
           </div>
           <div className="file-lockup">
             {model ? (
