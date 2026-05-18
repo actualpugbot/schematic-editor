@@ -218,7 +218,7 @@ export function Viewer3D(props: InternalViewerProps) {
     selectionBoxRef.current = selectionBox;
     scene.add(selectionBox);
 
-    const cuboidOverlay = createCuboidOverlay();
+    const cuboidOverlay = createCuboidOverlay(props.theme);
     cuboidOverlayRef.current = cuboidOverlay;
     scene.add(cuboidOverlay);
 
@@ -324,6 +324,10 @@ export function Viewer3D(props: InternalViewerProps) {
     if (floorMaterial instanceof THREE.MeshStandardMaterial) {
       floorMaterial.color.setHex(colors.floor);
       floorMaterial.needsUpdate = true;
+    }
+
+    if (cuboidOverlayRef.current) {
+      applyCuboidOverlayColors(cuboidOverlayRef.current, props.theme);
     }
   }, [props.theme]);
 
@@ -788,15 +792,16 @@ function createSelectionBox(): THREE.LineSegments {
   return box;
 }
 
-function createCuboidOverlay(): THREE.Group {
+function createCuboidOverlay(theme: 'light' | 'dark'): THREE.Group {
   const group = new THREE.Group();
+  const colors = sceneThemeColors(theme);
 
   const fill = new THREE.Mesh(
     new THREE.BoxGeometry(1, 1, 1),
     new THREE.MeshBasicMaterial({
-      color: 0xffffff,
+      color: colors.cuboidFill,
       transparent: true,
-      opacity: 0.18,
+      opacity: 0.16,
       depthWrite: false,
       polygonOffset: true,
       polygonOffsetFactor: -1,
@@ -811,9 +816,9 @@ function createCuboidOverlay(): THREE.Group {
   const edges = new THREE.LineSegments(
     new THREE.EdgesGeometry(edgeSourceGeometry),
     new THREE.LineBasicMaterial({
-      color: 0xffffff,
+      color: colors.cuboidEdge,
       transparent: true,
-      opacity: 0.78,
+      opacity: 0.92,
       depthTest: true,
     }),
   );
@@ -823,6 +828,22 @@ function createCuboidOverlay(): THREE.Group {
 
   group.visible = false;
   return group;
+}
+
+function applyCuboidOverlayColors(overlay: THREE.Group, theme: 'light' | 'dark') {
+  const colors = sceneThemeColors(theme);
+  const fill = overlay.children[0];
+  const edges = overlay.children[1];
+
+  if (fill instanceof THREE.Mesh && fill.material instanceof THREE.MeshBasicMaterial) {
+    fill.material.color.setHex(colors.cuboidFill);
+    fill.material.needsUpdate = true;
+  }
+
+  if (edges instanceof THREE.LineSegments && edges.material instanceof THREE.LineBasicMaterial) {
+    edges.material.color.setHex(colors.cuboidEdge);
+    edges.material.needsUpdate = true;
+  }
 }
 
 function updateCuboidOverlay(
@@ -1518,8 +1539,8 @@ function centerGroup(group: THREE.Group, dimensions: SchematicDimensions) {
 
 function sceneThemeColors(theme: 'light' | 'dark') {
   return theme === 'dark'
-    ? { background: 0x101719, floor: 0x131d1f, grid: 0x6f8987 }
-    : { background: 0xf4f8f8, floor: 0xe8eeee, grid: 0x4d5b54 };
+    ? { background: 0x101719, floor: 0x131d1f, grid: 0x6f8987, cuboidFill: 0x28c4bd, cuboidEdge: 0x62e4df }
+    : { background: 0xf4f8f8, floor: 0xe8eeee, grid: 0x4d5b54, cuboidFill: 0x0f7f80, cuboidEdge: 0x086f74 };
 }
 
 function createFootprintGrid(dimensions: SchematicDimensions, theme: 'light' | 'dark'): THREE.LineSegments {
