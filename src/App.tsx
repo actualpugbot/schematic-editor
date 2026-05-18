@@ -5,14 +5,11 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
-  Copy,
   Cuboid,
-  Download,
   Eye,
   EyeOff,
   FileUp,
   Moon,
-  Pencil,
   Rotate3D,
   ScanSearch,
   Search,
@@ -138,10 +135,6 @@ function App() {
   const cuboidVolume = cuboidDimensions
     ? cuboidDimensions.width * cuboidDimensions.height * cuboidDimensions.length
     : 0;
-  const selectedCuboidMaterialText = useMemo(
-    () => materialsListText(cuboidMaterials, cuboidBounds, model),
-    [cuboidBoundsKey, cuboidMaterials, model],
-  );
 
   const playerHeadOptions = useMemo(() => uniquePlayerHeadTextures(model), [model]);
   const selectedBlockKey = selectedBlock ? blockPositionKey(selectedBlock) : null;
@@ -357,20 +350,6 @@ function App() {
     setMaterialsScope('build');
   };
 
-  const copySelectedCuboidMaterials = async () => {
-    if (!selectedCuboidMaterialText) return;
-    await copyText(selectedCuboidMaterialText);
-  };
-
-  const exportSelectedCuboidMaterials = () => {
-    if (!model || !cuboidBounds || cuboidMaterials.length === 0) return;
-    downloadTextFile(
-      `${safeFileName(model.name)}-selected-cuboid-materials.csv`,
-      materialsListCsv(cuboidMaterials, cuboidBounds, model),
-      'text/csv;charset=utf-8',
-    );
-  };
-
   const stepCuboidCorner = (edge: 'min' | 'max', axis: 'x' | 'y' | 'z', delta: number) => {
     if (!model) return;
     setCuboidBounds((current) => {
@@ -404,9 +383,6 @@ function App() {
           </div>
           <div className="file-lockup">
             <h1>{model ? model.name : 'Minecraft schematic viewer'}</h1>
-            <button className="ghost-icon" type="button" onClick={() => inputRef.current?.click()} title="Change file">
-              <Pencil size={16} />
-            </button>
           </div>
         </div>
 
@@ -766,28 +742,6 @@ function App() {
                   Selected Cuboid
                 </button>
               </div>
-              {materialsScope === 'cuboid' && (
-                <div className="material-actions" aria-label="Selected cuboid materials actions">
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={copySelectedCuboidMaterials}
-                    disabled={!selectedCuboidMaterialText}
-                  >
-                    <Copy size={15} />
-                    Copy
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={exportSelectedCuboidMaterials}
-                    disabled={!cuboidBounds || cuboidMaterials.length === 0}
-                  >
-                    <Download size={15} />
-                    Export
-                  </button>
-                </div>
-              )}
               <label className="material-search">
                 <Search size={16} aria-hidden="true" />
                 <input
@@ -1085,83 +1039,6 @@ function dimensionsForBounds(bounds: CuboidBounds) {
 
 function boundsKey(bounds: CuboidBounds): string {
   return `${bounds.minX},${bounds.minY},${bounds.minZ}:${bounds.maxX},${bounds.maxY},${bounds.maxZ}`;
-}
-
-function materialsListText(
-  materials: MaterialSummary[],
-  bounds: CuboidBounds | null,
-  model: SchematicModel | null,
-): string {
-  if (!bounds || !model || materials.length === 0) return '';
-  const dimensions = dimensionsForBounds(bounds);
-  return [
-    `Selected Cuboid Materials - ${model.name}`,
-    `Bounds: X ${model.origin.x + bounds.minX}..${model.origin.x + bounds.maxX}, Y ${model.origin.y + bounds.minY}..${model.origin.y + bounds.maxY}, Z ${model.origin.z + bounds.minZ}..${model.origin.z + bounds.maxZ}`,
-    `Dimensions: ${dimensions.width} x ${dimensions.height} x ${dimensions.length}`,
-    '',
-    'Material\tBlock ID\tCount\tStorage',
-    ...materials.map((material) => (
-      `${material.label}\t${material.id}\t${material.count}\t${storageBreakdown(material.id, material.count)}`
-    )),
-  ].join('\n');
-}
-
-function materialsListCsv(
-  materials: MaterialSummary[],
-  bounds: CuboidBounds,
-  model: SchematicModel,
-): string {
-  const dimensions = dimensionsForBounds(bounds);
-  const rows = [
-    ['Selected Cuboid Materials', model.name],
-    ['Bounds', `X ${model.origin.x + bounds.minX}..${model.origin.x + bounds.maxX}, Y ${model.origin.y + bounds.minY}..${model.origin.y + bounds.maxY}, Z ${model.origin.z + bounds.minZ}..${model.origin.z + bounds.maxZ}`],
-    ['Dimensions', `${dimensions.width} x ${dimensions.height} x ${dimensions.length}`],
-    [],
-    ['Material', 'Block ID', 'Count', 'Storage'],
-    ...materials.map((material) => [
-      material.label,
-      material.id,
-      material.count.toString(),
-      storageBreakdown(material.id, material.count),
-    ]),
-  ];
-
-  return rows.map((row) => row.map(csvCell).join(',')).join('\n');
-}
-
-function csvCell(value: string): string {
-  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-}
-
-function downloadTextFile(fileName: string, content: string, type: string) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
-function safeFileName(name: string): string {
-  return name.trim().replace(/[^a-z0-9._-]+/gi, '-').replace(/^-+|-+$/g, '') || 'schematic';
-}
-
-async function copyText(text: string) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.setAttribute('readonly', '');
-  textarea.style.position = 'fixed';
-  textarea.style.opacity = '0';
-  document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand('copy');
-  textarea.remove();
 }
 
 function isPlayerHeadBlock(block: VoxelBlock): boolean {
