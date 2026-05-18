@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
+  BoxSelect,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  Copy,
   Cuboid,
+  Download,
   Eye,
   EyeOff,
   FileUp,
-  Move3D,
   Moon,
   Pencil,
   Rotate3D,
@@ -22,8 +25,18 @@ import { createBlockThumbnail } from './lib/blockThumbnails';
 import { createSampleModel, parseSchematic, type PlayerHeadTexture, type SchematicModel, type VoxelBlock } from './lib/schematic';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
-type InspectorTab = 'materials' | 'layers';
+type InspectorTab = 'selection' | 'materials' | 'layers';
 type Theme = 'light' | 'dark';
+type MaterialsScope = 'build' | 'cuboid';
+
+export interface CuboidBounds {
+  minX: number;
+  minY: number;
+  minZ: number;
+  maxX: number;
+  maxY: number;
+  maxZ: number;
+}
 
 interface MaterialSummary {
   id: string;
@@ -53,10 +66,15 @@ function App() {
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('materials');
   const [summaryDismissed, setSummaryDismissed] = useState(false);
+  const [cuboidSelectionMode, setCuboidSelectionMode] = useState(false);
+  const [cuboidAnchor, setCuboidAnchor] = useState<VoxelBlock | null>(null);
+  const [cuboidBounds, setCuboidBounds] = useState<CuboidBounds | null>(null);
+  const [materialsScope, setMaterialsScope] = useState<MaterialsScope>('build');
   const inputRef = useRef<HTMLInputElement | null>(null);
   const viewerRef = useRef<Viewer3DHandle | null>(null);
   const axisGizmoRef = useRef<HTMLDivElement | null>(null);
   const materialItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const selectionPanelRef = useRef<HTMLElement | null>(null);
   const materialPanelRef = useRef<HTMLElement | null>(null);
   const layerPanelRef = useRef<HTMLElement | null>(null);
   const dragDepthRef = useRef(0);
@@ -92,35 +110,38 @@ function App() {
   const materials = useMemo<MaterialSummary[]>(() => {
     if (!model) return [];
 
-    const counts = new Map<string, MaterialSummary>();
-    for (const block of model.blocks) {
-      const id = materialIdForBlock(block);
-      const current = counts.get(id) ?? {
-        id,
-        label: formatBlockName(id),
-        count: 0,
-        color: block.color,
-        stateKey: block.stateKey,
-      };
-      current.count += 1;
-      counts.set(id, current);
-    }
-
-    return Array.from(counts.entries())
-      .map(([, item]) => item)
-      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+    return summarizeMaterials(model.blocks);
   }, [model]);
+
+  const cuboidBoundsKey = cuboidBounds ? boundsKey(cuboidBounds) : '';
+  const cuboidMaterials = useMemo<MaterialSummary[]>(() => {
+    if (!model || !cuboidBounds) return [];
+
+    return summarizeMaterials(model.blocks.filter((block) => blockInBounds(block, cuboidBounds)));
+  }, [cuboidBoundsKey, model]);
+
+  const activeMaterials = materialsScope === 'cuboid' ? cuboidMaterials : materials;
+  const activeMaterialsLabel = materialsScope === 'cuboid' ? 'Selected Cuboid' : 'Entire Build';
 
   const filteredMaterials = useMemo(() => {
     const query = materialSearch.trim().toLocaleLowerCase();
-    if (!query) return materials;
+    if (!query) return activeMaterials;
 
-    return materials.filter((material) => {
+    return activeMaterials.filter((material) => {
       const label = material.label.toLocaleLowerCase();
       const id = material.id.toLocaleLowerCase();
       return label.includes(query) || id.includes(query);
     });
-  }, [materialSearch, materials]);
+  }, [activeMaterials, materialSearch]);
+
+  const cuboidDimensions = cuboidBounds ? dimensionsForBounds(cuboidBounds) : null;
+  const cuboidVolume = cuboidDimensions
+    ? cuboidDimensions.width * cuboidDimensions.height * cuboidDimensions.length
+    : 0;
+  const selectedCuboidMaterialText = useMemo(
+    () => materialsListText(cuboidMaterials, cuboidBounds, model),
+    [cuboidBoundsKey, cuboidMaterials, model],
+  );
 
   const playerHeadOptions = useMemo(() => uniquePlayerHeadTextures(model), [model]);
   const selectedBlockKey = selectedBlock ? blockPositionKey(selectedBlock) : null;
@@ -130,6 +151,25 @@ function App() {
     : '';
   const totalBlocks = model?.blocks.length ?? 0;
   const isDarkTheme = theme === 'dark';
+
+  useEffect(() => {
+    if (materialsScope === 'cuboid' && !cuboidBounds) {
+      setMaterialsScope('build');
+    }
+  }, [cuboidBounds, materialsScope]);
+
+  useEffect(() => {
+    if (!cuboidAnchor || !model || model.blocks.includes(cuboidAnchor)) return;
+    setCuboidAnchor(null);
+  }, [cuboidAnchor, model]);
+
+  useEffect(() => {
+    if (!model || !cuboidBounds) return;
+    const clamped = clampBoundsToModel(cuboidBounds, model);
+    if (boundsKey(clamped) !== boundsKey(cuboidBounds)) {
+      setCuboidBounds(clamped);
+    }
+  }, [cuboidBounds, model]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -192,6 +232,9 @@ function App() {
       setMaterialSearch('');
       setPlayerHeadSelections({});
       setHiddenMaterialIds(new Set());
+      setCuboidAnchor(null);
+      setCuboidBounds(null);
+      setMaterialsScope('build');
       setSummaryDismissed(false);
       setLoadState('ready');
     } catch (caught) {
@@ -278,8 +321,62 @@ function App() {
 
   const showPanel = (tab: InspectorTab) => {
     setInspectorTab(tab);
-    const panel = tab === 'materials' ? materialPanelRef : layerPanelRef;
+    const panel = tab === 'selection' ? selectionPanelRef : tab === 'layers' ? layerPanelRef : materialPanelRef;
     window.requestAnimationFrame(() => panel.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+  };
+
+  const handleBlockSelect = (block: VoxelBlock | null) => {
+    if (!cuboidSelectionMode) {
+      setSelectedBlock(block);
+      return;
+    }
+
+    if (!block || !model) {
+      setSelectedBlock(null);
+      return;
+    }
+
+    setSelectedBlock(block);
+    if (!cuboidAnchor) {
+      setCuboidAnchor(block);
+      setCuboidBounds(null);
+      setInspectorTab('selection');
+      return;
+    }
+
+    const nextBounds = normalizeCuboidBounds(cuboidAnchor, block, model);
+    setCuboidBounds(nextBounds);
+    setCuboidAnchor(null);
+    setMaterialsScope('cuboid');
+    setInspectorTab('selection');
+  };
+
+  const clearCuboidSelection = () => {
+    setCuboidAnchor(null);
+    setCuboidBounds(null);
+    setMaterialsScope('build');
+  };
+
+  const copySelectedCuboidMaterials = async () => {
+    if (!selectedCuboidMaterialText) return;
+    await copyText(selectedCuboidMaterialText);
+  };
+
+  const exportSelectedCuboidMaterials = () => {
+    if (!model || !cuboidBounds || cuboidMaterials.length === 0) return;
+    downloadTextFile(
+      `${safeFileName(model.name)}-selected-cuboid-materials.csv`,
+      materialsListCsv(cuboidMaterials, cuboidBounds, model),
+      'text/csv;charset=utf-8',
+    );
+  };
+
+  const stepCuboidCorner = (edge: 'min' | 'max', axis: 'x' | 'y' | 'z', delta: number) => {
+    if (!model) return;
+    setCuboidBounds((current) => {
+      if (!current) return current;
+      return stepBoundsCoordinate(current, model, edge, axis, delta);
+    });
   };
 
   return (
@@ -442,11 +539,20 @@ function App() {
           )}
 
           <div className="viewport-tools" aria-label="Viewport tools">
-            <button type="button" onClick={() => viewerRef.current?.spinOnce()} title="Move view">
-              <Move3D size={19} />
-            </button>
             <button type="button" onClick={() => viewerRef.current?.spinOnce()} title="Spin 360 degrees">
               <Rotate3D size={19} />
+            </button>
+            <button
+              type="button"
+              className={cuboidSelectionMode ? 'is-active' : ''}
+              onClick={() => {
+                setCuboidSelectionMode((current) => !current);
+                showPanel('selection');
+              }}
+              title={cuboidSelectionMode ? 'Cuboid selection is active' : 'Select cuboid'}
+              aria-pressed={cuboidSelectionMode}
+            >
+              <BoxSelect size={19} />
             </button>
             <button type="button" onClick={() => showPanel('materials')} title="Materials">
               <Cuboid size={19} />
@@ -472,7 +578,8 @@ function App() {
             hiddenMaterialIds={hiddenMaterialIds}
             playerHeadSelections={playerHeadSelections}
             selectedBlock={selectedBlock}
-            onBlockSelect={setSelectedBlock}
+            cuboidBounds={cuboidBounds}
+            onBlockSelect={handleBlockSelect}
             onAxisOrientationChange={updateAxisGizmo}
             viewerRef={viewerRef}
           />
@@ -492,6 +599,15 @@ function App() {
               <button
                 type="button"
                 role="tab"
+                aria-selected={inspectorTab === 'selection'}
+                className={inspectorTab === 'selection' ? 'is-active' : ''}
+                onClick={() => showPanel('selection')}
+              >
+                Selection
+              </button>
+              <button
+                type="button"
+                role="tab"
                 aria-selected={inspectorTab === 'materials'}
                 className={inspectorTab === 'materials' ? 'is-active' : ''}
                 onClick={() => showPanel('materials')}
@@ -508,6 +624,77 @@ function App() {
                 Layer View
               </button>
             </div>
+
+            <section
+              className={`selection-panel inspector-panel${inspectorTab === 'selection' ? ' is-active' : ''}`}
+              ref={selectionPanelRef}
+            >
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">Cuboid Selection</p>
+                  <h2>{cuboidBounds ? 'Selected region' : cuboidAnchor ? 'Pick opposite corner' : 'No cuboid selected'}</h2>
+                </div>
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={clearCuboidSelection}
+                  title="Clear cuboid selection"
+                  disabled={!cuboidBounds && !cuboidAnchor}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <label className="toggle-row cuboid-mode-toggle">
+                <input
+                  type="checkbox"
+                  checked={cuboidSelectionMode}
+                  onChange={(event) => setCuboidSelectionMode(event.target.checked)}
+                />
+                <span>Click two blocks for cuboid mode</span>
+              </label>
+
+              {cuboidBounds && cuboidDimensions ? (
+                <>
+                  <div className="cuboid-corner-editor" aria-label="Cuboid corner coordinates">
+                    <CuboidCornerControls
+                      title="Min Corner"
+                      edge="min"
+                      bounds={cuboidBounds}
+                      model={model}
+                      onStep={stepCuboidCorner}
+                    />
+                    <CuboidCornerControls
+                      title="Max Corner"
+                      edge="max"
+                      bounds={cuboidBounds}
+                      model={model}
+                      onStep={stepCuboidCorner}
+                    />
+                  </div>
+                  <dl className="summary-metrics selection-metrics">
+                    <div>
+                      <dt>Dimensions</dt>
+                      <dd>{cuboidDimensions.width} x {cuboidDimensions.height} x {cuboidDimensions.length}</dd>
+                    </div>
+                    <div>
+                      <dt>Selected Blocks</dt>
+                      <dd>{cuboidVolume.toLocaleString()}</dd>
+                    </div>
+                    <div>
+                      <dt>Non-air Blocks</dt>
+                      <dd>{cuboidMaterials.reduce((sum, material) => sum + material.count, 0).toLocaleString()}</dd>
+                    </div>
+                  </dl>
+                </>
+              ) : (
+                <p className="panel-empty">
+                  {cuboidAnchor
+                    ? `First corner set at ${model.origin.x + cuboidAnchor.x}, ${model.origin.y + cuboidAnchor.y}, ${model.origin.z + cuboidAnchor.z}.`
+                    : 'Turn on cuboid mode, then click two blocks in the viewport.'}
+                </p>
+              )}
+            </section>
 
             <section
               className={`layer-control inspector-panel${inspectorTab === 'layers' ? ' is-active' : ''}`}
@@ -556,11 +743,51 @@ function App() {
                 <div>
                   <h2>
                     {materialSearch.trim()
-                      ? `${filteredMaterials.length.toLocaleString()} of ${materials.length.toLocaleString()} materials`
-                      : `${materials.length.toLocaleString()} materials`}
+                      ? `${filteredMaterials.length.toLocaleString()} of ${activeMaterials.length.toLocaleString()} materials`
+                      : `${activeMaterials.length.toLocaleString()} materials`}
                   </h2>
+                  <p className="eyebrow">{activeMaterialsLabel}</p>
                 </div>
               </div>
+              <div className="segmented-control" role="group" aria-label="Materials scope">
+                <button
+                  type="button"
+                  className={materialsScope === 'build' ? 'is-active' : ''}
+                  onClick={() => setMaterialsScope('build')}
+                >
+                  Entire Build
+                </button>
+                <button
+                  type="button"
+                  className={materialsScope === 'cuboid' ? 'is-active' : ''}
+                  disabled={!cuboidBounds}
+                  onClick={() => setMaterialsScope('cuboid')}
+                >
+                  Selected Cuboid
+                </button>
+              </div>
+              {materialsScope === 'cuboid' && (
+                <div className="material-actions" aria-label="Selected cuboid materials actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={copySelectedCuboidMaterials}
+                    disabled={!selectedCuboidMaterialText}
+                  >
+                    <Copy size={15} />
+                    Copy
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={exportSelectedCuboidMaterials}
+                    disabled={!cuboidBounds || cuboidMaterials.length === 0}
+                  >
+                    <Download size={15} />
+                    Export
+                  </button>
+                </div>
+              )}
               <label className="material-search">
                 <Search size={16} aria-hidden="true" />
                 <input
@@ -624,7 +851,13 @@ function App() {
                   );
                 })}
                 {filteredMaterials.length === 0 && (
-                  <p className="material-empty">No materials match "{materialSearch.trim()}".</p>
+                  <p className="material-empty">
+                    {materialsScope === 'cuboid' && !cuboidBounds
+                      ? 'Select a cuboid to list materials for that region.'
+                      : materialSearch.trim()
+                        ? `No materials match "${materialSearch.trim()}".`
+                        : 'No non-air blocks in this cuboid.'}
+                  </p>
                 )}
               </div>
             </section>
@@ -682,12 +915,253 @@ function BlockPreview({ stateKey, color }: { stateKey: string; color: number }) 
   );
 }
 
+function CuboidCornerControls({
+  title,
+  edge,
+  bounds,
+  model,
+  onStep,
+}: {
+  title: string;
+  edge: 'min' | 'max';
+  bounds: CuboidBounds;
+  model: SchematicModel;
+  onStep: (edge: 'min' | 'max', axis: 'x' | 'y' | 'z', delta: number) => void;
+}) {
+  return (
+    <section className="cuboid-corner-group" aria-label={title}>
+      <h3>{title}</h3>
+      {(['x', 'y', 'z'] as const).map((axis) => {
+        const coordinate = boundsCoordinate(bounds, edge, axis);
+        const worldCoordinate = originCoordinate(model, axis) + coordinate;
+        const minAllowed = edge === 'min' ? 0 : boundsCoordinate(bounds, 'min', axis);
+        const maxAllowed = edge === 'min' ? boundsCoordinate(bounds, 'max', axis) : maxCoordinateForAxis(model, axis);
+
+        return (
+          <div className="cuboid-axis-stepper" key={`${edge}-${axis}`}>
+            <span>{axis.toUpperCase()}</span>
+            <strong>{worldCoordinate}</strong>
+            <div className="cuboid-axis-buttons">
+              <button
+                type="button"
+                onClick={() => onStep(edge, axis, 1)}
+                disabled={coordinate >= maxAllowed}
+                title={`Increase ${title} ${axis.toUpperCase()}`}
+                aria-label={`Increase ${title} ${axis.toUpperCase()}`}
+              >
+                <ChevronUp size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => onStep(edge, axis, -1)}
+                disabled={coordinate <= minAllowed}
+                title={`Decrease ${title} ${axis.toUpperCase()}`}
+                aria-label={`Decrease ${title} ${axis.toUpperCase()}`}
+              >
+                <ChevronDown size={14} />
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
 function materialIdForBlock(block: VoxelBlock): string {
   return block.stateKey.split('[', 1)[0];
 }
 
+function summarizeMaterials(blocks: VoxelBlock[]): MaterialSummary[] {
+  const counts = new Map<string, MaterialSummary>();
+  for (const block of blocks) {
+    const id = materialIdForBlock(block);
+    const current = counts.get(id) ?? {
+      id,
+      label: formatBlockName(id),
+      count: 0,
+      color: block.color,
+      stateKey: block.stateKey,
+    };
+    current.count += 1;
+    counts.set(id, current);
+  }
+
+  return Array.from(counts.values()).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+
 function blockPositionKey(block: VoxelBlock): string {
   return `${block.x},${block.y},${block.z}`;
+}
+
+function normalizeCuboidBounds(a: VoxelBlock, b: VoxelBlock, model: SchematicModel): CuboidBounds {
+  return clampBoundsToModel(
+    {
+      minX: Math.min(a.x, b.x),
+      minY: Math.min(a.y, b.y),
+      minZ: Math.min(a.z, b.z),
+      maxX: Math.max(a.x, b.x),
+      maxY: Math.max(a.y, b.y),
+      maxZ: Math.max(a.z, b.z),
+    },
+    model,
+  );
+}
+
+function clampBoundsToModel(bounds: CuboidBounds, model: SchematicModel): CuboidBounds {
+  const maxX = Math.max(0, model.dimensions.width - 1);
+  const maxY = Math.max(0, model.dimensions.height - 1);
+  const maxZ = Math.max(0, model.dimensions.length - 1);
+  const minX = clamp(Math.min(bounds.minX, bounds.maxX), 0, maxX);
+  const minY = clamp(Math.min(bounds.minY, bounds.maxY), 0, maxY);
+  const minZ = clamp(Math.min(bounds.minZ, bounds.maxZ), 0, maxZ);
+
+  return {
+    minX,
+    minY,
+    minZ,
+    maxX: clamp(Math.max(bounds.minX, bounds.maxX), minX, maxX),
+    maxY: clamp(Math.max(bounds.minY, bounds.maxY), minY, maxY),
+    maxZ: clamp(Math.max(bounds.minZ, bounds.maxZ), minZ, maxZ),
+  };
+}
+
+function stepBoundsCoordinate(
+  bounds: CuboidBounds,
+  model: SchematicModel,
+  edge: 'min' | 'max',
+  axis: 'x' | 'y' | 'z',
+  delta: number,
+): CuboidBounds {
+  const coordinateKey = boundsCoordinateKey(edge, axis);
+  const minAllowed = edge === 'min' ? 0 : bounds[boundsCoordinateKey('min', axis)];
+  const maxAllowed = edge === 'min' ? bounds[boundsCoordinateKey('max', axis)] : maxCoordinateForAxis(model, axis);
+  return {
+    ...bounds,
+    [coordinateKey]: clamp(bounds[coordinateKey] + delta, minAllowed, maxAllowed),
+  };
+}
+
+function boundsCoordinate(bounds: CuboidBounds, edge: 'min' | 'max', axis: 'x' | 'y' | 'z'): number {
+  return bounds[boundsCoordinateKey(edge, axis)];
+}
+
+function boundsCoordinateKey(edge: 'min' | 'max', axis: 'x' | 'y' | 'z'): keyof CuboidBounds {
+  if (axis === 'x') return edge === 'min' ? 'minX' : 'maxX';
+  if (axis === 'y') return edge === 'min' ? 'minY' : 'maxY';
+  return edge === 'min' ? 'minZ' : 'maxZ';
+}
+
+function originCoordinate(model: SchematicModel, axis: 'x' | 'y' | 'z'): number {
+  if (axis === 'x') return model.origin.x;
+  if (axis === 'y') return model.origin.y;
+  return model.origin.z;
+}
+
+function maxCoordinateForAxis(model: SchematicModel, axis: 'x' | 'y' | 'z'): number {
+  if (axis === 'x') return Math.max(0, model.dimensions.width - 1);
+  if (axis === 'y') return Math.max(0, model.dimensions.height - 1);
+  return Math.max(0, model.dimensions.length - 1);
+}
+
+function blockInBounds(block: VoxelBlock, bounds: CuboidBounds): boolean {
+  return (
+    block.x >= bounds.minX
+    && block.x <= bounds.maxX
+    && block.y >= bounds.minY
+    && block.y <= bounds.maxY
+    && block.z >= bounds.minZ
+    && block.z <= bounds.maxZ
+  );
+}
+
+function dimensionsForBounds(bounds: CuboidBounds) {
+  return {
+    width: bounds.maxX - bounds.minX + 1,
+    height: bounds.maxY - bounds.minY + 1,
+    length: bounds.maxZ - bounds.minZ + 1,
+  };
+}
+
+function boundsKey(bounds: CuboidBounds): string {
+  return `${bounds.minX},${bounds.minY},${bounds.minZ}:${bounds.maxX},${bounds.maxY},${bounds.maxZ}`;
+}
+
+function materialsListText(
+  materials: MaterialSummary[],
+  bounds: CuboidBounds | null,
+  model: SchematicModel | null,
+): string {
+  if (!bounds || !model || materials.length === 0) return '';
+  const dimensions = dimensionsForBounds(bounds);
+  return [
+    `Selected Cuboid Materials - ${model.name}`,
+    `Bounds: X ${model.origin.x + bounds.minX}..${model.origin.x + bounds.maxX}, Y ${model.origin.y + bounds.minY}..${model.origin.y + bounds.maxY}, Z ${model.origin.z + bounds.minZ}..${model.origin.z + bounds.maxZ}`,
+    `Dimensions: ${dimensions.width} x ${dimensions.height} x ${dimensions.length}`,
+    '',
+    'Material\tBlock ID\tCount\tStorage',
+    ...materials.map((material) => (
+      `${material.label}\t${material.id}\t${material.count}\t${storageBreakdown(material.id, material.count)}`
+    )),
+  ].join('\n');
+}
+
+function materialsListCsv(
+  materials: MaterialSummary[],
+  bounds: CuboidBounds,
+  model: SchematicModel,
+): string {
+  const dimensions = dimensionsForBounds(bounds);
+  const rows = [
+    ['Selected Cuboid Materials', model.name],
+    ['Bounds', `X ${model.origin.x + bounds.minX}..${model.origin.x + bounds.maxX}, Y ${model.origin.y + bounds.minY}..${model.origin.y + bounds.maxY}, Z ${model.origin.z + bounds.minZ}..${model.origin.z + bounds.maxZ}`],
+    ['Dimensions', `${dimensions.width} x ${dimensions.height} x ${dimensions.length}`],
+    [],
+    ['Material', 'Block ID', 'Count', 'Storage'],
+    ...materials.map((material) => [
+      material.label,
+      material.id,
+      material.count.toString(),
+      storageBreakdown(material.id, material.count),
+    ]),
+  ];
+
+  return rows.map((row) => row.map(csvCell).join(',')).join('\n');
+}
+
+function csvCell(value: string): string {
+  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+function downloadTextFile(fileName: string, content: string, type: string) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function safeFileName(name: string): string {
+  return name.trim().replace(/[^a-z0-9._-]+/gi, '-').replace(/^-+|-+$/g, '') || 'schematic';
+}
+
+async function copyText(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  textarea.remove();
 }
 
 function isPlayerHeadBlock(block: VoxelBlock): boolean {

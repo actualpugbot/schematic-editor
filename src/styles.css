@@ -395,6 +395,18 @@ h2 {
   color: var(--teal-strong);
 }
 
+.viewport-tools button.is-active {
+  border-color: color-mix(in oklch, var(--teal), var(--line) 28%);
+  background: var(--teal-soft);
+  color: var(--teal-strong);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  transform: none !important;
+}
+
 .build-summary-card {
   left: 28px;
   bottom: 128px;
@@ -573,7 +585,7 @@ dd {
 
 .inspector-tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   flex: 0 0 auto;
   min-height: 58px;
   border-bottom: 1px solid var(--line);
@@ -617,6 +629,7 @@ dd {
 }
 
 .layer-control,
+.selection-panel,
 .material-list,
 .notice {
   border: 0;
@@ -624,11 +637,13 @@ dd {
 }
 
 .layer-control,
+.selection-panel,
 .material-list {
   padding: 18px;
 }
 
-.layer-control {
+.layer-control,
+.selection-panel {
   flex: 0 0 auto;
   flex-direction: column;
 }
@@ -809,6 +824,168 @@ dd {
   width: 18px;
   height: 18px;
   accent-color: var(--teal);
+}
+
+.cuboid-mode-toggle {
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper-strong);
+}
+
+.cuboid-corner-editor {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.cuboid-corner-group {
+  display: grid;
+  grid-template-columns: auto repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  align-items: stretch;
+}
+
+.cuboid-corner-group h3 {
+  align-self: center;
+  min-width: 74px;
+  margin: 0;
+  color: var(--teal-strong);
+  font-size: 0.74rem;
+  font-weight: 850;
+}
+
+.cuboid-axis-stepper {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 5px 5px 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper-strong);
+}
+
+.cuboid-axis-stepper > span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.cuboid-axis-stepper strong {
+  min-width: 0;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 880;
+  overflow-wrap: anywhere;
+}
+
+.cuboid-axis-buttons {
+  display: grid;
+  gap: 3px;
+}
+
+.cuboid-axis-buttons button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 16px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--paper-soft);
+  color: var(--icon-color);
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.cuboid-axis-buttons button:hover {
+  border-color: color-mix(in oklch, var(--teal), var(--line) 45%);
+  color: var(--teal-strong);
+}
+
+.selection-metrics {
+  margin-top: 14px;
+}
+
+.panel-empty {
+  margin: 14px 0 0;
+  padding: 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 760;
+  line-height: 1.4;
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper-soft);
+}
+
+.segmented-control button {
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 840;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.segmented-control button.is-active {
+  background: var(--paper-strong);
+  color: var(--teal-strong);
+  box-shadow: 0 2px 8px rgba(28, 41, 43, 0.08);
+}
+
+.material-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper-strong);
+  color: var(--icon-color);
+  font-size: 0.78rem;
+  font-weight: 820;
+  transition:
+    transform 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.secondary-button:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in oklch, var(--teal), var(--line) 45%);
+  color: var(--teal-strong);
 }
 
 .material-search {
@@ -1172,6 +1349,14 @@ dd {
   .inspector-tabs button {
     padding-inline: 6px;
     font-size: 0.72rem;
+  }
+
+  .cuboid-corner-group {
+    grid-template-columns: 1fr;
+  }
+
+  .cuboid-corner-group h3 {
+    min-width: 0;
   }
 }
 

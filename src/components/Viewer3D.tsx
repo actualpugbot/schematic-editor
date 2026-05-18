@@ -19,9 +19,19 @@ interface Viewer3DProps {
   showGrid: boolean;
   theme: 'light' | 'dark';
   selectedBlock: VoxelBlock | null;
+  cuboidBounds?: CuboidBounds | null;
   onBlockSelect?: (block: VoxelBlock | null) => void;
   onAxisOrientationChange?: (orientation: AxisGizmoOrientation) => void;
   onReady?: () => void;
+}
+
+export interface CuboidBounds {
+  minX: number;
+  minY: number;
+  minZ: number;
+  maxX: number;
+  maxY: number;
+  maxZ: number;
 }
 
 export interface AxisGizmoOrientation {
@@ -88,6 +98,7 @@ export function Viewer3D(props: InternalViewerProps) {
   const gridRef = useRef<THREE.Group | null>(null);
   const floorRef = useRef<THREE.Mesh | null>(null);
   const selectionBoxRef = useRef<THREE.LineSegments | null>(null);
+  const cuboidOverlayRef = useRef<THREE.Group | null>(null);
   const frameRef = useRef<number | null>(null);
   const spinRef = useRef<{ start: number; duration: number; from: number; to: number } | null>(null);
   const latestModelRef = useRef<SchematicModel | null>(props.model);
@@ -184,6 +195,10 @@ export function Viewer3D(props: InternalViewerProps) {
     selectionBoxRef.current = selectionBox;
     scene.add(selectionBox);
 
+    const cuboidOverlay = createCuboidOverlay();
+    cuboidOverlayRef.current = cuboidOverlay;
+    scene.add(cuboidOverlay);
+
     const resize = () => {
       const rect = container.getBoundingClientRect();
       const width = Math.max(1, rect.width);
@@ -260,6 +275,7 @@ export function Viewer3D(props: InternalViewerProps) {
       controlsRef.current = null;
       floorRef.current = null;
       selectionBoxRef.current = null;
+      cuboidOverlayRef.current = null;
     };
   }, []);
 
@@ -376,6 +392,18 @@ export function Viewer3D(props: InternalViewerProps) {
 
     fitCameraToModel(props.model.dimensions, camera, controls);
   }, [props.model]);
+
+  useEffect(() => {
+    const overlay = cuboidOverlayRef.current;
+    if (!overlay) return;
+
+    if (!props.model || !props.cuboidBounds) {
+      overlay.visible = false;
+      return;
+    }
+
+    updateCuboidOverlay(overlay, props.cuboidBounds, props.model.dimensions);
+  }, [props.cuboidBounds, props.model]);
 
   return <div className="viewer-canvas" data-testid="viewer-canvas" ref={containerRef} />;
 }
@@ -702,6 +730,57 @@ function createSelectionBox(): THREE.LineSegments {
   box.renderOrder = 20;
   box.visible = false;
   return box;
+}
+
+function createCuboidOverlay(): THREE.Group {
+  const group = new THREE.Group();
+
+  const fill = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshBasicMaterial({
+      color: 0x25c6bd,
+      transparent: true,
+      opacity: 0.22,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  fill.renderOrder = 18;
+  group.add(fill);
+
+  const edgeSourceGeometry = new THREE.BoxGeometry(1, 1, 1);
+  const edges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(edgeSourceGeometry),
+    new THREE.LineBasicMaterial({
+      color: 0xf7c948,
+      transparent: true,
+      opacity: 0.92,
+      depthTest: true,
+    }),
+  );
+  edgeSourceGeometry.dispose();
+  edges.renderOrder = 21;
+  group.add(edges);
+
+  group.visible = false;
+  return group;
+}
+
+function updateCuboidOverlay(
+  overlay: THREE.Group,
+  bounds: CuboidBounds,
+  dimensions: SchematicDimensions,
+) {
+  const width = bounds.maxX - bounds.minX + 1;
+  const height = bounds.maxY - bounds.minY + 1;
+  const length = bounds.maxZ - bounds.minZ + 1;
+  overlay.position.set(
+    (bounds.minX + bounds.maxX) / 2 - (dimensions.width - 1) / 2,
+    (bounds.minY + bounds.maxY) / 2,
+    (bounds.minZ + bounds.maxZ) / 2 - (dimensions.length - 1) / 2,
+  );
+  overlay.scale.set(width, height, length);
+  overlay.visible = true;
 }
 
 async function createSelectionBoxGeometry(
