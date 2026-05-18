@@ -1,8 +1,12 @@
-import { decompressSync } from 'fflate';
+import { decompressSync, gzipSync } from 'fflate';
 
 type NbtValue = unknown;
 
 export type NbtCompound = Record<string, unknown>;
+export interface NbtDocument {
+  name: string;
+  value: NbtCompound;
+}
 
 const enum Tag {
   End = 0,
@@ -71,14 +75,17 @@ class NbtReader {
 
   private readCompound(): NbtCompound {
     const compound: NbtCompound = {};
+    const types = new Map<string, Tag>();
 
     while (true) {
       const type = this.readByte();
       if (type === Tag.End) {
+        compoundTagTypes.set(compound, types);
         return compound;
       }
 
       const name = this.readString();
+      types.set(name, type);
       compound[name] = this.readTag(type);
     }
   }
@@ -87,6 +94,7 @@ class NbtReader {
     const itemType = this.readByte();
     const length = this.readInt();
     const list: NbtValue[] = [];
+    listTagTypes.set(list, itemType);
 
     for (let index = 0; index < length; index += 1) {
       list.push(this.readTag(itemType));
@@ -196,7 +204,10 @@ class NbtReader {
   }
 }
 
-export function parseNbt(buffer: ArrayBuffer): { name: string; value: NbtCompound } {
+const compoundTagTypes = new WeakMap<NbtCompound, Map<string, Tag>>();
+const listTagTypes = new WeakMap<unknown[], Tag>();
+
+export function parseNbt(buffer: ArrayBuffer): NbtDocument {
   const original = new Uint8Array(buffer);
   const bytes = maybeDecompress(original);
   return new NbtReader(bytes).readRoot();
@@ -208,6 +219,188 @@ function maybeDecompress(bytes: Uint8Array): Uint8Array {
   } catch {
     return bytes;
   }
+}
+
+export function writeNbt(document: NbtDocument, options: { compressed?: boolean } = {}): Uint8Array {
+  const writer = new NbtWriter();
+  writer.writeRoot(document.name, document.value);
+  const bytes = writer.finish();
+  return options.compressed === false ? bytes : gzipSync(bytes);
+}
+
+class NbtWriter {
+  private bytes: number[] = [];
+  private readonly encoder = new TextEncoder();
+
+  writeRoot(name: string, value: NbtCompound) {
+    this.writeByte(Tag.Compound);
+    this.writeString(name);
+    this.writeCompound(value);
+  }
+
+  finish(): Uint8Array {
+    return new Uint8Array(this.bytes);
+  }
+
+  private writeNamedTag(name: string, value: NbtValue, type: Tag) {
+    this.writeByte(type);
+    this.writeString(name);
+    this.writePayload(value, type);
+  }
+
+  private writePayload(value: NbtValue, type: Tag) {
+    switch (type) {
+      case Tag.Byte:
+        this.writeByte(asNumber(value));
+        return;
+      case Tag.Short:
+        this.writeShort(asNumber(value));
+        return;
+      case Tag.Int:
+        this.writeInt(asNumber(value));
+        return;
+      case Tag.Long:
+        this.writeLong(typeof value === 'bigint' ? value : BigInt(asNumber(value)));
+        return;
+      case Tag.Float:
+        this.writeFloat(asNumber(value));
+        return;
+      case Tag.Double:
+        this.writeDouble(asNumber(value));
+        return;
+      case Tag.ByteArray:
+        this.writeByteArray(value);
+        return;
+      case Tag.String:
+        this.writeString(asString(value));
+        return;
+      case Tag.List:
+        this.writeList(Array.isArray(value) ? value : []);
+        return;
+      case Tag.Compound:
+        this.writeCompound(isCompound(value) ? value : {});
+        return;
+      case Tag.IntArray:
+        this.writeIntArray(value);
+        return;
+      case Tag.LongArray:
+        this.writeLongArray(value);
+        return;
+      default:
+        throw new Error(`Unsupported NBT tag type ${type}.`);
+    }
+  }
+
+  private writeCompound(compound: NbtCompound) {
+    const knownTypes = compoundTagTypes.get(compound);
+
+    for (const [name, value] of Object.entries(compound)) {
+      if (value === undefined) continue;
+      this.writeNamedTag(name, value, knownTypes?.get(name) ?? inferTagType(value));
+    }
+
+    this.writeByte(Tag.End);
+  }
+
+  private writeList(list: unknown[]) {
+    const itemType = listTagTypes.get(list) ?? inferListType(list);
+    this.writeByte(itemType);
+    this.writeInt(list.length);
+
+    for (const value of list) {
+      this.writePayload(value, itemType);
+    }
+  }
+
+  private writeByteArray(value: NbtValue) {
+    const array = value instanceof Int8Array
+      ? value
+      : value instanceof Uint8Array
+        ? new Int8Array(value.buffer, value.byteOffset, value.byteLength)
+        : new Int8Array();
+
+    this.writeInt(array.length);
+    for (const byte of array) this.writeByte(byte);
+  }
+
+  private writeIntArray(value: NbtValue) {
+    const array = value instanceof Int32Array ? value : new Int32Array();
+    this.writeInt(array.length);
+    for (const item of array) this.writeInt(item);
+  }
+
+  private writeLongArray(value: NbtValue) {
+    const array = value instanceof BigInt64Array ? value : new BigInt64Array();
+    this.writeInt(array.length);
+    for (const item of array) this.writeLong(item);
+  }
+
+  private writeString(value: string) {
+    const encoded = this.encoder.encode(value);
+    if (encoded.length > 0xffff) {
+      throw new Error('NBT strings cannot be longer than 65,535 bytes.');
+    }
+    this.writeUnsignedShort(encoded.length);
+    this.writeBytes(encoded);
+  }
+
+  private writeByte(value: number) {
+    this.bytes.push(value & 0xff);
+  }
+
+  private writeShort(value: number) {
+    this.writeByte(value >> 8);
+    this.writeByte(value);
+  }
+
+  private writeUnsignedShort(value: number) {
+    this.writeShort(value);
+  }
+
+  private writeInt(value: number) {
+    this.writeByte(value >> 24);
+    this.writeByte(value >> 16);
+    this.writeByte(value >> 8);
+    this.writeByte(value);
+  }
+
+  private writeLong(value: bigint) {
+    for (let shift = 56n; shift >= 0n; shift -= 8n) {
+      this.writeByte(Number((value >> shift) & 0xffn));
+    }
+  }
+
+  private writeFloat(value: number) {
+    const bytes = new Uint8Array(4);
+    new DataView(bytes.buffer).setFloat32(0, value, false);
+    this.writeBytes(bytes);
+  }
+
+  private writeDouble(value: number) {
+    const bytes = new Uint8Array(8);
+    new DataView(bytes.buffer).setFloat64(0, value, false);
+    this.writeBytes(bytes);
+  }
+
+  private writeBytes(bytes: Uint8Array) {
+    for (const byte of bytes) this.writeByte(byte);
+  }
+}
+
+function inferTagType(value: NbtValue): Tag {
+  if (typeof value === 'string') return Tag.String;
+  if (typeof value === 'bigint') return Tag.Long;
+  if (typeof value === 'number') return Number.isInteger(value) ? Tag.Int : Tag.Double;
+  if (value instanceof Int8Array || value instanceof Uint8Array) return Tag.ByteArray;
+  if (value instanceof Int32Array) return Tag.IntArray;
+  if (value instanceof BigInt64Array) return Tag.LongArray;
+  if (Array.isArray(value)) return Tag.List;
+  if (isCompound(value)) return Tag.Compound;
+  throw new Error('Cannot write unsupported NBT value.');
+}
+
+function inferListType(list: unknown[]): Tag {
+  return list.length > 0 ? inferTagType(list[0]) : Tag.End;
 }
 
 export function isCompound(value: unknown): value is NbtCompound {

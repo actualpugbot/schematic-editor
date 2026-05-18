@@ -6,6 +6,7 @@ import {
   asNumber,
   asString,
   isCompound,
+  type NbtDocument,
   parseNbt,
   type NbtCompound,
 } from './nbt';
@@ -58,12 +59,28 @@ export interface SchematicModel {
   warnings: string[];
 }
 
+export interface ParsedSchematicDocument {
+  model: SchematicModel;
+  nbt: NbtDocument;
+}
+
 interface ParseOptions {
   fileName?: string;
 }
 
 export function parseSchematic(buffer: ArrayBuffer, options: ParseOptions = {}): SchematicModel {
-  const root = parseNbt(buffer).value;
+  return parseSchematicDocument(buffer, options).model;
+}
+
+export function parseSchematicDocument(buffer: ArrayBuffer, options: ParseOptions = {}): ParsedSchematicDocument {
+  const nbt = parseNbt(buffer);
+  return {
+    model: parseSchematicRoot(nbt.value, options),
+    nbt,
+  };
+}
+
+function parseSchematicRoot(root: NbtCompound, options: ParseOptions = {}): SchematicModel {
   const schem = unwrapSchematic(root);
 
   if (isCompound(schem.Regions)) {
@@ -79,6 +96,36 @@ export function parseSchematic(buffer: ArrayBuffer, options: ParseOptions = {}):
   }
 
   throw new Error('This file is valid NBT, but it does not look like a supported .schem, .schematic, or .litematic file.');
+}
+
+export function renameSchematicDocument(document: NbtDocument, source: SchematicModel['source'], name: string): NbtDocument {
+  const trimmedName = name.trim();
+  if (!trimmedName) {
+    throw new Error('Schematic name cannot be empty.');
+  }
+
+  document.name = trimmedName;
+  const root = document.value;
+  const schem = unwrapSchematic(root);
+
+  if (source === 'Litematica .litematic') {
+    const metadata = ensureCompound(root, 'Metadata');
+    metadata.Name = trimmedName;
+    return document;
+  }
+
+  if (source === 'Sponge .schem') {
+    const metadata = ensureCompound(schem, 'Metadata');
+    metadata.Name = trimmedName;
+    return document;
+  }
+
+  if (source === 'Legacy .schematic') {
+    const metadata = isCompound(root.Metadata) ? root.Metadata : null;
+    if (metadata) metadata.Name = trimmedName;
+  }
+
+  return document;
 }
 
 export function createSampleModel(): SchematicModel {
@@ -568,6 +615,17 @@ function unwrapSchematic(root: NbtCompound): NbtCompound {
   }
 
   return root;
+}
+
+function ensureCompound(parent: NbtCompound, key: string): NbtCompound {
+  const current = parent[key];
+  if (isCompound(current)) {
+    return current;
+  }
+
+  parent[key] = {};
+
+  return parent[key] as NbtCompound;
 }
 
 function readDimensions(schematic: NbtCompound): SchematicDimensions {

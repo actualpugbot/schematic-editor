@@ -6,11 +6,13 @@ import {
   ChevronRight,
   ChevronUp,
   Cuboid,
+  Download,
   Eye,
   EyeOff,
   FileUp,
   Info,
   Moon,
+  Pencil,
   Plus,
   Rotate3D,
   ScanSearch,
@@ -21,7 +23,15 @@ import {
 } from 'lucide-react';
 import { Viewer3D, type AxisGizmoOrientation, type SelectionButton, type Viewer3DHandle } from './components/Viewer3D';
 import { createBlockThumbnail } from './lib/blockThumbnails';
-import { createSampleModel, parseSchematic, type PlayerHeadTexture, type SchematicModel, type VoxelBlock } from './lib/schematic';
+import { writeNbt, type NbtDocument } from './lib/nbt';
+import {
+  createSampleModel,
+  parseSchematicDocument,
+  renameSchematicDocument,
+  type PlayerHeadTexture,
+  type SchematicModel,
+  type VoxelBlock,
+} from './lib/schematic';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 type InspectorTab = 'selection' | 'materials' | 'layers';
@@ -70,6 +80,10 @@ function App() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
   const [model, setModel] = useState<SchematicModel | null>(() => createSampleModel());
+  const [schematicName, setSchematicName] = useState('Sample workshop house');
+  const [isEditingSchematicName, setIsEditingSchematicName] = useState(false);
+  const [schematicDocument, setSchematicDocument] = useState<NbtDocument | null>(null);
+  const [schematicExtension, setSchematicExtension] = useState('.schem');
   const [loadState, setLoadState] = useState<LoadState>('ready');
   const [error, setError] = useState('');
   const [visibleLayer, setVisibleLayer] = useState(model?.dimensions.height ? model.dimensions.height - 1 : 0);
@@ -92,6 +106,7 @@ function App() {
   const selectionPanelRef = useRef<HTMLElement | null>(null);
   const materialPanelRef = useRef<HTMLElement | null>(null);
   const layerPanelRef = useRef<HTMLElement | null>(null);
+  const schematicNameInputRef = useRef<HTMLInputElement | null>(null);
   const dragDepthRef = useRef(0);
   const visibleWorldY = model ? model.origin.y + visibleLayer : visibleLayer;
   const selectedBlockWorldX = selectedBlock && model ? model.origin.x + selectedBlock.x : null;
@@ -174,6 +189,7 @@ function App() {
     : '';
   const totalBlocks = model?.blocks.length ?? 0;
   const isDarkTheme = theme === 'dark';
+  const canSaveSchematic = Boolean(model && schematicDocument && schematicName.trim());
 
   useEffect(() => {
     if (materialsScope === 'cuboid' && !cuboidBounds) {
@@ -196,6 +212,17 @@ function App() {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem('schemview-theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (!isEditingSchematicName) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      schematicNameInputRef.current?.focus();
+      schematicNameInputRef.current?.select();
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [isEditingSchematicName]);
 
   useEffect(() => {
     if (!model || !selectedBlock) {
@@ -244,9 +271,13 @@ function App() {
 
     try {
       const buffer = await file.arrayBuffer();
-      const parsed = parseSchematic(buffer, { fileName: file.name });
-      setModel(parsed);
-      setVisibleLayer(parsed.dimensions.height - 1);
+      const parsed = parseSchematicDocument(buffer, { fileName: file.name });
+      setModel(parsed.model);
+      setSchematicName(parsed.model.name);
+      setIsEditingSchematicName(false);
+      setSchematicDocument(parsed.nbt);
+      setSchematicExtension(fileExtension(file.name));
+      setVisibleLayer(parsed.model.dimensions.height - 1);
       setSingleLayer(false);
       setSelectedBlock(null);
       setExpandedMaterialIds(new Set());
@@ -260,6 +291,38 @@ function App() {
     } catch (caught) {
       setLoadState('error');
       setError(caught instanceof Error ? caught.message : 'Could not read this schematic file.');
+    }
+  };
+
+  const commitSchematicName = () => {
+    if (!model) return;
+
+    const nextName = schematicName.trim() || model.name;
+    setSchematicName(nextName);
+    setModel((current) => (current ? { ...current, name: nextName } : current));
+    setIsEditingSchematicName(false);
+  };
+
+  const exportRenamedSchematic = () => {
+    if (!model || !schematicDocument) return;
+
+    const nextName = schematicName.trim();
+    try {
+      renameSchematicDocument(schematicDocument, model.source, nextName);
+      const bytes = writeNbt(schematicDocument);
+      const arrayBuffer = new ArrayBuffer(bytes.byteLength);
+      new Uint8Array(arrayBuffer).set(bytes);
+      const blob = new Blob([arrayBuffer], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${safeFileBaseName(nextName)}${schematicExtension}`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setModel((current) => (current ? { ...current, name: nextName } : current));
+      setError('');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not export this schematic file.');
     }
   };
 
@@ -421,11 +484,57 @@ function App() {
             <strong>SchemView</strong>
           </div>
           <div className="file-lockup">
-            <h1>{model ? model.name : 'Minecraft schematic viewer'}</h1>
+            {model ? (
+              <div className={`schematic-title${isEditingSchematicName ? ' is-editing' : ''}`}>
+                {isEditingSchematicName ? (
+                  <input
+                    ref={schematicNameInputRef}
+                    type="text"
+                    value={schematicName}
+                    onBlur={commitSchematicName}
+                    onChange={(event) => setSchematicName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.currentTarget.blur();
+                      }
+                      if (event.key === 'Escape') {
+                        setSchematicName(model.name);
+                        setIsEditingSchematicName(false);
+                      }
+                    }}
+                    aria-label="Schematic name"
+                  />
+                ) : (
+                  <h1>{schematicName}</h1>
+                )}
+                <button
+                  type="button"
+                  className="schematic-title-edit"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => setIsEditingSchematicName(true)}
+                  title="Edit schematic name"
+                  aria-label="Edit schematic name"
+                >
+                  <Pencil size={14} />
+                </button>
+              </div>
+            ) : (
+              <h1>Minecraft schematic viewer</h1>
+            )}
           </div>
         </div>
 
         <div className="topbar-actions">
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={exportRenamedSchematic}
+            disabled={!canSaveSchematic}
+            title={schematicDocument ? 'Export schematic with current name' : 'Upload a schematic before exporting'}
+          >
+            <Download size={16} />
+            Export
+          </button>
           <button className="primary-button" type="button" onClick={() => inputRef.current?.click()}>
             <Upload size={17} />
             Upload
@@ -1173,6 +1282,23 @@ function clamp(value: number, min: number, max: number) {
 
 function hasFiles(event: React.DragEvent<HTMLElement>) {
   return Array.from(event.dataTransfer.types).includes('Files');
+}
+
+function fileExtension(fileName: string): string {
+  const match = /\.[a-z0-9]+$/i.exec(fileName);
+  return match ? match[0] : '.schem';
+}
+
+function safeFileBaseName(name: string): string {
+  const safeName = name
+    .trim()
+    .replace(/\.[a-z0-9]+$/i, '')
+    .replace(/[<>:"/\\|?*\x00-\x1f]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/^\.+/, '')
+    .trim();
+
+  return safeName || 'renamed-schematic';
 }
 
 export default App;

@@ -202,6 +202,68 @@ h2 {
   gap: 10px;
 }
 
+.schematic-title {
+  display: grid;
+  grid-template-columns: minmax(0, auto) 30px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.schematic-title h1 {
+  min-width: 0;
+}
+
+.schematic-title input {
+  width: min(44vw, 460px);
+  min-width: 180px;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper-strong);
+  color: var(--ink);
+  font-size: clamp(1rem, 1.4vw, 1.18rem);
+  font-weight: 850;
+  line-height: 1.1;
+  outline: 0;
+}
+
+.schematic-title input:focus {
+  border-color: color-mix(in oklch, var(--teal), var(--line) 20%);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--teal), white 55%);
+}
+
+.schematic-title-edit {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--stone);
+  opacity: 0.78;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    opacity 160ms ease;
+}
+
+.schematic-title:hover .schematic-title-edit,
+.schematic-title.is-editing .schematic-title-edit,
+.schematic-title-edit:focus-visible {
+  opacity: 1;
+}
+
+.schematic-title-edit:hover {
+  border-color: var(--line);
+  background: var(--paper-strong);
+  color: var(--teal-strong);
+}
+
 .topbar-actions {
   justify-content: flex-end;
   gap: 8px;
@@ -1390,6 +1452,12 @@ dd {
   }
 
   .file-lockup {
+    width: 100%;
+  }
+
+  .schematic-title,
+  .schematic-title input {
+    min-width: 0;
     width: 100%;
   }
 
