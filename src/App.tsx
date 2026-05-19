@@ -23,8 +23,6 @@ import {
   Rotate3D,
   ScanSearch,
   Search,
-  Star,
-  StarOff,
   Sun,
   Upload,
   X,
@@ -402,7 +400,7 @@ function App() {
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit');
   const [editTool, setEditTool] = useState<EditTool>('select');
   const [selectedBuildBlock, setSelectedBuildBlock] = useState(emptyBuildBlock);
-  const [hotbarBlocks, setHotbarBlocks] = useState<string[]>([]);
+  const [recentBuildBlocks, setRecentBuildBlocks] = useState<string[]>([]);
   const [blockSearch, setBlockSearch] = useState('');
   const [blockLibraryDisplay, setBlockLibraryDisplay] = useState<BlockLibraryDisplay>('creative');
   const [replaceFromBlock, setReplaceFromBlock] = useState('');
@@ -674,7 +672,7 @@ function App() {
     setMaterialsScope('build');
     setEditTool('select');
     setSelectedBuildBlock(emptyBuildBlock);
-    setHotbarBlocks([]);
+    setRecentBuildBlocks([]);
     setBlockSearch('');
     setBlockLibraryDisplay('creative');
     setReplaceFromBlock(nextModel.blocks[0]?.stateKey ?? '');
@@ -1034,13 +1032,11 @@ function App() {
     setEditNotice(`${formatBlockName(selectedBlock.name)} rotated ${rotationLabel(direction)}.`);
   };
 
-  const toggleHotbarBlock = (stateKey: string) => {
+  const chooseBuildBlock = (stateKey: string) => {
     setSelectedBuildBlock(stateKey);
     setReplaceToBlock(stateKey);
-    setHotbarBlocks((current) => {
-      if (current.includes(stateKey)) return current.filter((block) => block !== stateKey);
-      return [...current.slice(-(9 - 1)), stateKey];
-    });
+    if (stateKey === emptyBuildBlock) return;
+    setRecentBuildBlocks((current) => [stateKey, ...current.filter((block) => block !== stateKey)]);
   };
 
   const stepCuboidCorner = (corner: CuboidCornerId, axis: 'x' | 'y' | 'z', delta: number) => {
@@ -1362,19 +1358,16 @@ function App() {
             </section>
           )}
 
-          {model && appView === 'edit' && hotbarBlocks.length > 0 && (
-            <div className="edit-hotbar" role="toolbar" aria-label="Favorite build blocks">
-              {hotbarBlocks.map((stateKey, index) => {
+          {model && appView === 'edit' && recentBuildBlocks.length > 0 && (
+            <div className="edit-hotbar" role="toolbar" aria-label="Recently used build blocks">
+              {recentBuildBlocks.map((stateKey, index) => {
                 const preview = createVoxelBlock(0, 0, 0, stateKey);
                 return (
                   <button
                     type="button"
                     key={`${stateKey}-${index}`}
                     className={selectedBuildBlock === stateKey ? 'is-active' : ''}
-                    onClick={() => {
-                      setSelectedBuildBlock(stateKey);
-                      setReplaceToBlock(stateKey);
-                    }}
+                    onClick={() => chooseBuildBlock(stateKey)}
                     title={formatBlockName(stateKey)}
                     aria-label={`Use ${formatBlockName(stateKey)}`}
                     aria-pressed={selectedBuildBlock === stateKey}
@@ -1889,35 +1882,22 @@ function App() {
                         </div>
                         <div className="block-library-tile-grid">
                           {group.items.map((item) => {
-                            const isHotbar = hotbarBlocks.includes(item.stateKey);
                             const isSelected = selectedBuildBlock === item.stateKey;
 
                             return (
                               <div
-                                className={`block-library-tile${isSelected ? ' is-selected' : ''}${isHotbar ? ' is-hotbar' : ''}`}
+                                className={`block-library-tile${isSelected ? ' is-selected' : ''}`}
                                 key={item.stateKey}
+                                data-tooltip={item.label}
                               >
                                 <button
                                   type="button"
                                   className="block-library-pick"
-                                  onClick={() => {
-                                    setSelectedBuildBlock(item.stateKey);
-                                    setReplaceToBlock(item.stateKey);
-                                  }}
-                                  title={item.label}
+                                  onClick={() => chooseBuildBlock(item.stateKey)}
                                   aria-label={`Use ${item.label}`}
                                   aria-pressed={isSelected}
                                 >
                                   <BlockPreview stateKey={item.stateKey} color={item.color} />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="block-library-favorite"
-                                  onClick={() => toggleHotbarBlock(item.stateKey)}
-                                  title={isHotbar ? 'Remove from hotbar' : 'Add to hotbar'}
-                                  aria-label={isHotbar ? `Remove ${item.label} from hotbar` : `Add ${item.label} to hotbar`}
-                                >
-                                  {isHotbar ? <StarOff size={12} /> : <Star size={12} />}
                                 </button>
                               </div>
                             );
