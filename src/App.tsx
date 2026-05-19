@@ -60,6 +60,7 @@ type AppView = 'inspect' | 'edit';
 type EditTool = 'select' | 'build';
 type Theme = 'light' | 'dark';
 type MaterialsScope = 'build' | 'cuboid';
+type BlockLibraryDisplay = 'creative' | 'color';
 type CuboidCornerId = 'a' | 'b';
 type Direction = 'up' | 'down' | 'north' | 'south' | 'west' | 'east';
 type RotationDirection = 'clockwise' | 'counterclockwise';
@@ -97,6 +98,42 @@ interface MaterialSummary {
   stateKey: string;
 }
 
+interface BlockLibraryItem {
+  stateKey: string;
+  label: string;
+  color: number;
+  category: CreativeCategoryId;
+  colorGroup: ColorGroupId;
+}
+
+interface BlockLibraryGroup {
+  id: string;
+  label: string;
+  items: BlockLibraryItem[];
+}
+
+type CreativeCategoryId =
+  | 'building_blocks'
+  | 'colored_blocks'
+  | 'natural_blocks'
+  | 'functional_blocks'
+  | 'redstone_blocks'
+  | 'tools_and_utilities';
+
+type ColorGroupId =
+  | 'white'
+  | 'gray'
+  | 'black'
+  | 'brown'
+  | 'red'
+  | 'orange'
+  | 'yellow'
+  | 'green'
+  | 'cyan'
+  | 'blue'
+  | 'purple'
+  | 'pink';
+
 const schematicFileExtensions = new Set(['.litematic', '.schem', '.schematic', '.nbt']);
 const defaultSchematicFileName = 'Medieval House.litematic';
 const themeStorageKey = 'schematic-editor-theme';
@@ -129,6 +166,28 @@ const commonBuildBlocks = [
   'minecraft:redstone',
   'minecraft:white_wool',
   'minecraft:black_concrete',
+];
+const creativeCategoryOrder: Array<{ id: CreativeCategoryId; label: string }> = [
+  { id: 'building_blocks', label: 'Building Blocks' },
+  { id: 'colored_blocks', label: 'Colored Blocks' },
+  { id: 'natural_blocks', label: 'Natural Blocks' },
+  { id: 'functional_blocks', label: 'Functional Blocks' },
+  { id: 'redstone_blocks', label: 'Redstone Blocks' },
+  { id: 'tools_and_utilities', label: 'Tools & Utilities' },
+];
+const colorGroupOrder: Array<{ id: ColorGroupId; label: string }> = [
+  { id: 'white', label: 'White & Light' },
+  { id: 'gray', label: 'Gray' },
+  { id: 'black', label: 'Black' },
+  { id: 'brown', label: 'Brown' },
+  { id: 'red', label: 'Red' },
+  { id: 'orange', label: 'Orange' },
+  { id: 'yellow', label: 'Yellow' },
+  { id: 'green', label: 'Green' },
+  { id: 'cyan', label: 'Cyan' },
+  { id: 'blue', label: 'Blue' },
+  { id: 'purple', label: 'Purple' },
+  { id: 'pink', label: 'Pink' },
 ];
 const blockstateFiles = import.meta.glob('/public/minecraft-assets/assets/minecraft/blockstates/*.json', {
   query: '?url',
@@ -169,6 +228,7 @@ function App() {
   const [selectedBuildBlock, setSelectedBuildBlock] = useState(defaultHotbarBlocks[0]);
   const [hotbarBlocks, setHotbarBlocks] = useState<string[]>(defaultHotbarBlocks);
   const [blockSearch, setBlockSearch] = useState('');
+  const [blockLibraryDisplay, setBlockLibraryDisplay] = useState<BlockLibraryDisplay>('creative');
   const [replaceFromBlock, setReplaceFromBlock] = useState('');
   const [replaceToBlock, setReplaceToBlock] = useState(defaultHotbarBlocks[0]);
   const [editNotice, setEditNotice] = useState('');
@@ -265,7 +325,7 @@ function App() {
   const isDarkTheme = theme === 'dark';
   const canSaveSchematic = Boolean(model && schematicName.trim());
   const selectedBuildBlockPreview = useMemo(() => createVoxelBlock(0, 0, 0, selectedBuildBlock), [selectedBuildBlock]);
-  const editAvailableBlocks = useMemo(() => {
+  const allBuildBlocks = useMemo(() => {
     const fromAssets = Object.keys(blockstateFiles)
       .map((path) => {
         const fileName = path.split('/').at(-1) ?? '';
@@ -274,16 +334,39 @@ function App() {
       .filter(Boolean);
     const fromModel = model?.blocks.map((block) => block.stateKey) ?? [];
     const allBlocks = new Set([...commonBuildBlocks, ...fromModel, ...fromAssets]);
+
+    return Array.from(allBlocks).sort(compareBlockLibraryItems);
+  }, [model]);
+
+  const blockLibraryItems = useMemo<BlockLibraryItem[]>(() => (
+    allBuildBlocks.map((stateKey) => {
+      const preview = createVoxelBlock(0, 0, 0, stateKey);
+      return {
+        stateKey,
+        label: formatBlockName(stateKey),
+        color: preview.color,
+        category: creativeCategoryForBlock(stateKey),
+        colorGroup: colorGroupForColor(preview.color),
+      };
+    })
+  ), [allBuildBlocks]);
+
+  const filteredBlockLibraryItems = useMemo(() => {
     const query = blockSearch.trim().toLocaleLowerCase();
 
-    return Array.from(allBlocks)
-      .filter((stateKey) => {
+    return blockLibraryItems.filter((item) => {
         if (!query) return true;
-        const label = formatBlockName(stateKey).toLocaleLowerCase();
-        return stateKey.toLocaleLowerCase().includes(query) || label.includes(query);
-      })
-      .sort((a, b) => formatBlockName(a).localeCompare(formatBlockName(b)));
-  }, [blockSearch, model]);
+        return item.stateKey.toLocaleLowerCase().includes(query) || item.label.toLocaleLowerCase().includes(query);
+      });
+  }, [blockLibraryItems, blockSearch]);
+
+  const blockLibraryGroups = useMemo<BlockLibraryGroup[]>(() => (
+    blockLibraryDisplay === 'creative'
+      ? groupBlocksByCreativeCategory(filteredBlockLibraryItems)
+      : groupBlocksByColor(filteredBlockLibraryItems)
+  ), [blockLibraryDisplay, filteredBlockLibraryItems]);
+
+  const visibleBlockLibraryCount = filteredBlockLibraryItems.length;
 
   useEffect(() => {
     if (materialsScope === 'cuboid' && !cuboidBounds) {
@@ -417,6 +500,7 @@ function App() {
     setSelectedBuildBlock(defaultHotbarBlocks[0]);
     setHotbarBlocks(defaultHotbarBlocks);
     setBlockSearch('');
+    setBlockLibraryDisplay('creative');
     setReplaceFromBlock(nextModel.blocks[0]?.stateKey ?? '');
     setReplaceToBlock(defaultHotbarBlocks[0]);
     setEditNotice('');
@@ -1627,8 +1711,26 @@ function App() {
                   <div className="section-heading compact">
                     <div>
                       <h2>Block Library</h2>
-                      <p className="eyebrow">{editAvailableBlocks.length.toLocaleString()} blocks</p>
+                      <p className="eyebrow">{visibleBlockLibraryCount.toLocaleString()} blocks</p>
                     </div>
+                  </div>
+                  <div className="block-library-display" role="group" aria-label="Block library display">
+                    <button
+                      type="button"
+                      className={blockLibraryDisplay === 'creative' ? 'is-active' : ''}
+                      onClick={() => setBlockLibraryDisplay('creative')}
+                      aria-pressed={blockLibraryDisplay === 'creative'}
+                    >
+                      Creative
+                    </button>
+                    <button
+                      type="button"
+                      className={blockLibraryDisplay === 'color' ? 'is-active' : ''}
+                      onClick={() => setBlockLibraryDisplay('color')}
+                      aria-pressed={blockLibraryDisplay === 'color'}
+                    >
+                      Color
+                    </button>
                   </div>
                   <label className="material-search">
                     <Search size={16} aria-hidden="true" />
@@ -1641,35 +1743,45 @@ function App() {
                     />
                   </label>
                   <div className="block-library-list">
-                    {editAvailableBlocks.slice(0, 180).map((stateKey) => {
-                      const preview = createVoxelBlock(0, 0, 0, stateKey);
-                      const isHotbar = hotbarBlocks.includes(stateKey);
-
-                      return (
-                        <div className={`block-library-row${selectedBuildBlock === stateKey ? ' is-selected' : ''}`} key={stateKey}>
-                          <button
-                            type="button"
-                            className="block-library-pick"
-                            onClick={() => {
-                              setSelectedBuildBlock(stateKey);
-                              setReplaceToBlock(stateKey);
-                            }}
-                          >
-                            <BlockPreview stateKey={stateKey} color={preview.color} />
-                            <span>{formatBlockName(stateKey)}</span>
-                          </button>
-                          <button
-                            type="button"
-                            className="material-visibility"
-                            onClick={() => toggleHotbarBlock(stateKey)}
-                            title={isHotbar ? 'Remove from hotbar' : 'Add to hotbar'}
-                            aria-label={isHotbar ? `Remove ${formatBlockName(stateKey)} from hotbar` : `Add ${formatBlockName(stateKey)} to hotbar`}
-                          >
-                            {isHotbar ? <StarOff size={15} /> : <Star size={15} />}
-                          </button>
+                    {blockLibraryGroups.map((group) => (
+                      <section className="block-library-group" key={group.id} aria-label={group.label}>
+                        <div className="block-library-group-heading">
+                          <span>{group.label}</span>
+                          <strong>{group.items.length.toLocaleString()}</strong>
                         </div>
-                      );
-                    })}
+                        {group.items.map((item) => {
+                          const isHotbar = hotbarBlocks.includes(item.stateKey);
+
+                          return (
+                            <div className={`block-library-row${selectedBuildBlock === item.stateKey ? ' is-selected' : ''}`} key={item.stateKey}>
+                              <button
+                                type="button"
+                                className="block-library-pick"
+                                onClick={() => {
+                                  setSelectedBuildBlock(item.stateKey);
+                                  setReplaceToBlock(item.stateKey);
+                                }}
+                              >
+                                <BlockPreview stateKey={item.stateKey} color={item.color} />
+                                <span>{item.label}</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="material-visibility"
+                                onClick={() => toggleHotbarBlock(item.stateKey)}
+                                title={isHotbar ? 'Remove from hotbar' : 'Add to hotbar'}
+                                aria-label={isHotbar ? `Remove ${item.label} from hotbar` : `Add ${item.label} to hotbar`}
+                              >
+                                {isHotbar ? <StarOff size={15} /> : <Star size={15} />}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </section>
+                    ))}
+                    {blockLibraryGroups.length === 0 && (
+                      <p className="material-empty">No blocks match that search.</p>
+                    )}
                   </div>
                 </section>
 
@@ -1699,7 +1811,7 @@ function App() {
                     <label>
                       <span>Replace With</span>
                       <select value={replaceToBlock} onChange={(event) => setReplaceToBlock(event.target.value)}>
-                        {editAvailableBlocks.slice(0, 400).map((stateKey) => (
+                        {allBuildBlocks.map((stateKey) => (
                           <option key={stateKey} value={stateKey}>{formatBlockName(stateKey)}</option>
                         ))}
                       </select>
@@ -1755,9 +1867,33 @@ function App() {
 }
 
 function BlockPreview({ stateKey, color }: { stateKey: string; color: number }) {
+  const previewRef = useRef<HTMLSpanElement | null>(null);
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
+  const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
+    const preview = previewRef.current;
+    if (!preview) return;
+
+    if (typeof IntersectionObserver === 'undefined') {
+      setIsVisible(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setIsVisible(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '160px' });
+
+    observer.observe(preview);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!isVisible) return;
+
     let cancelled = false;
     setThumbnailUrl(null);
     void createBlockThumbnail(stateKey, color).then((url) => {
@@ -1768,12 +1904,13 @@ function BlockPreview({ stateKey, color }: { stateKey: string; color: number }) 
     return () => {
       cancelled = true;
     };
-  }, [color, stateKey]);
+  }, [color, isVisible, stateKey]);
 
   const fallbackColor = `#${color.toString(16).padStart(6, '0')}`;
 
   return (
     <span
+      ref={previewRef}
       className="block-preview"
       data-shape="thumbnail"
       aria-hidden="true"
@@ -1848,6 +1985,168 @@ function CuboidCornerControls({
 
 function materialIdForBlock(block: VoxelBlock): string {
   return block.stateKey.split('[', 1)[0];
+}
+
+function compareBlockLibraryItems(a: string, b: string): number {
+  const categoryDelta = creativeCategoryRank(creativeCategoryForBlock(a)) - creativeCategoryRank(creativeCategoryForBlock(b));
+  if (categoryDelta !== 0) return categoryDelta;
+  return formatBlockName(a).localeCompare(formatBlockName(b));
+}
+
+function groupBlocksByCreativeCategory(items: BlockLibraryItem[]): BlockLibraryGroup[] {
+  return creativeCategoryOrder.flatMap((category) => {
+    const categoryItems = items
+      .filter((item) => item.category === category.id)
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    return categoryItems.length > 0 ? [{ id: category.id, label: category.label, items: categoryItems }] : [];
+  });
+}
+
+function groupBlocksByColor(items: BlockLibraryItem[]): BlockLibraryGroup[] {
+  return colorGroupOrder.flatMap((group) => {
+    const groupItems = items
+      .filter((item) => item.colorGroup === group.id)
+      .sort(compareBlocksByColor);
+
+    return groupItems.length > 0 ? [{ id: group.id, label: group.label, items: groupItems }] : [];
+  });
+}
+
+function creativeCategoryRank(id: CreativeCategoryId): number {
+  return creativeCategoryOrder.findIndex((category) => category.id === id);
+}
+
+function creativeCategoryForBlock(stateKey: string): CreativeCategoryId {
+  const id = baseBlockId(stateKey);
+
+  if (isColoredBlock(id)) return 'colored_blocks';
+  if (isRedstoneBlock(id)) return 'redstone_blocks';
+  if (isFunctionalBlock(id)) return 'functional_blocks';
+  if (isToolUtilityBlock(id)) return 'tools_and_utilities';
+  if (isNaturalBlock(id)) return 'natural_blocks';
+  return 'building_blocks';
+}
+
+function isColoredBlock(id: string): boolean {
+  return /(^|_)(wool|carpet|concrete|concrete_powder|terracotta|glazed_terracotta|stained_glass|stained_glass_pane|candle|banner|shulker_box|bed)$/.test(id)
+    || colorNameFromBlock(id) !== null;
+}
+
+function isNaturalBlock(id: string): boolean {
+  return /(^|_)(dirt|grass_block|podzol|mycelium|sand|gravel|clay|mud|snow|ice|nylium|netherrack|soul_sand|soul_soil|end_stone|obsidian|ore|leaves|log|wood|stem|hyphae|roots|vine|moss|coral|kelp|seagrass|sapling|flower|tulip|orchid|allium|bluet|daisy|dandelion|poppy|fern|bush|cactus|mushroom|fungus|wart|crop|wheat|carrots|potatoes|beetroots|melon|pumpkin|bamboo|sugar_cane|dripstone|amethyst|calcite|tuff|deepslate|basalt|blackstone|granite|diorite|andesite)$/.test(id)
+    || id.includes('azalea')
+    || id.includes('mangrove_propagule');
+}
+
+function isFunctionalBlock(id: string): boolean {
+  return /(^|_)(crafting_table|furnace|blast_furnace|smoker|campfire|anvil|grindstone|stonecutter|cartography_table|fletching_table|smithing_table|loom|lectern|brewing_stand|cauldron|composter|barrel|chest|trapped_chest|ender_chest|shulker_box|enchanting_table|beacon|conduit|jukebox|note_block|bell|bed|respawn_anchor|lodestone|bookshelf|decorated_pot|flower_pot|lantern|torch|soul_torch|chain|ladder|scaffolding|glass_pane|door|trapdoor|fence|fence_gate|wall|sign|hanging_sign|shelf)$/.test(id);
+}
+
+function isRedstoneBlock(id: string): boolean {
+  return /(^|_)(redstone|repeater|comparator|piston|observer|dispenser|dropper|hopper|target|lever|button|pressure_plate|tripwire|daylight_detector|sculk_sensor|calibrated_sculk_sensor|rail|powered_rail|detector_rail|activator_rail|tnt|crafter|copper_bulb|lightning_rod|command_block|structure_block|jigsaw)$/.test(id);
+}
+
+function isToolUtilityBlock(id: string): boolean {
+  return /(^|_)(air|water|lava|light|barrier|structure_void|moving_piston|end_portal|nether_portal|spawner|trial_spawner|vault)$/.test(id);
+}
+
+function colorGroupForColor(color: number): ColorGroupId {
+  const namedColor = colorNameFromBlockColor(color);
+  if (namedColor) return namedColor;
+
+  const { hue, saturation, lightness } = rgbToHsl(color);
+  if (lightness >= 0.82 && saturation < 0.32) return 'white';
+  if (lightness <= 0.18) return 'black';
+  if (saturation < 0.18) return 'gray';
+  if (hue < 15 || hue >= 345) return 'red';
+  if (hue < 48 && lightness < 0.42) return 'brown';
+  if (hue < 42) return 'orange';
+  if (hue < 70) return 'yellow';
+  if (hue < 155) return 'green';
+  if (hue < 195) return 'cyan';
+  if (hue < 255) return 'blue';
+  if (hue < 300) return 'purple';
+  if (hue < 345) return 'pink';
+  return 'gray';
+}
+
+function colorNameFromBlockColor(color: number): ColorGroupId | null {
+  const { hue, saturation, lightness } = rgbToHsl(color);
+  if (lightness > 0.88 && saturation < 0.2) return 'white';
+  if (lightness < 0.12) return 'black';
+  return null;
+}
+
+function compareBlocksByColor(a: BlockLibraryItem, b: BlockLibraryItem): number {
+  const aHsl = rgbToHsl(a.color);
+  const bHsl = rgbToHsl(b.color);
+  return aHsl.hue - bHsl.hue
+    || bHsl.saturation - aHsl.saturation
+    || aHsl.lightness - bHsl.lightness
+    || a.label.localeCompare(b.label);
+}
+
+function rgbToHsl(color: number): { hue: number; saturation: number; lightness: number } {
+  const r = ((color >> 16) & 255) / 255;
+  const g = ((color >> 8) & 255) / 255;
+  const b = (color & 255) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const lightness = (max + min) / 2;
+  const delta = max - min;
+
+  if (delta === 0) return { hue: 0, saturation: 0, lightness };
+
+  const saturation = delta / (1 - Math.abs(2 * lightness - 1));
+  let hue = 0;
+  if (max === r) hue = 60 * (((g - b) / delta) % 6);
+  else if (max === g) hue = 60 * ((b - r) / delta + 2);
+  else hue = 60 * ((r - g) / delta + 4);
+
+  return { hue: (hue + 360) % 360, saturation, lightness };
+}
+
+function baseBlockId(stateKey: string): string {
+  return stateKey.replace(/^minecraft:/, '').split('[', 1)[0];
+}
+
+function colorNameFromBlock(id: string): ColorGroupId | null {
+  const match = /^(white|light_gray|gray|black|brown|red|orange|yellow|lime|green|cyan|light_blue|blue|purple|magenta|pink)_/.exec(id);
+  if (!match) return null;
+
+  switch (match[1]) {
+    case 'white':
+    case 'light_gray':
+      return 'white';
+    case 'gray':
+      return 'gray';
+    case 'black':
+      return 'black';
+    case 'brown':
+      return 'brown';
+    case 'red':
+      return 'red';
+    case 'orange':
+      return 'orange';
+    case 'yellow':
+      return 'yellow';
+    case 'lime':
+    case 'green':
+      return 'green';
+    case 'cyan':
+    case 'light_blue':
+      return 'cyan';
+    case 'blue':
+      return 'blue';
+    case 'purple':
+    case 'magenta':
+      return 'purple';
+    case 'pink':
+      return 'pink';
+    default:
+      return null;
+  }
 }
 
 function summarizeMaterials(blocks: VoxelBlock[]): MaterialSummary[] {
