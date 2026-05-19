@@ -10,7 +10,6 @@ import {
   Download,
   Eye,
   EyeOff,
-  Eraser,
   FileUp,
   Focus,
   Layers,
@@ -57,7 +56,7 @@ type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 type DraggedFileKind = 'none' | 'unsupported-file' | 'unknown-file' | 'schematic-file';
 type InspectorTab = 'selection' | 'materials' | 'layers';
 type AppView = 'inspect' | 'edit';
-type EditTool = 'select' | 'paint' | 'erase';
+type EditTool = 'select' | 'build';
 type Theme = 'light' | 'dark';
 type MaterialsScope = 'build' | 'cuboid';
 type CuboidCornerId = 'a' | 'b';
@@ -559,13 +558,13 @@ function App() {
     window.requestAnimationFrame(() => panel.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
   };
 
-  const beginCuboidSelection = (resetSelection = false) => {
+  const beginCuboidSelection = (resetSelection = false, revealViewPanel = appView === 'inspect') => {
     if (resetSelection) {
       setCuboidCorners(emptyCuboidCorners());
       setMaterialsScope('build');
     }
     setCuboidSelectionMode(true);
-    showPanel('selection');
+    if (revealViewPanel) showPanel('selection');
   };
 
   const openInspectorPanel = (tab: InspectorTab) => {
@@ -575,10 +574,28 @@ function App() {
 
   const activateEditTool = (tool: EditTool) => {
     setAppView('edit');
+    setCuboidSelectionMode(false);
     setEditTool(tool);
   };
 
   const handleBlockSelect = (block: VoxelBlock | null, button: SelectionButton, placementPoint: PlacementPoint | null) => {
+    if (cuboidSelectionMode && (appView === 'edit' || inspectorTab === 'selection')) {
+      if (!block || !model) {
+        setSelectedBlock(null);
+        return;
+      }
+
+      setSelectedBlock(block);
+      const corner = button === 'secondary' ? 'b' : 'a';
+      const otherCorner = corner === 'a' ? cuboidCorners.b : cuboidCorners.a;
+      setCuboidCorners((current) => ({
+        ...current,
+        [corner]: pointFromBlock(block),
+      }));
+      if (otherCorner) setMaterialsScope('cuboid');
+      return;
+    }
+
     if (appView === 'edit') {
       if (button === 'secondary') {
         if (!placementPoint) {
@@ -599,36 +616,15 @@ function App() {
       }
 
       setSelectedBlock(block);
-      if (editTool === 'paint') {
-        paintBlock(block);
+      if (editTool === 'build') {
+        eraseBlock(block);
         return;
       }
-      if (editTool === 'erase') {
-        eraseBlock(block);
-      }
       return;
     }
 
-    if (!cuboidSelectionMode || inspectorTab !== 'selection') {
-      if (button !== 'primary') return;
-      setSelectedBlock(block);
-      return;
-    }
-
-    if (!block || !model) {
-      setSelectedBlock(null);
-      return;
-    }
-
+    if (button !== 'primary') return;
     setSelectedBlock(block);
-    const corner = button === 'secondary' ? 'b' : 'a';
-    const otherCorner = corner === 'a' ? cuboidCorners.b : cuboidCorners.a;
-    setCuboidCorners((current) => ({
-      ...current,
-      [corner]: pointFromBlock(block),
-    }));
-    if (otherCorner) setMaterialsScope('cuboid');
-    setInspectorTab('selection');
   };
 
   const clearCuboidSelection = () => {
@@ -673,12 +669,30 @@ function App() {
     return true;
   };
 
-  const paintBlock = (block: VoxelBlock, stateKey = selectedBuildBlock) => {
-    setBlockAt(block.x, block.y, block.z, stateKey);
-  };
-
   const eraseBlock = (block: VoxelBlock) => {
     setBlockAt(block.x, block.y, block.z, 'minecraft:air');
+  };
+
+  const deleteSelection = () => {
+    if (!model) return false;
+
+    if (cuboidBounds) {
+      const removedCount = model.blocks.filter((block) => blockInBounds(block, cuboidBounds)).length;
+      if (removedCount === 0) {
+        setEditNotice('Selected area is already empty.');
+        return false;
+      }
+      updateModelBlocks((blocks) => blocks.filter((block) => !blockInBounds(block, cuboidBounds)));
+      setEditNotice(`${removedCount.toLocaleString()} block${removedCount === 1 ? '' : 's'} removed.`);
+      return true;
+    }
+
+    if (selectedBlock) {
+      eraseBlock(selectedBlock);
+      return true;
+    }
+
+    return false;
   };
 
   const placeAdjacentBlock = (direction: Direction) => {
@@ -778,6 +792,28 @@ function App() {
       };
     });
   };
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (appView !== 'edit' || (event.key !== 'Delete' && event.key !== 'Backspace')) return;
+
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName;
+      if (
+        target?.isContentEditable
+        || tagName === 'INPUT'
+        || tagName === 'TEXTAREA'
+        || tagName === 'SELECT'
+      ) {
+        return;
+      }
+
+      if (deleteSelection()) event.preventDefault();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [appView, deleteSelection]);
 
   return (
     <main
@@ -888,23 +924,13 @@ function App() {
                 </button>
                 <button
                   type="button"
-                  className={editTool === 'paint' ? 'is-active' : ''}
-                  onClick={() => activateEditTool('paint')}
-                  aria-pressed={editTool === 'paint'}
-                  title="Paint selected block"
+                  className={editTool === 'build' ? 'is-active' : ''}
+                  onClick={() => activateEditTool('build')}
+                  aria-pressed={editTool === 'build'}
+                  title="Build selected block"
                 >
                   <Brush size={19} />
-                  <span>Paint</span>
-                </button>
-                <button
-                  type="button"
-                  className={editTool === 'erase' ? 'is-active' : ''}
-                  onClick={() => activateEditTool('erase')}
-                  aria-pressed={editTool === 'erase'}
-                  title="Erase selected block"
-                >
-                  <Eraser size={19} />
-                  <span>Erase</span>
+                  <span>Build</span>
                 </button>
               </>
             ) : (
@@ -1124,7 +1150,7 @@ function App() {
                 className={cuboidSelectionMode ? 'is-active' : ''}
                 onClick={() => {
                   setCuboidSelectionMode((current) => !current);
-                  showPanel('selection');
+                  if (appView === 'inspect') showPanel('selection');
                 }}
                 title={cuboidSelectionMode ? 'Area selection is active' : 'Select area'}
                 aria-pressed={cuboidSelectionMode}
@@ -1465,7 +1491,7 @@ function App() {
                   <button
                     type="button"
                     className={editTool === 'select' ? 'is-active' : ''}
-                    onClick={() => setEditTool('select')}
+                    onClick={() => activateEditTool('select')}
                     aria-pressed={editTool === 'select'}
                   >
                     <MousePointer2 size={17} />
@@ -1473,21 +1499,12 @@ function App() {
                   </button>
                   <button
                     type="button"
-                    className={editTool === 'paint' ? 'is-active' : ''}
-                    onClick={() => setEditTool('paint')}
-                    aria-pressed={editTool === 'paint'}
+                    className={editTool === 'build' ? 'is-active' : ''}
+                    onClick={() => activateEditTool('build')}
+                    aria-pressed={editTool === 'build'}
                   >
                     <Brush size={17} />
-                    Paint
-                  </button>
-                  <button
-                    type="button"
-                    className={editTool === 'erase' ? 'is-active' : ''}
-                    onClick={() => setEditTool('erase')}
-                    aria-pressed={editTool === 'erase'}
-                  >
-                    <Eraser size={17} />
-                    Erase
+                    Build
                   </button>
                 </div>
 
@@ -1500,14 +1517,6 @@ function App() {
                           {selectedBlockWorldX}, {selectedBlockWorldY}, {selectedBlockWorldZ}
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => paintBlock(selectedBlock)}
-                      >
-                        <Brush size={15} />
-                        Paint Here
-                      </button>
                     </div>
                     <div className="placement-grid" aria-label="Adjacent placement directions">
                       {(['up', 'down', 'north', 'south', 'west', 'east'] as Direction[]).map((direction) => (
@@ -1518,7 +1527,7 @@ function App() {
                     </div>
                   </section>
                 ) : (
-                  <p className="panel-empty">Select a block in the viewport, then paint it or place the active block beside it.</p>
+                  <p className="panel-empty">Select a block in the viewport, then build with it or place the active block beside it.</p>
                 )}
 
                 <section className="edit-transform-panel" aria-label="Rotate blocks">
@@ -1543,8 +1552,7 @@ function App() {
                       onClick={() => {
                         if (cuboidBounds) setMaterialsScope('cuboid');
                         else {
-                          setAppView('inspect');
-                          beginCuboidSelection();
+                          beginCuboidSelection(false, false);
                         }
                       }}
                     >
@@ -1662,8 +1670,7 @@ function App() {
                       onClick={() => {
                         if (cuboidBounds) setMaterialsScope('cuboid');
                         else {
-                          setAppView('inspect');
-                          beginCuboidSelection();
+                          beginCuboidSelection(false, false);
                         }
                       }}
                     >
