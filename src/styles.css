@@ -1275,7 +1275,8 @@ dd {
 }
 
 .edit-tool-grid button,
-.placement-grid button {
+.placement-grid button,
+.rotation-actions button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1296,7 +1297,8 @@ dd {
 }
 
 .edit-tool-grid button:hover,
-.placement-grid button:hover {
+.placement-grid button:hover,
+.rotation-actions button:hover {
   transform: translateY(-1px);
   border-color: color-mix(in oklch, var(--teal), var(--line) 45%);
   color: var(--teal-strong);
@@ -1310,15 +1312,24 @@ dd {
 
 .edit-placement-panel,
 .edit-library,
+.edit-transform-panel,
 .replace-panel {
   display: grid;
   gap: 10px;
 }
 
-.placement-grid {
+.placement-grid,
+.rotation-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
+}
+
+.placement-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.rotation-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .block-library-list {

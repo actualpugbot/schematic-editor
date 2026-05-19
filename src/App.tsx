@@ -20,6 +20,8 @@ import {
   Pencil,
   Plus,
   Replace,
+  RotateCcw,
+  RotateCw,
   Rotate3D,
   ScanSearch,
   Search,
@@ -61,6 +63,7 @@ type Theme = 'light' | 'dark';
 type MaterialsScope = 'build' | 'cuboid';
 type CuboidCornerId = 'a' | 'b';
 type Direction = 'up' | 'down' | 'north' | 'south' | 'west' | 'east';
+type RotationDirection = 'clockwise' | 'counterclockwise';
 
 interface PendingCuboidCorner {
   corner: CuboidCornerId;
@@ -692,6 +695,52 @@ function App() {
       return [createVoxelBlock(block.x, block.y, block.z, replaceToBlock)];
     }));
     setEditNotice(`${replacedCount.toLocaleString()} block${replacedCount === 1 ? '' : 's'} replaced.`);
+  };
+
+  const rotateSelection = (direction: RotationDirection) => {
+    if (!model) return;
+
+    if (materialsScope === 'cuboid' && cuboidBounds) {
+      const rotatedBounds = rotatedBoundsForYRotation(cuboidBounds);
+      if (!boundsInsideModel(rotatedBounds, model)) {
+        setEditNotice('Rotated area would extend outside the schematic bounds.');
+        return;
+      }
+
+      const sourceBlocks = model.blocks.filter((block) => blockInBounds(block, cuboidBounds));
+      const sourceKeys = keysForBounds(cuboidBounds);
+      const targetKeys = new Set(
+        Array.from(sourceKeys, (key) => pointKey(rotatePointInBounds(pointFromKey(key), cuboidBounds, direction))),
+      );
+      const rotatedBlocks = sourceBlocks.map((block) => {
+        const nextPoint = rotatePointInBounds(block, cuboidBounds, direction);
+        return rotateVoxelBlock(block, nextPoint, direction);
+      });
+
+      updateModelBlocks((blocks) => [
+        ...blocks.filter((block) => !sourceKeys.has(blockPositionKey(block)) && !targetKeys.has(blockPositionKey(block))),
+        ...rotatedBlocks,
+      ]);
+      setCuboidCorners({ a: boundsMinPoint(rotatedBounds), b: boundsMaxPoint(rotatedBounds) });
+      setSelectedBlock((current) => {
+        if (!current || !sourceKeys.has(blockPositionKey(current))) return null;
+        const nextPoint = rotatePointInBounds(current, cuboidBounds, direction);
+        return rotatedBlocks.find((block) => blockPositionKey(block) === pointKey(nextPoint)) ?? null;
+      });
+      setEditNotice(`${sourceBlocks.length.toLocaleString()} block${sourceBlocks.length === 1 ? '' : 's'} rotated ${rotationLabel(direction)}.`);
+      return;
+    }
+
+    if (!selectedBlock) {
+      setEditNotice('Select a block, or switch rotation scope to Selected Area.');
+      return;
+    }
+
+    const selectedKey = blockPositionKey(selectedBlock);
+    updateModelBlocks((blocks) => blocks.map((block) => (
+      blockPositionKey(block) === selectedKey ? rotateVoxelBlock(block, block, direction) : block
+    )));
+    setEditNotice(`${formatBlockName(selectedBlock.name)} rotated ${rotationLabel(direction)}.`);
   };
 
   const toggleHotbarBlock = (stateKey: string) => {
@@ -1416,6 +1465,56 @@ function App() {
                   <p className="panel-empty">Select a block in the viewport, then paint it or place the active block beside it.</p>
                 )}
 
+                <section className="edit-transform-panel" aria-label="Rotate blocks">
+                  <div className="section-heading compact">
+                    <div>
+                      <h2>Rotate</h2>
+                      <p className="eyebrow">{materialsScope === 'cuboid' && cuboidBounds ? 'Selected area' : 'Selected block'}</p>
+                    </div>
+                    <RotateCw size={18} />
+                  </div>
+                  <div className="segmented-control" role="group" aria-label="Rotation scope">
+                    <button
+                      type="button"
+                      className={materialsScope === 'build' ? 'is-active' : ''}
+                      onClick={() => setMaterialsScope('build')}
+                    >
+                      Block
+                    </button>
+                    <button
+                      type="button"
+                      className={materialsScope === 'cuboid' ? 'is-active' : ''}
+                      onClick={() => {
+                        if (cuboidBounds) setMaterialsScope('cuboid');
+                        else {
+                          setAppView('inspect');
+                          beginCuboidSelection();
+                        }
+                      }}
+                    >
+                      Selected Area
+                    </button>
+                  </div>
+                  <div className="rotation-actions">
+                    <button
+                      type="button"
+                      onClick={() => rotateSelection('counterclockwise')}
+                      disabled={materialsScope === 'cuboid' ? !cuboidBounds : !selectedBlock}
+                    >
+                      <RotateCcw size={16} />
+                      90 Left
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => rotateSelection('clockwise')}
+                      disabled={materialsScope === 'cuboid' ? !cuboidBounds : !selectedBlock}
+                    >
+                      <RotateCw size={16} />
+                      90 Right
+                    </button>
+                  </div>
+                </section>
+
                 <section className="edit-library" aria-label="Block library">
                   <div className="section-heading compact">
                     <div>
@@ -1755,8 +1854,192 @@ function pointInsideModel(point: CuboidPoint, model: SchematicModel): boolean {
   );
 }
 
+function boundsInsideModel(bounds: CuboidBounds, model: SchematicModel): boolean {
+  return (
+    bounds.minX >= 0
+    && bounds.maxX < model.dimensions.width
+    && bounds.minY >= 0
+    && bounds.maxY < model.dimensions.height
+    && bounds.minZ >= 0
+    && bounds.maxZ < model.dimensions.length
+  );
+}
+
 function compareBlocks(a: VoxelBlock, b: VoxelBlock): number {
   return a.y - b.y || a.z - b.z || a.x - b.x;
+}
+
+function rotatedBoundsForYRotation(bounds: CuboidBounds): CuboidBounds {
+  const dimensions = dimensionsForBounds(bounds);
+  return {
+    minX: bounds.minX,
+    minY: bounds.minY,
+    minZ: bounds.minZ,
+    maxX: bounds.minX + dimensions.length - 1,
+    maxY: bounds.maxY,
+    maxZ: bounds.minZ + dimensions.width - 1,
+  };
+}
+
+function boundsMinPoint(bounds: CuboidBounds): CuboidPoint {
+  return { x: bounds.minX, y: bounds.minY, z: bounds.minZ };
+}
+
+function boundsMaxPoint(bounds: CuboidBounds): CuboidPoint {
+  return { x: bounds.maxX, y: bounds.maxY, z: bounds.maxZ };
+}
+
+function rotatePointInBounds(point: CuboidPoint, bounds: CuboidBounds, direction: RotationDirection): CuboidPoint {
+  const localX = point.x - bounds.minX;
+  const localZ = point.z - bounds.minZ;
+  const dimensions = dimensionsForBounds(bounds);
+
+  if (direction === 'clockwise') {
+    return {
+      x: bounds.minX + dimensions.length - 1 - localZ,
+      y: point.y,
+      z: bounds.minZ + localX,
+    };
+  }
+
+  return {
+    x: bounds.minX + localZ,
+    y: point.y,
+    z: bounds.minZ + dimensions.width - 1 - localX,
+  };
+}
+
+function rotateVoxelBlock(block: VoxelBlock, point: CuboidPoint, direction: RotationDirection): VoxelBlock {
+  const stateKey = rotateBlockStateKeyY(block.stateKey, direction);
+  const nextBlock = stateKey === block.stateKey
+    ? { ...block }
+    : createVoxelBlock(point.x, point.y, point.z, stateKey);
+
+  return {
+    ...nextBlock,
+    x: point.x,
+    y: point.y,
+    z: point.z,
+    playerHeadTexture: block.playerHeadTexture,
+    decoratedPotDecorations: block.decoratedPotDecorations,
+  };
+}
+
+function rotateBlockStateKeyY(stateKey: string, direction: RotationDirection): string {
+  const parsed = parseStateKey(stateKey);
+  if (!parsed) return stateKey;
+
+  const nextProperties = { ...parsed.properties };
+  rotateHorizontalPropertyNames(nextProperties, direction);
+
+  if (isHorizontalDirection(nextProperties.facing)) {
+    nextProperties.facing = rotateHorizontalDirection(nextProperties.facing, direction);
+  }
+  if (isHorizontalDirection(nextProperties.horizontal_facing)) {
+    nextProperties.horizontal_facing = rotateHorizontalDirection(nextProperties.horizontal_facing, direction);
+  }
+  if (isHorizontalDirection(nextProperties.rotation)) {
+    nextProperties.rotation = rotateHorizontalDirection(nextProperties.rotation, direction);
+  } else if (nextProperties.rotation && /^\d+$/.test(nextProperties.rotation)) {
+    const quarterTurn = direction === 'clockwise' ? 4 : -4;
+    nextProperties.rotation = String((Number(nextProperties.rotation) + quarterTurn + 16) % 16);
+  }
+  if (nextProperties.axis === 'x') {
+    nextProperties.axis = 'z';
+  } else if (nextProperties.axis === 'z') {
+    nextProperties.axis = 'x';
+  }
+  if (nextProperties.shape) {
+    nextProperties.shape = rotateDirectionalStateValue(nextProperties.shape, direction);
+  }
+
+  return formatStateKey(parsed.id, nextProperties, parsed.order);
+}
+
+function keysForBounds(bounds: CuboidBounds): Set<string> {
+  const keys = new Set<string>();
+  for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
+    for (let y = bounds.minY; y <= bounds.maxY; y += 1) {
+      for (let z = bounds.minZ; z <= bounds.maxZ; z += 1) {
+        keys.add(pointKey({ x, y, z }));
+      }
+    }
+  }
+  return keys;
+}
+
+function pointFromKey(key: string): CuboidPoint {
+  const [x, y, z] = key.split(',').map(Number);
+  return { x, y, z };
+}
+
+function parseStateKey(stateKey: string): { id: string; properties: Record<string, string>; order: string[] } | null {
+  const match = /^(?<id>[^\[]+)(?:\[(?<properties>.*)\])?$/.exec(stateKey);
+  if (!match?.groups) return null;
+  const rawProperties = match.groups.properties;
+  if (!rawProperties) return { id: match.groups.id, properties: {}, order: [] };
+
+  const properties: Record<string, string> = {};
+  const order: string[] = [];
+  for (const pair of rawProperties.split(',')) {
+    const [key, value] = pair.split('=');
+    if (!key || value === undefined) continue;
+    properties[key] = value;
+    order.push(key);
+  }
+
+  return { id: match.groups.id, properties, order };
+}
+
+function formatStateKey(id: string, properties: Record<string, string>, order: string[]): string {
+  const propertyKeys = [
+    ...order.filter((key) => properties[key] !== undefined),
+    ...Object.keys(properties).filter((key) => !order.includes(key)).sort(),
+  ];
+  if (propertyKeys.length === 0) return id;
+  return `${id}[${propertyKeys.map((key) => `${key}=${properties[key]}`).join(',')}]`;
+}
+
+function isHorizontalDirection(value: string | undefined): value is 'north' | 'east' | 'south' | 'west' {
+  return value === 'north' || value === 'east' || value === 'south' || value === 'west';
+}
+
+function rotateHorizontalPropertyNames(properties: Record<string, string>, direction: RotationDirection) {
+  const horizontalKeys = ['north', 'east', 'south', 'west'] as const;
+  const rotatedEntries: Partial<Record<'north' | 'east' | 'south' | 'west', string>> = {};
+
+  for (const key of horizontalKeys) {
+    if (properties[key] === undefined) continue;
+    rotatedEntries[rotateHorizontalDirection(key, direction)] = properties[key];
+  }
+
+  for (const key of horizontalKeys) {
+    if (properties[key] !== undefined) delete properties[key];
+  }
+  for (const key of horizontalKeys) {
+    if (rotatedEntries[key] !== undefined) properties[key] = rotatedEntries[key];
+  }
+}
+
+function rotateDirectionalStateValue(value: string, direction: RotationDirection): string {
+  return value
+    .split('_')
+    .map((part) => (isHorizontalDirection(part) ? rotateHorizontalDirection(part, direction) : part))
+    .join('_');
+}
+
+function rotateHorizontalDirection(
+  direction: 'north' | 'east' | 'south' | 'west',
+  rotationDirection: RotationDirection,
+): 'north' | 'east' | 'south' | 'west' {
+  const directions = ['north', 'east', 'south', 'west'] as const;
+  const currentIndex = directions.indexOf(direction);
+  const delta = rotationDirection === 'clockwise' ? 1 : -1;
+  return directions[(currentIndex + delta + directions.length) % directions.length];
+}
+
+function rotationLabel(direction: RotationDirection): string {
+  return direction === 'clockwise' ? 'right 90 degrees' : 'left 90 degrees';
 }
 
 function directionOffset(direction: Direction): CuboidPoint {
