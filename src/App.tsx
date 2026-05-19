@@ -137,6 +137,7 @@ type ColorGroupId =
 const schematicFileExtensions = new Set(['.litematic', '.schem', '.schematic', '.nbt']);
 const defaultSchematicFileName = 'Medieval House.litematic';
 const themeStorageKey = 'schematic-editor-theme';
+const emptyBuildBlock = 'minecraft:air';
 const defaultHotbarBlocks = [
   'minecraft:stone',
   'minecraft:oak_planks',
@@ -189,6 +190,181 @@ const colorGroupOrder: Array<{ id: ColorGroupId; label: string }> = [
   { id: 'purple', label: 'Purple' },
   { id: 'pink', label: 'Pink' },
 ];
+const woodTypeOrder = [
+  'oak',
+  'spruce',
+  'birch',
+  'jungle',
+  'acacia',
+  'dark_oak',
+  'mangrove',
+  'cherry',
+  'pale_oak',
+  'bamboo',
+  'crimson',
+  'warped',
+];
+const dyeColorOrder = [
+  'white',
+  'light_gray',
+  'gray',
+  'black',
+  'brown',
+  'red',
+  'orange',
+  'yellow',
+  'lime',
+  'green',
+  'cyan',
+  'light_blue',
+  'blue',
+  'purple',
+  'magenta',
+  'pink',
+];
+const creativeBuildingOrder = [
+  'stone',
+  'granite',
+  'polished_granite',
+  'diorite',
+  'polished_diorite',
+  'andesite',
+  'polished_andesite',
+  'deepslate',
+  'cobbled_deepslate',
+  'polished_deepslate',
+  'calcite',
+  'tuff',
+  'dripstone_block',
+  'sandstone',
+  'red_sandstone',
+  'cobblestone',
+  'mossy_cobblestone',
+  'stone_bricks',
+  'mossy_stone_bricks',
+  'bricks',
+  'mud_bricks',
+  'packed_mud',
+  'prismarine',
+  'dark_prismarine',
+  'netherrack',
+  'basalt',
+  'blackstone',
+  'end_stone',
+  'purpur_block',
+  'quartz_block',
+];
+const creativeNaturalOrder = [
+  'grass_block',
+  'dirt',
+  'sand',
+  'red_sand',
+  'gravel',
+  'clay',
+  'mud',
+  'snow',
+  'ice',
+  'packed_ice',
+  'blue_ice',
+  'netherrack',
+  'soul_sand',
+  'soul_soil',
+  'end_stone',
+  'obsidian',
+  'coal_ore',
+  'iron_ore',
+  'copper_ore',
+  'gold_ore',
+  'redstone_ore',
+  'emerald_ore',
+  'lapis_ore',
+  'diamond_ore',
+  'nether_gold_ore',
+  'nether_quartz_ore',
+  'oak_log',
+  'spruce_log',
+  'birch_log',
+  'jungle_log',
+  'acacia_log',
+  'dark_oak_log',
+  'mangrove_log',
+  'cherry_log',
+  'pale_oak_log',
+  'bamboo_block',
+  'oak_leaves',
+  'spruce_leaves',
+  'birch_leaves',
+  'jungle_leaves',
+  'acacia_leaves',
+  'dark_oak_leaves',
+  'mangrove_leaves',
+  'cherry_leaves',
+  'pale_oak_leaves',
+];
+const creativeFunctionalOrder = [
+  'torch',
+  'soul_torch',
+  'lantern',
+  'soul_lantern',
+  'crafting_table',
+  'furnace',
+  'blast_furnace',
+  'smoker',
+  'campfire',
+  'chest',
+  'barrel',
+  'ender_chest',
+  'anvil',
+  'chipped_anvil',
+  'damaged_anvil',
+  'enchanting_table',
+  'brewing_stand',
+  'cauldron',
+  'composter',
+  'beacon',
+  'lodestone',
+  'scaffolding',
+  'ladder',
+];
+const creativeRedstoneOrder = [
+  'redstone',
+  'redstone_torch',
+  'redstone_block',
+  'repeater',
+  'comparator',
+  'lever',
+  'stone_button',
+  'oak_button',
+  'stone_pressure_plate',
+  'piston',
+  'sticky_piston',
+  'observer',
+  'dispenser',
+  'dropper',
+  'hopper',
+  'target',
+  'rail',
+  'powered_rail',
+  'detector_rail',
+  'activator_rail',
+  'tnt',
+];
+const creativeUtilityOrder = [
+  'air',
+  'water',
+  'lava',
+  'light',
+  'barrier',
+  'structure_void',
+  'spawner',
+  'trial_spawner',
+  'vault',
+  'command_block',
+  'chain_command_block',
+  'repeating_command_block',
+  'structure_block',
+  'jigsaw',
+];
 const blockstateFiles = import.meta.glob('/public/minecraft-assets/assets/minecraft/blockstates/*.json', {
   query: '?url',
   import: 'default',
@@ -225,12 +401,12 @@ function App() {
   const [materialsScope, setMaterialsScope] = useState<MaterialsScope>('build');
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit');
   const [editTool, setEditTool] = useState<EditTool>('select');
-  const [selectedBuildBlock, setSelectedBuildBlock] = useState(defaultHotbarBlocks[0]);
-  const [hotbarBlocks, setHotbarBlocks] = useState<string[]>(defaultHotbarBlocks);
+  const [selectedBuildBlock, setSelectedBuildBlock] = useState(emptyBuildBlock);
+  const [hotbarBlocks, setHotbarBlocks] = useState<string[]>([]);
   const [blockSearch, setBlockSearch] = useState('');
   const [blockLibraryDisplay, setBlockLibraryDisplay] = useState<BlockLibraryDisplay>('creative');
   const [replaceFromBlock, setReplaceFromBlock] = useState('');
-  const [replaceToBlock, setReplaceToBlock] = useState(defaultHotbarBlocks[0]);
+  const [replaceToBlock, setReplaceToBlock] = useState(emptyBuildBlock);
   const [editNotice, setEditNotice] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
   const viewerRef = useRef<Viewer3DHandle | null>(null);
@@ -332,7 +508,7 @@ function App() {
         return fileName.endsWith('.json') ? `minecraft:${fileName.slice(0, -5)}` : '';
       })
       .filter(Boolean);
-    const fromModel = model?.blocks.map((block) => block.stateKey) ?? [];
+    const fromModel = model?.blocks.map((block) => materialIdForBlock(block)) ?? [];
     const allBlocks = new Set([...commonBuildBlocks, ...fromModel, ...fromAssets]);
 
     return Array.from(allBlocks).sort(compareBlockLibraryItems);
@@ -497,12 +673,12 @@ function App() {
     setCuboidCorners(emptyCuboidCorners());
     setMaterialsScope('build');
     setEditTool('select');
-    setSelectedBuildBlock(defaultHotbarBlocks[0]);
-    setHotbarBlocks(defaultHotbarBlocks);
+    setSelectedBuildBlock(emptyBuildBlock);
+    setHotbarBlocks([]);
     setBlockSearch('');
     setBlockLibraryDisplay('creative');
     setReplaceFromBlock(nextModel.blocks[0]?.stateKey ?? '');
-    setReplaceToBlock(defaultHotbarBlocks[0]);
+    setReplaceToBlock(emptyBuildBlock);
     setEditNotice('');
     setLoadState('ready');
   };
@@ -859,9 +1035,11 @@ function App() {
   };
 
   const toggleHotbarBlock = (stateKey: string) => {
+    setSelectedBuildBlock(stateKey);
+    setReplaceToBlock(stateKey);
     setHotbarBlocks((current) => {
       if (current.includes(stateKey)) return current.filter((block) => block !== stateKey);
-      return [...current.slice(-(8 - 1)), stateKey];
+      return [...current.slice(-(9 - 1)), stateKey];
     });
   };
 
@@ -1184,7 +1362,7 @@ function App() {
             </section>
           )}
 
-          {model && appView === 'edit' && (
+          {model && appView === 'edit' && hotbarBlocks.length > 0 && (
             <div className="edit-hotbar" role="toolbar" aria-label="Favorite build blocks">
               {hotbarBlocks.map((stateKey, index) => {
                 const preview = createVoxelBlock(0, 0, 0, stateKey);
@@ -1702,41 +1880,49 @@ function App() {
                       aria-label="Find any block"
                     />
                   </label>
-                  <div className="block-library-list">
+                  <div className="block-library-grid" aria-label={`${blockLibraryDisplay === 'creative' ? 'Creative' : 'Color'} block grid`}>
                     {blockLibraryGroups.map((group) => (
                       <section className="block-library-group" key={group.id} aria-label={group.label}>
                         <div className="block-library-group-heading">
                           <span>{group.label}</span>
                           <strong>{group.items.length.toLocaleString()}</strong>
                         </div>
-                        {group.items.map((item) => {
-                          const isHotbar = hotbarBlocks.includes(item.stateKey);
+                        <div className="block-library-tile-grid">
+                          {group.items.map((item) => {
+                            const isHotbar = hotbarBlocks.includes(item.stateKey);
+                            const isSelected = selectedBuildBlock === item.stateKey;
 
-                          return (
-                            <div className={`block-library-row${selectedBuildBlock === item.stateKey ? ' is-selected' : ''}`} key={item.stateKey}>
-                              <button
-                                type="button"
-                                className="block-library-pick"
-                                onClick={() => {
-                                  setSelectedBuildBlock(item.stateKey);
-                                  setReplaceToBlock(item.stateKey);
-                                }}
+                            return (
+                              <div
+                                className={`block-library-tile${isSelected ? ' is-selected' : ''}${isHotbar ? ' is-hotbar' : ''}`}
+                                key={item.stateKey}
                               >
-                                <BlockPreview stateKey={item.stateKey} color={item.color} />
-                                <span>{item.label}</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="material-visibility"
-                                onClick={() => toggleHotbarBlock(item.stateKey)}
-                                title={isHotbar ? 'Remove from hotbar' : 'Add to hotbar'}
-                                aria-label={isHotbar ? `Remove ${item.label} from hotbar` : `Add ${item.label} to hotbar`}
-                              >
-                                {isHotbar ? <StarOff size={15} /> : <Star size={15} />}
-                              </button>
-                            </div>
-                          );
-                        })}
+                                <button
+                                  type="button"
+                                  className="block-library-pick"
+                                  onClick={() => {
+                                    setSelectedBuildBlock(item.stateKey);
+                                    setReplaceToBlock(item.stateKey);
+                                  }}
+                                  title={item.label}
+                                  aria-label={`Use ${item.label}`}
+                                  aria-pressed={isSelected}
+                                >
+                                  <BlockPreview stateKey={item.stateKey} color={item.color} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="block-library-favorite"
+                                  onClick={() => toggleHotbarBlock(item.stateKey)}
+                                  title={isHotbar ? 'Remove from hotbar' : 'Add to hotbar'}
+                                  aria-label={isHotbar ? `Remove ${item.label} from hotbar` : `Add ${item.label} to hotbar`}
+                                >
+                                  {isHotbar ? <StarOff size={12} /> : <Star size={12} />}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </section>
                     ))}
                     {blockLibraryGroups.length === 0 && (
@@ -2005,14 +2191,15 @@ function materialIdForBlock(block: VoxelBlock): string {
 function compareBlockLibraryItems(a: string, b: string): number {
   const categoryDelta = creativeCategoryRank(creativeCategoryForBlock(a)) - creativeCategoryRank(creativeCategoryForBlock(b));
   if (categoryDelta !== 0) return categoryDelta;
-  return formatBlockName(a).localeCompare(formatBlockName(b));
+  return creativeInventoryRank(a) - creativeInventoryRank(b)
+    || formatBlockName(a).localeCompare(formatBlockName(b));
 }
 
 function groupBlocksByCreativeCategory(items: BlockLibraryItem[]): BlockLibraryGroup[] {
   return creativeCategoryOrder.flatMap((category) => {
     const categoryItems = items
       .filter((item) => item.category === category.id)
-      .sort((a, b) => a.label.localeCompare(b.label));
+      .sort((a, b) => compareBlockLibraryItems(a.stateKey, b.stateKey));
 
     return categoryItems.length > 0 ? [{ id: category.id, label: category.label, items: categoryItems }] : [];
   });
@@ -2032,15 +2219,125 @@ function creativeCategoryRank(id: CreativeCategoryId): number {
   return creativeCategoryOrder.findIndex((category) => category.id === id);
 }
 
+function creativeInventoryRank(stateKey: string): number {
+  const id = baseBlockId(stateKey);
+  const category = creativeCategoryForBlock(stateKey);
+
+  if (category === 'colored_blocks') {
+    return 1_000 + colorPrefixRank(id) * 100 + blockVariantRank(stripColorPrefix(id));
+  }
+  if (category === 'natural_blocks') {
+    return 2_000 + orderedBlockRank(id, creativeNaturalOrder) * 100 + blockVariantRank(id);
+  }
+  if (category === 'functional_blocks') {
+    return 3_000 + orderedBlockRank(id, creativeFunctionalOrder) * 100 + woodTypeRank(id) + blockVariantRank(id);
+  }
+  if (category === 'redstone_blocks') {
+    return 4_000 + orderedBlockRank(id, creativeRedstoneOrder) * 100 + blockVariantRank(id);
+  }
+  if (category === 'tools_and_utilities') {
+    return 5_000 + orderedBlockRank(id, creativeUtilityOrder) * 100 + blockVariantRank(id);
+  }
+
+  return orderedBlockRank(id, creativeBuildingOrder) * 100 + woodTypeRank(id) + blockVariantRank(id);
+}
+
+function orderedBlockRank(id: string, order: string[]): number {
+  const exactIndex = order.indexOf(id);
+  if (exactIndex >= 0) return exactIndex;
+
+  const familyMatch = order
+    .map((family, index) => ({ family, index }))
+    .filter(({ family }) => id.startsWith(`${family}_`) || id.endsWith(`_${family}`))
+    .sort((a, b) => b.family.length - a.family.length || a.index - b.index)[0];
+
+  return familyMatch ? familyMatch.index : order.length + woodTypeRank(id);
+}
+
+function woodTypeRank(id: string): number {
+  const woodIndex = woodTypeOrder.findIndex((wood) => id === wood || id.startsWith(`${wood}_`) || id.includes(`_${wood}_`));
+  return woodIndex >= 0 ? woodIndex : woodTypeOrder.length;
+}
+
+function colorPrefixRank(id: string): number {
+  const colorIndex = dyeColorOrder.findIndex((color) => id === color || id.startsWith(`${color}_`));
+  return colorIndex >= 0 ? colorIndex : dyeColorOrder.length;
+}
+
+function stripColorPrefix(id: string): string {
+  const color = dyeColorOrder.find((candidate) => id.startsWith(`${candidate}_`));
+  return color ? id.slice(color.length + 1) : id;
+}
+
+function blockVariantRank(id: string): number {
+  if (!id.includes('_')) return 0;
+
+  const variantOrder = [
+    'block',
+    'ore',
+    'raw',
+    'chiseled',
+    'cut',
+    'polished',
+    'smooth',
+    'bricks',
+    'brick',
+    'tiles',
+    'tile',
+    'pillar',
+    'planks',
+    'log',
+    'wood',
+    'stem',
+    'hyphae',
+    'leaves',
+    'sapling',
+    'stairs',
+    'slab',
+    'wall',
+    'fence_gate',
+    'fence',
+    'door',
+    'trapdoor',
+    'pressure_plate',
+    'button',
+    'hanging_sign',
+    'sign',
+    'wool',
+    'carpet',
+    'terracotta',
+    'concrete',
+    'concrete_powder',
+    'glazed_terracotta',
+    'stained_glass_pane',
+    'stained_glass',
+    'candle',
+    'bed',
+    'banner',
+    'shulker_box',
+  ];
+  const variantMatch = variantOrder
+    .map((variant, index) => ({ variant, index: index + 1 }))
+    .filter(({ variant }) => id === variant || id.endsWith(`_${variant}`) || id.includes(`_${variant}_`))
+    .sort((a, b) => b.variant.length - a.variant.length || a.index - b.index)[0];
+
+  return variantMatch ? variantMatch.index : variantOrder.length + 1;
+}
+
 function creativeCategoryForBlock(stateKey: string): CreativeCategoryId {
   const id = baseBlockId(stateKey);
 
   if (isColoredBlock(id)) return 'colored_blocks';
   if (isRedstoneBlock(id)) return 'redstone_blocks';
-  if (isFunctionalBlock(id)) return 'functional_blocks';
   if (isToolUtilityBlock(id)) return 'tools_and_utilities';
+  if (isBuildingBlock(id)) return 'building_blocks';
+  if (isFunctionalBlock(id)) return 'functional_blocks';
   if (isNaturalBlock(id)) return 'natural_blocks';
   return 'building_blocks';
+}
+
+function isBuildingBlock(id: string): boolean {
+  return orderedBlockRank(id, creativeBuildingOrder) < creativeBuildingOrder.length;
 }
 
 function isColoredBlock(id: string): boolean {
