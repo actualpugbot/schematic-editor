@@ -506,8 +506,6 @@ h2 {
 }
 
 .selection-inspector-card,
-.build-summary-card,
-.build-summary-toggle,
 .viewport-tools,
 .spectator-help {
   position: absolute;
@@ -660,21 +658,6 @@ button:disabled {
   transform: none !important;
 }
 
-.build-summary-card {
-  right: 24px;
-  bottom: 24px;
-  width: min(234px, calc(100% - 48px));
-  padding: 12px;
-}
-
-.build-summary-card .section-heading.compact {
-  margin-bottom: 9px;
-}
-
-.build-summary-card .eyebrow {
-  margin-bottom: 0;
-}
-
 .summary-metrics {
   display: grid;
   gap: 8px;
@@ -694,38 +677,6 @@ button:disabled {
 
 .summary-metrics dd {
   font-size: 0.8rem;
-}
-
-.summary-dismiss,
-.build-summary-toggle {
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  width: 30px;
-  min-width: 30px;
-  height: 30px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--paper-strong);
-  color: var(--icon-color);
-  box-shadow: 0 4px 12px rgba(28, 41, 43, 0.06);
-  transition:
-    transform 160ms ease,
-    background-color 160ms ease,
-    border-color 160ms ease,
-    color 160ms ease;
-}
-
-.build-summary-toggle {
-  right: 24px;
-  bottom: 24px;
-}
-
-.summary-dismiss:hover,
-.build-summary-toggle:hover {
-  transform: translateY(-1px);
-  border-color: color-mix(in oklch, var(--teal), var(--line) 45%);
-  color: var(--teal-strong);
 }
 
 dt {
@@ -2007,17 +1958,6 @@ dd {
     top: 12px;
   }
 
-  .build-summary-card {
-    right: 12px;
-    bottom: 12px;
-    width: min(234px, calc(100% - 24px));
-  }
-
-  .build-summary-toggle {
-    right: 12px;
-    bottom: 12px;
-  }
-
   .viewport-tools {
     right: 12px;
     top: 12px;
@@ -2066,9 +2006,6 @@ dd {
     width: calc(100% - 84px);
   }
 
-  .build-summary-card {
-    width: min(224px, calc(100% - 24px));
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

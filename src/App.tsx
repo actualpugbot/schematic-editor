@@ -13,7 +13,6 @@ import {
   Eraser,
   FileUp,
   Focus,
-  Info,
   Layers,
   MousePointer2,
   Moon,
@@ -161,7 +160,6 @@ function App() {
   const [playerHeadSelections, setPlayerHeadSelections] = useState<Record<string, string>>({});
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('materials');
-  const [summaryCollapsed, setSummaryCollapsed] = useState(false);
   const [cuboidSelectionMode, setCuboidSelectionMode] = useState(false);
   const [cuboidCorners, setCuboidCorners] = useState<CuboidCorners>(() => emptyCuboidCorners());
   const [materialsScope, setMaterialsScope] = useState<MaterialsScope>('build');
@@ -263,7 +261,6 @@ function App() {
   const selectedPlayerHeadTextureId = selectedBlock
     ? playerHeadSelections[blockPositionKey(selectedBlock)] ?? selectedBlock.playerHeadTexture?.id ?? playerHeadOptions[0]?.id ?? ''
     : '';
-  const totalBlocks = model?.blocks.length ?? 0;
   const isDarkTheme = theme === 'dark';
   const canSaveSchematic = Boolean(model && schematicName.trim());
   const selectedBuildBlockPreview = useMemo(() => createVoxelBlock(0, 0, 0, selectedBuildBlock), [selectedBuildBlock]);
@@ -415,7 +412,6 @@ function App() {
     setHiddenMaterialIds(new Set());
     setCuboidCorners(emptyCuboidCorners());
     setMaterialsScope('build');
-    setSummaryCollapsed(false);
     setEditTool('select');
     setSelectedBuildBlock(defaultHotbarBlocks[0]);
     setHotbarBlocks(defaultHotbarBlocks);
@@ -1058,53 +1054,6 @@ function App() {
                   </div>
                 </div>
               )}
-            </section>
-          )}
-
-          {model && summaryCollapsed && (
-            <button
-              type="button"
-              className="build-summary-toggle"
-              onClick={() => setSummaryCollapsed(false)}
-              title="Show build summary"
-              aria-label="Show build summary"
-              aria-expanded="false"
-            >
-              <Info size={17} />
-            </button>
-          )}
-
-          {model && !summaryCollapsed && (
-            <section className="build-summary-card" aria-label="Build summary">
-              <div className="section-heading compact">
-                <div>
-                  <p className="eyebrow">Build Summary</p>
-                </div>
-                <button
-                  type="button"
-                  className="summary-dismiss"
-                  onClick={() => setSummaryCollapsed(true)}
-                  title="Collapse build summary"
-                  aria-label="Collapse build summary"
-                  aria-expanded="true"
-                >
-                  <Info size={15} />
-                </button>
-              </div>
-              <dl className="summary-metrics">
-                <div>
-                  <dt>Dimensions</dt>
-                  <dd>{model.dimensions.width} x {model.dimensions.height} x {model.dimensions.length}</dd>
-                </div>
-                <div>
-                  <dt>Total Blocks</dt>
-                  <dd>{totalBlocks.toLocaleString()}</dd>
-                </div>
-                <div>
-                  <dt>Unique Materials</dt>
-                  <dd>{materials.length.toLocaleString()}</dd>
-                </div>
-              </dl>
             </section>
           )}
 
