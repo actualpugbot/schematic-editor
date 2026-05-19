@@ -929,7 +929,7 @@ dd {
 
 .inspector-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--tab-count, 3), minmax(0, 1fr));
   flex: 0 0 auto;
   min-height: 58px;
   border-bottom: 1px solid var(--line);
@@ -1000,12 +1000,19 @@ dd {
 }
 
 .edit-panel {
-  display: flex;
   flex: 1 1 auto;
   min-height: 0;
   flex-direction: column;
   gap: 16px;
   overflow: auto;
+}
+
+.edit-panel.inspector-panel {
+  display: none;
+}
+
+.edit-panel.inspector-panel.is-active {
+  display: flex;
 }
 
 .eyebrow {
@@ -1351,9 +1358,19 @@ dd {
 .edit-placement-panel,
 .edit-library,
 .edit-transform-panel,
-.replace-panel {
+.replace-panel:not(.inspector-panel) {
   display: grid;
   gap: 10px;
+}
+
+.replace-panel.inspector-panel {
+  display: none;
+  gap: 10px;
+  padding: 18px;
+}
+
+.replace-panel.inspector-panel.is-active {
+  display: grid;
 }
 
 .placement-grid,

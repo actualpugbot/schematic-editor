@@ -55,6 +55,7 @@ import defaultSchematicUrl from '../Medieval House.litematic?url';
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 type DraggedFileKind = 'none' | 'unsupported-file' | 'unknown-file' | 'schematic-file';
 type InspectorTab = 'selection' | 'materials' | 'layers';
+type EditPanelTab = 'tools' | 'replace';
 type AppView = 'inspect' | 'edit';
 type EditTool = 'select' | 'build';
 type Theme = 'light' | 'dark';
@@ -159,6 +160,7 @@ function App() {
   const [playerHeadSelections, setPlayerHeadSelections] = useState<Record<string, string>>({});
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('materials');
+  const [editPanelTab, setEditPanelTab] = useState<EditPanelTab>('tools');
   const [cuboidSelectionMode, setCuboidSelectionMode] = useState(false);
   const [cuboidCorners, setCuboidCorners] = useState<CuboidCorners>(() => emptyCuboidCorners());
   const [materialsScope, setMaterialsScope] = useState<MaterialsScope>('build');
@@ -574,6 +576,7 @@ function App() {
 
   const activateEditTool = (tool: EditTool) => {
     setAppView('edit');
+    setEditPanelTab('tools');
     setCuboidSelectionMode(false);
     setEditTool(tool);
   };
@@ -914,9 +917,9 @@ function App() {
               <>
                 <button
                   type="button"
-                  className={editTool === 'select' ? 'is-active' : ''}
+                  className={editPanelTab === 'tools' && editTool === 'select' ? 'is-active' : ''}
                   onClick={() => activateEditTool('select')}
-                  aria-pressed={editTool === 'select'}
+                  aria-pressed={editPanelTab === 'tools' && editTool === 'select'}
                   title="Select blocks"
                 >
                   <MousePointer2 size={19} />
@@ -924,13 +927,27 @@ function App() {
                 </button>
                 <button
                   type="button"
-                  className={editTool === 'build' ? 'is-active' : ''}
+                  className={editPanelTab === 'tools' && editTool === 'build' ? 'is-active' : ''}
                   onClick={() => activateEditTool('build')}
-                  aria-pressed={editTool === 'build'}
+                  aria-pressed={editPanelTab === 'tools' && editTool === 'build'}
                   title="Build selected block"
                 >
                   <Brush size={19} />
                   <span>Build</span>
+                </button>
+                <button
+                  type="button"
+                  className={editPanelTab === 'replace' ? 'is-active' : ''}
+                  onClick={() => {
+                    setAppView('edit');
+                    setEditPanelTab('replace');
+                    setCuboidSelectionMode(false);
+                  }}
+                  aria-pressed={editPanelTab === 'replace'}
+                  title="Find and replace blocks"
+                >
+                  <Replace size={19} />
+                  <span>Replace</span>
                 </button>
               </>
             ) : (
@@ -1478,7 +1495,34 @@ function App() {
             </section>
               </>
             ) : (
-              <section className="edit-panel" aria-label="Edit controls">
+              <>
+              <div
+                className="inspector-tabs"
+                role="tablist"
+                aria-label="Edit panels"
+                style={{ '--tab-count': '2' } as CSSProperties}
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={editPanelTab === 'tools'}
+                  className={editPanelTab === 'tools' ? 'is-active' : ''}
+                  onClick={() => setEditPanelTab('tools')}
+                >
+                  Build Tools
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={editPanelTab === 'replace'}
+                  className={editPanelTab === 'replace' ? 'is-active' : ''}
+                  onClick={() => setEditPanelTab('replace')}
+                >
+                  Find & Replace
+                </button>
+              </div>
+
+              <section className={`edit-panel inspector-panel${editPanelTab === 'tools' ? ' is-active' : ''}`} aria-label="Edit controls">
                 <div className="section-heading">
                   <div>
                     <p className="eyebrow">Edit View</p>
@@ -1490,18 +1534,18 @@ function App() {
                 <div className="edit-tool-grid" role="group" aria-label="Edit tool">
                   <button
                     type="button"
-                    className={editTool === 'select' ? 'is-active' : ''}
+                    className={editPanelTab === 'tools' && editTool === 'select' ? 'is-active' : ''}
                     onClick={() => activateEditTool('select')}
-                    aria-pressed={editTool === 'select'}
+                    aria-pressed={editPanelTab === 'tools' && editTool === 'select'}
                   >
                     <MousePointer2 size={17} />
                     Select
                   </button>
                   <button
                     type="button"
-                    className={editTool === 'build' ? 'is-active' : ''}
+                    className={editPanelTab === 'tools' && editTool === 'build' ? 'is-active' : ''}
                     onClick={() => activateEditTool('build')}
-                    aria-pressed={editTool === 'build'}
+                    aria-pressed={editPanelTab === 'tools' && editTool === 'build'}
                   >
                     <Brush size={17} />
                     Build
@@ -1629,7 +1673,12 @@ function App() {
                   </div>
                 </section>
 
-                <section className="replace-panel" aria-label="Find and replace blocks">
+              </section>
+
+              <section
+                className={`replace-panel inspector-panel${editPanelTab === 'replace' ? ' is-active' : ''}`}
+                aria-label="Find and replace blocks"
+              >
                   <div className="section-heading compact">
                     <div>
                       <h2>Find & Replace</h2>
@@ -1688,7 +1737,7 @@ function App() {
                   </button>
                   {editNotice && <p className="edit-notice">{editNotice}</p>}
                 </section>
-              </section>
+              </>
             )}
 
             {model.warnings.length > 0 && (
