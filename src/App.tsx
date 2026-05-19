@@ -572,6 +572,16 @@ function App() {
     showPanel('selection');
   };
 
+  const openInspectorPanel = (tab: InspectorTab) => {
+    setAppView('inspect');
+    showPanel(tab);
+  };
+
+  const activateEditTool = (tool: EditTool) => {
+    setAppView('edit');
+    setEditTool(tool);
+  };
+
   const handleBlockSelect = (block: VoxelBlock | null, button: SelectionButton, placementPoint: PlacementPoint | null) => {
     if (appView === 'edit') {
       if (button === 'secondary') {
@@ -591,7 +601,15 @@ function App() {
         setSelectedBlock(null);
         return;
       }
-      eraseBlock(block);
+
+      setSelectedBlock(block);
+      if (editTool === 'paint') {
+        paintBlock(block);
+        return;
+      }
+      if (editTool === 'erase') {
+        eraseBlock(block);
+      }
       return;
     }
 
@@ -827,53 +845,144 @@ function App() {
               <h1>Minecraft schematic viewer</h1>
             )}
           </div>
-          <div className="view-switch" role="tablist" aria-label="Schematic view">
+        </div>
+      </header>
+
+      <div className="workspace">
+        <aside className="left-rail" aria-label="Primary controls">
+          <div className="rail-cluster rail-mode-switch" role="tablist" aria-label="Schematic mode">
             <button
               type="button"
+              role="tab"
               className={appView === 'inspect' ? 'is-active' : ''}
               onClick={() => setAppView('inspect')}
               aria-selected={appView === 'inspect'}
+              title="Inspect mode"
             >
-              <Eye size={15} />
-              Inspect
+              <Eye size={19} />
+              <span>View</span>
             </button>
             <button
               type="button"
+              role="tab"
               className={appView === 'edit' ? 'is-active' : ''}
               onClick={() => setAppView('edit')}
               aria-selected={appView === 'edit'}
+              title="Edit mode"
             >
-              <Brush size={15} />
-              Edit
+              <Brush size={19} />
+              <span>Edit</span>
             </button>
           </div>
-        </div>
 
-        <div className="topbar-actions">
-          <button
-            className="secondary-button"
-            type="button"
-            onClick={exportRenamedSchematic}
-            disabled={!canSaveSchematic}
-            title={hasEditChanges ? 'Export edited build as .schem' : 'Export schematic with current name'}
-          >
-            <Download size={16} />
-            Export
-          </button>
-          <button className="primary-button" type="button" onClick={() => inputRef.current?.click()}>
-            <Upload size={17} />
-            Upload
-          </button>
-          <button
-            className="ghost-icon"
-            type="button"
-            onClick={toggleTheme}
-            title={isDarkTheme ? 'Use light theme' : 'Use dark theme'}
-            aria-label={isDarkTheme ? 'Use light theme' : 'Use dark theme'}
-            aria-pressed={isDarkTheme}
-          >
-            {isDarkTheme ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
+          <div className="rail-divider" />
+
+          <div className="rail-cluster" aria-label={appView === 'edit' ? 'Edit tools' : 'Inspect panels'}>
+            {appView === 'edit' ? (
+              <>
+                <button
+                  type="button"
+                  className={editTool === 'select' ? 'is-active' : ''}
+                  onClick={() => activateEditTool('select')}
+                  aria-pressed={editTool === 'select'}
+                  title="Select blocks"
+                >
+                  <MousePointer2 size={19} />
+                  <span>Select</span>
+                </button>
+                <button
+                  type="button"
+                  className={editTool === 'paint' ? 'is-active' : ''}
+                  onClick={() => activateEditTool('paint')}
+                  aria-pressed={editTool === 'paint'}
+                  title="Paint selected block"
+                >
+                  <Brush size={19} />
+                  <span>Paint</span>
+                </button>
+                <button
+                  type="button"
+                  className={editTool === 'erase' ? 'is-active' : ''}
+                  onClick={() => activateEditTool('erase')}
+                  aria-pressed={editTool === 'erase'}
+                  title="Erase selected block"
+                >
+                  <Eraser size={19} />
+                  <span>Erase</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className={inspectorTab === 'materials' ? 'is-active' : ''}
+                  onClick={() => openInspectorPanel('materials')}
+                  aria-pressed={inspectorTab === 'materials'}
+                  disabled={!model}
+                  title="Materials"
+                >
+                  <Cuboid size={19} />
+                  <span>Blocks</span>
+                </button>
+                <button
+                  type="button"
+                  className={inspectorTab === 'selection' ? 'is-active' : ''}
+                  onClick={() => openInspectorPanel('selection')}
+                  aria-pressed={inspectorTab === 'selection'}
+                  disabled={!model}
+                  title="Area selection"
+                >
+                  <BoxSelect size={19} />
+                  <span>Area</span>
+                </button>
+                <button
+                  type="button"
+                  className={inspectorTab === 'layers' ? 'is-active' : ''}
+                  onClick={() => openInspectorPanel('layers')}
+                  aria-pressed={inspectorTab === 'layers'}
+                  disabled={!model}
+                  title="Layer view"
+                >
+                  <Layers size={19} />
+                  <span>Layers</span>
+                </button>
+              </>
+            )}
+          </div>
+
+          <div className="rail-spacer" />
+
+          <div className="rail-cluster rail-system-controls" aria-label="File and display controls">
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              title="Upload schematic"
+              aria-label="Upload schematic"
+            >
+              <Upload size={19} />
+              <span>Upload</span>
+            </button>
+            <button
+              type="button"
+              onClick={exportRenamedSchematic}
+              disabled={!canSaveSchematic}
+              title={hasEditChanges ? 'Export edited build as .schem' : 'Export schematic with current name'}
+              aria-label={hasEditChanges ? 'Export edited build as .schem' : 'Export schematic with current name'}
+            >
+              <Download size={19} />
+              <span>Export</span>
+            </button>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              title={isDarkTheme ? 'Use light theme' : 'Use dark theme'}
+              aria-label={isDarkTheme ? 'Use light theme' : 'Use dark theme'}
+              aria-pressed={isDarkTheme}
+            >
+              {isDarkTheme ? <Sun size={19} /> : <Moon size={19} />}
+              <span>Theme</span>
+            </button>
+          </div>
           <input
             ref={inputRef}
             className="file-input"
@@ -885,10 +994,8 @@ function App() {
               event.target.value = '';
             }}
           />
-        </div>
-      </header>
+        </aside>
 
-      <div className="workspace">
         <section className="viewport-panel" aria-label="Schematic 3D viewport">
           {selectedBlock && (
             <section className="selection-inspector-card" aria-label="Selection inspector">
