@@ -55,7 +55,7 @@ import defaultSchematicUrl from '../Medieval House.litematic?url';
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 type DraggedFileKind = 'none' | 'unsupported-file' | 'unknown-file' | 'schematic-file';
 type InspectorTab = 'selection' | 'materials' | 'layers';
-type EditPanelTab = 'tools' | 'replace';
+type EditPanelTab = 'tools' | 'rotate' | 'replace';
 type AppView = 'inspect' | 'edit';
 type EditTool = 'select' | 'build';
 type Theme = 'light' | 'dark';
@@ -1584,7 +1584,7 @@ function App() {
                 className="inspector-tabs"
                 role="tablist"
                 aria-label="Edit panels"
-                style={{ '--tab-count': '2' } as CSSProperties}
+                style={{ '--tab-count': '3' } as CSSProperties}
               >
                 <button
                   type="button"
@@ -1594,6 +1594,15 @@ function App() {
                   onClick={() => setEditPanelTab('tools')}
                 >
                   Build Tools
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={editPanelTab === 'rotate'}
+                  className={editPanelTab === 'rotate' ? 'is-active' : ''}
+                  onClick={() => setEditPanelTab('rotate')}
+                >
+                  Rotate
                 </button>
                 <button
                   type="button"
@@ -1657,55 +1666,6 @@ function App() {
                 ) : (
                   <p className="panel-empty">Select a block in the viewport, then build with it or place the active block beside it.</p>
                 )}
-
-                <section className="edit-transform-panel" aria-label="Rotate blocks">
-                  <div className="section-heading compact">
-                    <div>
-                      <h2>Rotate</h2>
-                      <p className="eyebrow">{materialsScope === 'cuboid' && cuboidBounds ? 'Selected area' : 'Selected block'}</p>
-                    </div>
-                    <RotateCw size={18} />
-                  </div>
-                  <div className="segmented-control" role="group" aria-label="Rotation scope">
-                    <button
-                      type="button"
-                      className={materialsScope === 'build' ? 'is-active' : ''}
-                      onClick={() => setMaterialsScope('build')}
-                    >
-                      Block
-                    </button>
-                    <button
-                      type="button"
-                      className={materialsScope === 'cuboid' ? 'is-active' : ''}
-                      onClick={() => {
-                        if (cuboidBounds) setMaterialsScope('cuboid');
-                        else {
-                          beginCuboidSelection(false, false);
-                        }
-                      }}
-                    >
-                      Selected Area
-                    </button>
-                  </div>
-                  <div className="rotation-actions">
-                    <button
-                      type="button"
-                      onClick={() => rotateSelection('counterclockwise')}
-                      disabled={materialsScope === 'cuboid' ? !cuboidBounds : !selectedBlock}
-                    >
-                      <RotateCcw size={16} />
-                      90 Left
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => rotateSelection('clockwise')}
-                      disabled={materialsScope === 'cuboid' ? !cuboidBounds : !selectedBlock}
-                    >
-                      <RotateCw size={16} />
-                      90 Right
-                    </button>
-                  </div>
-                </section>
 
                 <section className="edit-library" aria-label="Block library">
                   <div className="section-heading compact">
@@ -1785,6 +1745,61 @@ function App() {
                   </div>
                 </section>
 
+              </section>
+
+              <section
+                className={`edit-panel inspector-panel${editPanelTab === 'rotate' ? ' is-active' : ''}`}
+                aria-label="Rotate blocks"
+              >
+                <section className="edit-transform-panel" aria-label="Rotate blocks">
+                  <div className="section-heading compact">
+                    <div>
+                      <h2>Rotate</h2>
+                      <p className="eyebrow">{materialsScope === 'cuboid' && cuboidBounds ? 'Selected area' : 'Selected block'}</p>
+                    </div>
+                    <RotateCw size={18} />
+                  </div>
+                  <div className="segmented-control" role="group" aria-label="Rotation scope">
+                    <button
+                      type="button"
+                      className={materialsScope === 'build' ? 'is-active' : ''}
+                      onClick={() => setMaterialsScope('build')}
+                    >
+                      Block
+                    </button>
+                    <button
+                      type="button"
+                      className={materialsScope === 'cuboid' ? 'is-active' : ''}
+                      onClick={() => {
+                        if (cuboidBounds) setMaterialsScope('cuboid');
+                        else {
+                          beginCuboidSelection(false, false);
+                        }
+                      }}
+                    >
+                      Selected Area
+                    </button>
+                  </div>
+                  <div className="rotation-actions">
+                    <button
+                      type="button"
+                      onClick={() => rotateSelection('counterclockwise')}
+                      disabled={materialsScope === 'cuboid' ? !cuboidBounds : !selectedBlock}
+                    >
+                      <RotateCcw size={16} />
+                      90 Left
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => rotateSelection('clockwise')}
+                      disabled={materialsScope === 'cuboid' ? !cuboidBounds : !selectedBlock}
+                    >
+                      <RotateCw size={16} />
+                      90 Right
+                    </button>
+                  </div>
+                  {editNotice && <p className="edit-notice">{editNotice}</p>}
+                </section>
               </section>
 
               <section
