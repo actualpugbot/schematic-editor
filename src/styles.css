@@ -303,7 +303,7 @@ h2 {
 
 .workspace {
   display: grid;
-  grid-template-columns: 76px minmax(0, 1fr) minmax(390px, 520px);
+  grid-template-columns: 76px minmax(0, 1fr) minmax(430px, 560px);
   gap: 16px;
   min-height: 0;
 }
@@ -925,7 +925,7 @@ dd {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
   background: var(--panel-glass);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1451,7 +1451,7 @@ dd {
   align-content: start;
   gap: 16px;
   overflow: auto;
-  padding: 10px;
+  padding: 10px 6px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: color-mix(in oklch, var(--breakdown-bg), transparent 18%);
@@ -1491,17 +1491,17 @@ dd {
 
 .block-library-tile-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, 72px);
-  gap: 8px;
+  grid-template-columns: repeat(5, 64px);
+  gap: 7px;
   justify-content: start;
 }
 
 .block-library-tile {
   position: relative;
-  width: 72px;
+  width: 64px;
   aspect-ratio: 1;
   min-width: 0;
-  min-height: 72px;
+  min-height: 64px;
 }
 
 .block-library-tile::after,
@@ -1542,6 +1542,31 @@ dd {
 .material-breakdown-icon:hover::after {
   opacity: 1;
   transform: translate(-50%, 0);
+}
+
+.block-library-tile:nth-child(5n + 1)::after {
+  left: 0;
+  text-align: left;
+  transform: translate(0, 2px);
+}
+
+.block-library-tile:nth-child(5n)::after {
+  right: 0;
+  left: auto;
+  text-align: right;
+  transform: translate(0, 2px);
+}
+
+.block-library-tile:nth-child(-n + 5)::after {
+  top: calc(100% + 8px);
+  bottom: auto;
+}
+
+.block-library-tile:nth-child(5n + 1):hover::after,
+.block-library-tile:nth-child(5n + 1):focus-within::after,
+.block-library-tile:nth-child(5n):hover::after,
+.block-library-tile:nth-child(5n):focus-within::after {
+  transform: translate(0, 0);
 }
 
 .block-library-pick {
@@ -2026,7 +2051,7 @@ dd {
 
 @media (max-width: 1180px) {
   .workspace {
-    grid-template-columns: 70px minmax(0, 1fr) minmax(370px, 450px);
+    grid-template-columns: 70px minmax(0, 1fr) minmax(400px, 470px);
     gap: 12px;
   }
 
