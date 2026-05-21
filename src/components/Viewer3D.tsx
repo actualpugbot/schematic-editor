@@ -24,6 +24,8 @@ interface Viewer3DProps {
   placementPreviewBlock: VoxelBlock | null;
   cuboidBounds?: CuboidBounds | null;
   cuboidCorners?: CuboidCornerPoints | null;
+  rotationTarget?: 'block' | 'cuboid' | null;
+  rotationControlRef?: MutableRefObject<HTMLDivElement | null>;
   onBlockSelect?: (block: VoxelBlock | null, button: SelectionButton, placementPoint: PlacementPoint | null) => void;
   onAxisOrientationChange?: (orientation: AxisGizmoOrientation) => void;
   onReady?: () => void;
@@ -121,6 +123,7 @@ const horizontalFaces = new Set<ModelFaceName>(['north', 'south', 'west', 'east'
 const cuboidOverlayPadding = 0.018;
 const cornerLabelOffset = 0.86;
 const labelProjectionVector = new THREE.Vector3();
+const rotationControlProjectionVector = new THREE.Vector3();
 
 export function Viewer3D(props: InternalViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -139,8 +142,11 @@ export function Viewer3D(props: InternalViewerProps) {
   const spinRef = useRef<{ start: number; duration: number; from: number; to: number } | null>(null);
   const latestModelRef = useRef<SchematicModel | null>(props.model);
   const latestBlockKeysRef = useRef<Set<string>>(new Set(props.model?.blocks.map(blockPositionKey) ?? []));
+  const latestSelectedBlockRef = useRef<VoxelBlock | null>(props.selectedBlock);
   const latestPlacementPreviewBlockRef = useRef<VoxelBlock | null>(props.placementPreviewBlock);
+  const latestCuboidBoundsRef = useRef<CuboidBounds | null | undefined>(props.cuboidBounds);
   const latestCuboidCornersRef = useRef<CuboidCornerPoints | null | undefined>(props.cuboidCorners);
+  const latestRotationTargetRef = useRef<'block' | 'cuboid' | null | undefined>(props.rotationTarget);
   const cameraModeRef = useRef<CameraMode>(props.cameraMode);
   const onBlockSelectRef = useRef(props.onBlockSelect);
   const onAxisOrientationChangeRef = useRef(props.onAxisOrientationChange);
@@ -180,8 +186,20 @@ export function Viewer3D(props: InternalViewerProps) {
   }, [props.placementPreviewBlock]);
 
   useEffect(() => {
+    latestSelectedBlockRef.current = props.selectedBlock;
+  }, [props.selectedBlock]);
+
+  useEffect(() => {
+    latestCuboidBoundsRef.current = props.cuboidBounds;
+  }, [props.cuboidBounds]);
+
+  useEffect(() => {
     latestCuboidCornersRef.current = props.cuboidCorners;
   }, [props.cuboidCorners]);
+
+  useEffect(() => {
+    latestRotationTargetRef.current = props.rotationTarget;
+  }, [props.rotationTarget]);
 
   useEffect(() => {
     cameraModeRef.current = props.cameraMode;
@@ -410,6 +428,15 @@ export function Viewer3D(props: InternalViewerProps) {
       updateCuboidCornerLabels(
         cornerLabelRefs.current,
         latestCuboidCornersRef.current,
+        latestModelRef.current,
+        camera,
+        renderer,
+      );
+      updateRotationControlPosition(
+        props.rotationControlRef?.current ?? null,
+        latestRotationTargetRef.current ?? null,
+        latestSelectedBlockRef.current,
+        latestCuboidBoundsRef.current ?? null,
         latestModelRef.current,
         camera,
         renderer,
@@ -1295,6 +1322,63 @@ function updateCuboidCornerLabels(
     label.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -100%)`;
     label.classList.add('is-visible');
   }
+}
+
+function updateRotationControlPosition(
+  control: HTMLDivElement | null,
+  target: 'block' | 'cuboid' | null,
+  selectedBlock: VoxelBlock | null,
+  cuboidBounds: CuboidBounds | null,
+  model: SchematicModel | null,
+  camera: THREE.PerspectiveCamera,
+  renderer: THREE.WebGLRenderer,
+) {
+  if (!control || !model || !target) {
+    control?.classList.remove('is-visible');
+    return;
+  }
+
+  if (target === 'cuboid') {
+    if (!cuboidBounds) {
+      control.classList.remove('is-visible');
+      return;
+    }
+
+    rotationControlProjectionVector.set(
+      ((cuboidBounds.minX + cuboidBounds.maxX) / 2) - (model.dimensions.width - 1) / 2,
+      cuboidBounds.maxY + 1.14,
+      ((cuboidBounds.minZ + cuboidBounds.maxZ) / 2) - (model.dimensions.length - 1) / 2,
+    );
+  } else {
+    if (!selectedBlock) {
+      control.classList.remove('is-visible');
+      return;
+    }
+
+    rotationControlProjectionVector.set(
+      selectedBlock.x - (model.dimensions.width - 1) / 2,
+      selectedBlock.y + 1.16,
+      selectedBlock.z - (model.dimensions.length - 1) / 2,
+    );
+  }
+
+  rotationControlProjectionVector.project(camera);
+
+  if (
+    rotationControlProjectionVector.z < -1
+    || rotationControlProjectionVector.z > 1
+    || Math.abs(rotationControlProjectionVector.x) > 1.15
+    || Math.abs(rotationControlProjectionVector.y) > 1.15
+  ) {
+    control.classList.remove('is-visible');
+    return;
+  }
+
+  const canvas = renderer.domElement;
+  const x = (rotationControlProjectionVector.x * 0.5 + 0.5) * canvas.clientWidth;
+  const y = (-rotationControlProjectionVector.y * 0.5 + 0.5) * canvas.clientHeight;
+  control.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -100%)`;
+  control.classList.add('is-visible');
 }
 
 async function createSelectionBoxGeometry(

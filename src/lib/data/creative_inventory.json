@@ -1,0 +1,1311 @@
+{
+  "minecraftCreativeInventory": {
+    "edition": "Java Edition",
+    "versionBasis": "26.1.2",
+    "format": "logical organization, not exact per-slot ordering",
+    "rules": {
+      "itemsCanAppearInMultipleTabs": true,
+      "blocksAreGenerallyOrderedByMaterial": true,
+      "searchTabAggregatesMostCreativeItems": true,
+      "operatorUtilitiesRequiresCheatsAndOperatorItemsTab": true
+    },
+    "topLevelTabs": [
+      "Search",
+      "Building Blocks",
+      "Colored Blocks",
+      "Natural Blocks",
+      "Functional Blocks",
+      "Redstone Blocks",
+      "Tools & Utilities",
+      "Combat",
+      "Food & Drinks",
+      "Ingredients",
+      "Spawn Eggs",
+      "Operator Utilities",
+      "Saved Hotbars",
+      "Survival Inventory"
+    ],
+    "tabs": {
+      "search": {
+        "label": "Search",
+        "purpose": "Searchable index of creative inventory items.",
+        "contains": [
+          "Most normal creative items",
+          "Blocks",
+          "Tools",
+          "Weapons",
+          "Food",
+          "Ingredients",
+          "Spawn eggs",
+          "Some generated variants such as enchanted books and potions"
+        ]
+      },
+      "building_blocks": {
+        "label": "Building Blocks",
+        "purpose": "Primary structural and architectural blocks.",
+        "organization": [
+          {
+            "group": "Basic stone materials",
+            "items": [
+              "stone",
+              "smooth stone",
+              "cobblestone",
+              "mossy cobblestone",
+              "stone bricks",
+              "mossy stone bricks",
+              "cracked stone bricks",
+              "chiseled stone bricks"
+            ]
+          },
+          {
+            "group": "Stone variants",
+            "items": [
+              "granite",
+              "polished granite",
+              "diorite",
+              "polished diorite",
+              "andesite",
+              "polished andesite",
+              "tuff",
+              "polished tuff",
+              "tuff bricks",
+              "chiseled tuff",
+              "calcite",
+              "dripstone block"
+            ]
+          },
+          {
+            "group": "Deepslate materials",
+            "items": [
+              "deepslate",
+              "cobbled deepslate",
+              "polished deepslate",
+              "deepslate bricks",
+              "cracked deepslate bricks",
+              "deepslate tiles",
+              "cracked deepslate tiles",
+              "chiseled deepslate"
+            ]
+          },
+          {
+            "group": "Sandstone and red sandstone",
+            "items": [
+              "sandstone",
+              "smooth sandstone",
+              "cut sandstone",
+              "chiseled sandstone",
+              "red sandstone",
+              "smooth red sandstone",
+              "cut red sandstone",
+              "chiseled red sandstone"
+            ]
+          },
+          {
+            "group": "Mud and brick materials",
+            "items": [
+              "mud bricks",
+              "bricks",
+              "packed mud",
+              "clay",
+              "terracotta base material"
+            ]
+          },
+          {
+            "group": "Wood building sets",
+            "items": [
+              "oak",
+              "spruce",
+              "birch",
+              "jungle",
+              "acacia",
+              "dark oak",
+              "mangrove",
+              "cherry",
+              "bamboo",
+              "pale oak",
+              "crimson",
+              "warped"
+            ],
+            "variants": [
+              "logs",
+              "wood",
+              "stripped logs",
+              "stripped wood",
+              "planks",
+              "stairs",
+              "slabs",
+              "fences",
+              "fence gates",
+              "doors",
+              "trapdoors",
+              "pressure plates",
+              "buttons",
+              "signs",
+              "hanging signs"
+            ]
+          },
+          {
+            "group": "Nether building blocks",
+            "items": [
+              "netherrack",
+              "nether bricks",
+              "red nether bricks",
+              "cracked nether bricks",
+              "chiseled nether bricks",
+              "basalt",
+              "smooth basalt",
+              "polished basalt",
+              "blackstone",
+              "polished blackstone",
+              "polished blackstone bricks",
+              "cracked polished blackstone bricks",
+              "chiseled polished blackstone"
+            ]
+          },
+          {
+            "group": "End building blocks",
+            "items": [
+              "end stone",
+              "end stone bricks",
+              "purpur block",
+              "purpur pillar",
+              "purpur stairs",
+              "purpur slab"
+            ]
+          },
+          {
+            "group": "Copper building blocks",
+            "items": [
+              "block of copper",
+              "exposed copper",
+              "weathered copper",
+              "oxidized copper",
+              "cut copper",
+              "exposed cut copper",
+              "weathered cut copper",
+              "oxidized cut copper",
+              "waxed copper variants",
+              "copper grates",
+              "copper doors",
+              "copper trapdoors",
+              "copper bulbs"
+            ],
+            "variants": [
+              "block",
+              "cut block",
+              "stairs",
+              "slab",
+              "grate",
+              "door",
+              "trapdoor",
+              "bulb",
+              "oxidized state",
+              "waxed state"
+            ]
+          },
+          {
+            "group": "Valuable block materials",
+            "items": [
+              "coal block",
+              "iron block",
+              "copper block",
+              "gold block",
+              "redstone block",
+              "emerald block",
+              "lapis lazuli block",
+              "diamond block",
+              "netherite block",
+              "amethyst block",
+              "quartz block"
+            ]
+          },
+          {
+            "group": "Shape variants",
+            "items": [
+              "stairs",
+              "slabs",
+              "walls",
+              "fences",
+              "fence gates",
+              "doors",
+              "trapdoors",
+              "pressure plates",
+              "buttons"
+            ]
+          }
+        ]
+      },
+      "colored_blocks": {
+        "label": "Colored Blocks",
+        "purpose": "Blocks organized around the 16 dye colors.",
+        "colorOrder": [
+          "white",
+          "light gray",
+          "gray",
+          "black",
+          "brown",
+          "red",
+          "orange",
+          "yellow",
+          "lime",
+          "green",
+          "cyan",
+          "light blue",
+          "blue",
+          "purple",
+          "magenta",
+          "pink"
+        ],
+        "organization": [
+          {
+            "group": "Wool and carpets",
+            "items": [
+              "colored wool",
+              "colored carpet"
+            ]
+          },
+          {
+            "group": "Terracotta",
+            "items": [
+              "terracotta",
+              "colored terracotta",
+              "glazed terracotta"
+            ]
+          },
+          {
+            "group": "Concrete",
+            "items": [
+              "colored concrete",
+              "colored concrete powder"
+            ]
+          },
+          {
+            "group": "Glass",
+            "items": [
+              "stained glass",
+              "stained glass panes"
+            ]
+          },
+          {
+            "group": "Dyed functional/decorative blocks",
+            "items": [
+              "beds",
+              "banners",
+              "candles",
+              "shulker boxes"
+            ]
+          }
+        ]
+      },
+      "natural_blocks": {
+        "label": "Natural Blocks",
+        "purpose": "Terrain, plants, generated blocks, and naturally occurring materials.",
+        "organization": [
+          {
+            "group": "Surface terrain",
+            "items": [
+              "grass block",
+              "dirt",
+              "coarse dirt",
+              "podzol",
+              "rooted dirt",
+              "mud",
+              "packed mud",
+              "clay",
+              "gravel",
+              "sand",
+              "red sand",
+              "snow",
+              "snow block",
+              "ice",
+              "packed ice",
+              "blue ice"
+            ]
+          },
+          {
+            "group": "Stone and underground generation",
+            "items": [
+              "stone",
+              "deepslate",
+              "tuff",
+              "calcite",
+              "dripstone block",
+              "pointed dripstone",
+              "magma block",
+              "obsidian",
+              "crying obsidian"
+            ]
+          },
+          {
+            "group": "Ores",
+            "items": [
+              "coal ore",
+              "iron ore",
+              "copper ore",
+              "gold ore",
+              "redstone ore",
+              "emerald ore",
+              "lapis lazuli ore",
+              "diamond ore",
+              "deepslate ore variants",
+              "nether gold ore",
+              "nether quartz ore",
+              "ancient debris"
+            ]
+          },
+          {
+            "group": "Logs and leaves",
+            "items": [
+              "oak log",
+              "spruce log",
+              "birch log",
+              "jungle log",
+              "acacia log",
+              "dark oak log",
+              "mangrove log",
+              "cherry log",
+              "pale oak log",
+              "crimson stem",
+              "warped stem",
+              "leaves",
+              "azalea leaves",
+              "flowering azalea leaves",
+              "mangrove roots"
+            ]
+          },
+          {
+            "group": "Saplings and tree growth",
+            "items": [
+              "saplings",
+              "azalea",
+              "flowering azalea",
+              "mangrove propagule",
+              "moss block",
+              "moss carpet"
+            ]
+          },
+          {
+            "group": "Small plants",
+            "items": [
+              "grass",
+              "fern",
+              "dead bush",
+              "seagrass",
+              "sea pickle",
+              "kelp",
+              "bamboo",
+              "sugar cane",
+              "cactus",
+              "vines",
+              "glow lichen",
+              "hanging roots",
+              "nether sprouts"
+            ]
+          },
+          {
+            "group": "Flowers",
+            "items": [
+              "dandelion",
+              "poppy",
+              "blue orchid",
+              "allium",
+              "azure bluet",
+              "tulips",
+              "oxeye daisy",
+              "cornflower",
+              "lily of the valley",
+              "wither rose",
+              "sunflower",
+              "lilac",
+              "rose bush",
+              "peony",
+              "torchflower",
+              "pitcher plant",
+              "wildflowers",
+              "cactus flower"
+            ]
+          },
+          {
+            "group": "Fungi and Nether vegetation",
+            "items": [
+              "brown mushroom",
+              "red mushroom",
+              "crimson fungus",
+              "warped fungus",
+              "crimson roots",
+              "warped roots",
+              "weeping vines",
+              "twisting vines",
+              "nether wart block",
+              "warped wart block",
+              "shroomlight"
+            ]
+          },
+          {
+            "group": "Aquatic and coral",
+            "items": [
+              "tube coral",
+              "brain coral",
+              "bubble coral",
+              "fire coral",
+              "horn coral",
+              "coral blocks",
+              "coral fans",
+              "dead coral variants",
+              "sponge",
+              "wet sponge"
+            ]
+          },
+          {
+            "group": "Sculk family",
+            "items": [
+              "sculk",
+              "sculk vein",
+              "sculk sensor",
+              "calibrated sculk sensor",
+              "sculk catalyst",
+              "sculk shrieker"
+            ]
+          },
+          {
+            "group": "Eggs and natural mob blocks",
+            "items": [
+              "turtle egg",
+              "sniffer egg",
+              "frogspawn",
+              "bee nest"
+            ]
+          }
+        ]
+      },
+      "functional_blocks": {
+        "label": "Functional Blocks",
+        "purpose": "Blocks mainly used for interaction, storage, crafting, utility, lighting, or decoration with behavior.",
+        "organization": [
+          {
+            "group": "Crafting and workstations",
+            "items": [
+              "crafting table",
+              "furnace",
+              "blast furnace",
+              "smoker",
+              "cartography table",
+              "fletching table",
+              "smithing table",
+              "grindstone",
+              "loom",
+              "stonecutter",
+              "anvil",
+              "chipped anvil",
+              "damaged anvil",
+              "enchanting table",
+              "brewing stand",
+              "cauldron",
+              "composter"
+            ]
+          },
+          {
+            "group": "Storage",
+            "items": [
+              "chest",
+              "trapped chest",
+              "barrel",
+              "ender chest",
+              "shulker boxes",
+              "decorated pot",
+              "copper chest variants",
+              "shelf"
+            ]
+          },
+          {
+            "group": "Beds and respawn",
+            "items": [
+              "colored beds",
+              "respawn anchor"
+            ]
+          },
+          {
+            "group": "Light sources",
+            "items": [
+              "torch",
+              "soul torch",
+              "lantern",
+              "soul lantern",
+              "campfire",
+              "soul campfire",
+              "glowstone",
+              "sea lantern",
+              "shroomlight",
+              "redstone lamp",
+              "froglights",
+              "jack o'lantern",
+              "end rod",
+              "candles",
+              "copper bulbs"
+            ]
+          },
+          {
+            "group": "Books, signs, and display",
+            "items": [
+              "bookshelf",
+              "chiseled bookshelf",
+              "lectern",
+              "signs",
+              "hanging signs",
+              "item frame",
+              "glow item frame",
+              "armor stand",
+              "painting"
+            ]
+          },
+          {
+            "group": "Mob and villager utility",
+            "items": [
+              "bell",
+              "beehive",
+              "bee nest",
+              "lodestone",
+              "conduit",
+              "beacon",
+              "note block",
+              "jukebox"
+            ]
+          },
+          {
+            "group": "Portals and special interaction",
+            "items": [
+              "end portal frame",
+              "dragon egg",
+              "end crystal"
+            ]
+          },
+          {
+            "group": "Heads and skulls",
+            "items": [
+              "skeleton skull",
+              "wither skeleton skull",
+              "zombie head",
+              "player head",
+              "creeper head",
+              "piglin head",
+              "dragon head"
+            ]
+          }
+        ]
+      },
+      "redstone_blocks": {
+        "label": "Redstone Blocks",
+        "purpose": "Circuitry, automation, signal components, and redstone-adjacent mechanisms.",
+        "organization": [
+          {
+            "group": "Power sources",
+            "items": [
+              "redstone block",
+              "redstone torch",
+              "lever",
+              "buttons",
+              "pressure plates",
+              "weighted pressure plates",
+              "daylight detector",
+              "target block",
+              "tripwire hook",
+              "sculk sensor",
+              "calibrated sculk sensor",
+              "lightning rod"
+            ]
+          },
+          {
+            "group": "Signal transmission and logic",
+            "items": [
+              "redstone dust",
+              "repeater",
+              "comparator",
+              "observer"
+            ]
+          },
+          {
+            "group": "Pistons and movement",
+            "items": [
+              "piston",
+              "sticky piston",
+              "slime block",
+              "honey block"
+            ]
+          },
+          {
+            "group": "Dispensing and item movement",
+            "items": [
+              "dispenser",
+              "dropper",
+              "hopper"
+            ]
+          },
+          {
+            "group": "Rails and minecart redstone",
+            "items": [
+              "rail",
+              "powered rail",
+              "detector rail",
+              "activator rail"
+            ]
+          },
+          {
+            "group": "Doors, gates, and access control",
+            "items": [
+              "iron door",
+              "iron trapdoor",
+              "wooden doors",
+              "wooden trapdoors",
+              "fence gates"
+            ]
+          },
+          {
+            "group": "Redstone output and devices",
+            "items": [
+              "redstone lamp",
+              "note block",
+              "jukebox",
+              "bell",
+              "copper bulb",
+              "crafter"
+            ]
+          },
+          {
+            "group": "Containers used in circuits",
+            "items": [
+              "chest",
+              "trapped chest",
+              "barrel",
+              "copper chest variants",
+              "shelf"
+            ]
+          },
+          {
+            "group": "Special redstone-readable blocks",
+            "items": [
+              "lectern",
+              "composter",
+              "cauldron",
+              "beehive",
+              "bee nest",
+              "decorated pot",
+              "chiseled bookshelf",
+              "copper golem statue variants"
+            ]
+          }
+        ]
+      },
+      "tools_and_utilities": {
+        "label": "Tools & Utilities",
+        "purpose": "Non-combat tools, transportation, buckets, maps, and world interaction items.",
+        "organization": [
+          {
+            "group": "Mining and digging tools",
+            "items": [
+              "wooden pickaxe",
+              "stone pickaxe",
+              "copper pickaxe",
+              "iron pickaxe",
+              "golden pickaxe",
+              "diamond pickaxe",
+              "netherite pickaxe",
+              "wooden shovel",
+              "stone shovel",
+              "copper shovel",
+              "iron shovel",
+              "golden shovel",
+              "diamond shovel",
+              "netherite shovel"
+            ]
+          },
+          {
+            "group": "Woodcutting and farming tools",
+            "items": [
+              "axes",
+              "hoes",
+              "shears",
+              "flint and steel",
+              "brush",
+              "fishing rod"
+            ]
+          },
+          {
+            "group": "Navigation and information",
+            "items": [
+              "compass",
+              "recovery compass",
+              "clock",
+              "map",
+              "empty map",
+              "filled map",
+              "spyglass"
+            ]
+          },
+          {
+            "group": "Buckets",
+            "items": [
+              "bucket",
+              "water bucket",
+              "lava bucket",
+              "powder snow bucket",
+              "milk bucket",
+              "fish buckets",
+              "axolotl bucket",
+              "tadpole bucket",
+              "pufferfish bucket"
+            ]
+          },
+          {
+            "group": "Boats and rafts",
+            "items": [
+              "oak boat",
+              "spruce boat",
+              "birch boat",
+              "jungle boat",
+              "acacia boat",
+              "dark oak boat",
+              "mangrove boat",
+              "cherry boat",
+              "pale oak boat",
+              "bamboo raft",
+              "boats with chest",
+              "rafts with chest"
+            ]
+          },
+          {
+            "group": "Minecarts",
+            "items": [
+              "minecart",
+              "chest minecart",
+              "furnace minecart",
+              "hopper minecart",
+              "tnt minecart"
+            ]
+          },
+          {
+            "group": "Mob utility",
+            "items": [
+              "saddle",
+              "lead",
+              "name tag",
+              "carrot on a stick",
+              "warped fungus on a stick",
+              "goat horns"
+            ]
+          },
+          {
+            "group": "Flight and movement",
+            "items": [
+              "elytra",
+              "firework rockets",
+              "wind charge",
+              "ender pearl"
+            ]
+          },
+          {
+            "group": "Archaeology and utility",
+            "items": [
+              "brush",
+              "bundle",
+              "music discs",
+              "ominous bottle"
+            ]
+          }
+        ]
+      },
+      "combat": {
+        "label": "Combat",
+        "purpose": "Weapons, armor, shields, projectiles, and combat enchantments.",
+        "organization": [
+          {
+            "group": "Melee weapons",
+            "items": [
+              "wooden sword",
+              "stone sword",
+              "copper sword",
+              "iron sword",
+              "golden sword",
+              "diamond sword",
+              "netherite sword",
+              "mace",
+              "spear variants"
+            ]
+          },
+          {
+            "group": "Ranged weapons",
+            "items": [
+              "bow",
+              "crossbow",
+              "trident"
+            ]
+          },
+          {
+            "group": "Ammunition and thrown combat items",
+            "items": [
+              "arrow",
+              "spectral arrow",
+              "tipped arrows",
+              "snowball",
+              "egg",
+              "wind charge",
+              "fire charge"
+            ]
+          },
+          {
+            "group": "Armor sets",
+            "items": [
+              "leather armor",
+              "chainmail armor",
+              "copper armor",
+              "iron armor",
+              "golden armor",
+              "diamond armor",
+              "netherite armor",
+              "turtle shell"
+            ]
+          },
+          {
+            "group": "Horse and mount armor",
+            "items": [
+              "leather horse armor",
+              "iron horse armor",
+              "golden horse armor",
+              "diamond horse armor",
+              "netherite horse armor",
+              "wolf armor",
+              "nautilus armor"
+            ]
+          },
+          {
+            "group": "Defense",
+            "items": [
+              "shield",
+              "totem of undying"
+            ]
+          },
+          {
+            "group": "Combat enchantment books",
+            "items": [
+              "sharpness",
+              "smite",
+              "bane of arthropods",
+              "knockback",
+              "fire aspect",
+              "looting",
+              "sweeping edge",
+              "power",
+              "punch",
+              "flame",
+              "infinity",
+              "multishot",
+              "piercing",
+              "quick charge",
+              "protection",
+              "projectile protection",
+              "blast protection",
+              "fire protection",
+              "feather falling",
+              "respiration",
+              "aqua affinity",
+              "thorns",
+              "depth strider",
+              "frost walker",
+              "soul speed",
+              "swift sneak",
+              "density",
+              "breach",
+              "wind burst"
+            ]
+          }
+        ]
+      },
+      "food_and_drinks": {
+        "label": "Food & Drinks",
+        "purpose": "Consumable food, drinks, potions, and status-effect consumables.",
+        "organization": [
+          {
+            "group": "Basic foods",
+            "items": [
+              "apple",
+              "bread",
+              "carrot",
+              "potato",
+              "baked potato",
+              "beetroot",
+              "beetroot soup",
+              "melon slice",
+              "sweet berries",
+              "glow berries"
+            ]
+          },
+          {
+            "group": "Meat and fish",
+            "items": [
+              "raw beef",
+              "steak",
+              "raw porkchop",
+              "cooked porkchop",
+              "raw chicken",
+              "cooked chicken",
+              "raw mutton",
+              "cooked mutton",
+              "raw rabbit",
+              "cooked rabbit",
+              "rabbit stew",
+              "cod",
+              "cooked cod",
+              "salmon",
+              "cooked salmon",
+              "tropical fish",
+              "pufferfish"
+            ]
+          },
+          {
+            "group": "Special foods",
+            "items": [
+              "golden apple",
+              "enchanted golden apple",
+              "golden carrot",
+              "chorus fruit",
+              "suspicious stew",
+              "honey bottle",
+              "cake",
+              "cookie",
+              "pumpkin pie",
+              "dried kelp"
+            ]
+          },
+          {
+            "group": "Potions",
+            "items": [
+              "water bottle",
+              "awkward potion",
+              "mundane potion",
+              "thick potion",
+              "regular potions",
+              "splash potions",
+              "lingering potions"
+            ]
+          },
+          {
+            "group": "Consumable utility",
+            "items": [
+              "milk bucket",
+              "ominous bottle",
+              "golden dandelion"
+            ]
+          }
+        ]
+      },
+      "ingredients": {
+        "label": "Ingredients",
+        "purpose": "Crafting, brewing, smithing, dyeing, and upgrade materials.",
+        "organization": [
+          {
+            "group": "Raw materials and ingots",
+            "items": [
+              "coal",
+              "charcoal",
+              "raw iron",
+              "raw copper",
+              "raw gold",
+              "iron ingot",
+              "copper ingot",
+              "gold ingot",
+              "netherite ingot",
+              "netherite scrap",
+              "copper nugget",
+              "iron nugget",
+              "gold nugget"
+            ]
+          },
+          {
+            "group": "Gems and minerals",
+            "items": [
+              "diamond",
+              "emerald",
+              "lapis lazuli",
+              "quartz",
+              "amethyst shard",
+              "prismarine shard",
+              "prismarine crystals",
+              "echo shard"
+            ]
+          },
+          {
+            "group": "Dusts and powders",
+            "items": [
+              "redstone dust",
+              "glowstone dust",
+              "gunpowder",
+              "blaze powder",
+              "sugar",
+              "bone meal"
+            ]
+          },
+          {
+            "group": "Mob drops",
+            "items": [
+              "string",
+              "spider eye",
+              "fermented spider eye",
+              "rotten flesh",
+              "bone",
+              "ender pearl",
+              "blaze rod",
+              "ghast tear",
+              "slimeball",
+              "magma cream",
+              "phantom membrane",
+              "rabbit hide",
+              "rabbit foot",
+              "leather",
+              "feather",
+              "ink sac",
+              "glow ink sac",
+              "scute",
+              "armadillo scute",
+              "turtle scute",
+              "nautilus shell"
+            ]
+          },
+          {
+            "group": "Plant and crop ingredients",
+            "items": [
+              "wheat",
+              "seeds",
+              "beetroot seeds",
+              "melon seeds",
+              "pumpkin seeds",
+              "cocoa beans",
+              "nether wart",
+              "bamboo",
+              "kelp",
+              "sugar cane"
+            ]
+          },
+          {
+            "group": "Dyes",
+            "items": [
+              "white dye",
+              "light gray dye",
+              "gray dye",
+              "black dye",
+              "brown dye",
+              "red dye",
+              "orange dye",
+              "yellow dye",
+              "lime dye",
+              "green dye",
+              "cyan dye",
+              "light blue dye",
+              "blue dye",
+              "purple dye",
+              "magenta dye",
+              "pink dye"
+            ]
+          },
+          {
+            "group": "Smithing",
+            "items": [
+              "netherite upgrade smithing template",
+              "armor trim smithing templates",
+              "upgrade materials"
+            ]
+          },
+          {
+            "group": "Pottery and archaeology",
+            "items": [
+              "brick",
+              "clay ball",
+              "pottery sherds"
+            ]
+          },
+          {
+            "group": "Books and paper",
+            "items": [
+              "paper",
+              "book",
+              "writable book",
+              "written book",
+              "enchanted book"
+            ]
+          },
+          {
+            "group": "Firework ingredients",
+            "items": [
+              "firework star",
+              "firework rocket",
+              "gunpowder",
+              "paper",
+              "dyes"
+            ]
+          }
+        ]
+      },
+      "spawn_eggs": {
+        "label": "Spawn Eggs",
+        "purpose": "Creative-only mob spawning items.",
+        "organization": [
+          {
+            "group": "Passive mobs",
+            "items": [
+              "allay spawn egg",
+              "armadillo spawn egg",
+              "axolotl spawn egg",
+              "bat spawn egg",
+              "camel spawn egg",
+              "cat spawn egg",
+              "chicken spawn egg",
+              "cod spawn egg",
+              "cow spawn egg",
+              "donkey spawn egg",
+              "fox spawn egg",
+              "frog spawn egg",
+              "glow squid spawn egg",
+              "goat spawn egg",
+              "horse spawn egg",
+              "mooshroom spawn egg",
+              "mule spawn egg",
+              "ocelot spawn egg",
+              "parrot spawn egg",
+              "pig spawn egg",
+              "rabbit spawn egg",
+              "salmon spawn egg",
+              "sheep spawn egg",
+              "sniffer spawn egg",
+              "squid spawn egg",
+              "strider spawn egg",
+              "tadpole spawn egg",
+              "tropical fish spawn egg",
+              "turtle spawn egg",
+              "villager spawn egg",
+              "wandering trader spawn egg"
+            ]
+          },
+          {
+            "group": "Neutral mobs",
+            "items": [
+              "bee spawn egg",
+              "cave spider spawn egg",
+              "dolphin spawn egg",
+              "enderman spawn egg",
+              "goat spawn egg",
+              "iron golem spawn egg",
+              "llama spawn egg",
+              "panda spawn egg",
+              "piglin spawn egg",
+              "polar bear spawn egg",
+              "pufferfish spawn egg",
+              "spider spawn egg",
+              "trader llama spawn egg",
+              "wolf spawn egg",
+              "zombified piglin spawn egg"
+            ]
+          },
+          {
+            "group": "Hostile mobs",
+            "items": [
+              "blaze spawn egg",
+              "bogged spawn egg",
+              "breeze spawn egg",
+              "creeper spawn egg",
+              "drowned spawn egg",
+              "elder guardian spawn egg",
+              "endermite spawn egg",
+              "evoker spawn egg",
+              "ghast spawn egg",
+              "guardian spawn egg",
+              "hoglin spawn egg",
+              "husk spawn egg",
+              "magma cube spawn egg",
+              "phantom spawn egg",
+              "piglin brute spawn egg",
+              "pillager spawn egg",
+              "ravager spawn egg",
+              "shulker spawn egg",
+              "silverfish spawn egg",
+              "skeleton spawn egg",
+              "slime spawn egg",
+              "stray spawn egg",
+              "vex spawn egg",
+              "vindicator spawn egg",
+              "warden spawn egg",
+              "witch spawn egg",
+              "wither skeleton spawn egg",
+              "zoglin spawn egg",
+              "zombie spawn egg",
+              "zombie villager spawn egg"
+            ]
+          },
+          {
+            "group": "Newer or special mobs",
+            "items": [
+              "copper golem spawn egg",
+              "nautilus spawn egg",
+              "zombie nautilus spawn egg",
+              "camel husk spawn egg",
+              "parched spawn egg"
+            ]
+          }
+        ]
+      },
+      "operator_utilities": {
+        "label": "Operator Utilities",
+        "purpose": "Command/admin/mapmaking blocks and items.",
+        "availability": "Only visible when cheats are enabled and the Operator Items Tab option is enabled.",
+        "organization": [
+          {
+            "group": "Command blocks",
+            "items": [
+              "command block",
+              "chain command block",
+              "repeating command block"
+            ]
+          },
+          {
+            "group": "Structure and world editing",
+            "items": [
+              "structure block",
+              "structure void",
+              "jigsaw block"
+            ]
+          },
+          {
+            "group": "Invisible or technical blocks",
+            "items": [
+              "barrier",
+              "light"
+            ]
+          },
+          {
+            "group": "Debug and testing",
+            "items": [
+              "debug stick"
+            ]
+          }
+        ]
+      },
+      "saved_hotbars": {
+        "label": "Saved Hotbars",
+        "purpose": "Player-saved custom hotbar presets.",
+        "contains": [
+          "Up to 9 saved hotbars",
+          "User-defined item stacks",
+          "Can include custom NBT/component data if saved by the player"
+        ]
+      },
+      "survival_inventory": {
+        "label": "Survival Inventory",
+        "purpose": "Player inventory, armor slots, offhand slot, and crafting grid while in Creative mode.",
+        "contains": [
+          "Main inventory",
+          "Hotbar",
+          "Armor slots",
+          "Offhand slot",
+          "2x2 crafting grid"
+        ]
+      }
+    }
+  }
+}

@@ -48,6 +48,7 @@ import {
   type SchematicModel,
   type VoxelBlock,
 } from './lib/schematic';
+import creativeInventoryData from './lib/data/creative_inventory.json';
 import defaultSchematicUrl from '../Medieval House.litematic?url';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
@@ -58,7 +59,6 @@ type AppView = 'inspect' | 'edit';
 type EditTool = 'select' | 'build';
 type Theme = 'light' | 'dark';
 type MaterialsScope = 'build' | 'cuboid';
-type BlockLibraryDisplay = 'creative' | 'color';
 type ThumbnailLoadState = 'idle' | 'loading' | 'ready' | 'failed';
 type CuboidCornerId = 'a' | 'b';
 type Direction = 'up' | 'down' | 'north' | 'south' | 'west' | 'east';
@@ -168,12 +168,12 @@ const commonBuildBlocks = [
   'minecraft:black_concrete',
 ];
 const creativeCategoryOrder: Array<{ id: CreativeCategoryId; label: string }> = [
-  { id: 'building_blocks', label: 'Building Blocks' },
-  { id: 'colored_blocks', label: 'Colored Blocks' },
-  { id: 'natural_blocks', label: 'Natural Blocks' },
-  { id: 'functional_blocks', label: 'Functional Blocks' },
-  { id: 'redstone_blocks', label: 'Redstone Blocks' },
-  { id: 'tools_and_utilities', label: 'Tools & Utilities' },
+  { id: 'building_blocks', label: creativeInventoryTabLabel('building_blocks') },
+  { id: 'colored_blocks', label: creativeInventoryTabLabel('colored_blocks') },
+  { id: 'natural_blocks', label: creativeInventoryTabLabel('natural_blocks') },
+  { id: 'functional_blocks', label: creativeInventoryTabLabel('functional_blocks') },
+  { id: 'redstone_blocks', label: creativeInventoryTabLabel('redstone_blocks') },
+  { id: 'tools_and_utilities', label: creativeInventoryTabLabel('tools_and_utilities') },
 ];
 const colorGroupOrder: Array<{ id: ColorGroupId; label: string }> = [
   { id: 'white', label: 'White & Light' },
@@ -364,6 +364,7 @@ const creativeUtilityOrder = [
   'structure_block',
   'jigsaw',
 ];
+const creativeInventoryKeywordOrder = createCreativeInventoryKeywordOrder();
 const blockstateFiles = import.meta.glob('/public/minecraft-assets/assets/minecraft/blockstates/*.json', {
   query: '?url',
   import: 'default',
@@ -403,13 +404,13 @@ function App() {
   const [selectedBuildBlock, setSelectedBuildBlock] = useState(emptyBuildBlock);
   const [recentBuildBlocks, setRecentBuildBlocks] = useState<string[]>([]);
   const [blockSearch, setBlockSearch] = useState('');
-  const [blockLibraryDisplay, setBlockLibraryDisplay] = useState<BlockLibraryDisplay>('creative');
   const [replaceFromBlock, setReplaceFromBlock] = useState('');
   const [replaceToBlock, setReplaceToBlock] = useState(emptyBuildBlock);
   const [editNotice, setEditNotice] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
   const viewerRef = useRef<Viewer3DHandle | null>(null);
   const axisGizmoRef = useRef<HTMLDivElement | null>(null);
+  const rotationControlsRef = useRef<HTMLDivElement | null>(null);
   const materialItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const selectionPanelRef = useRef<HTMLElement | null>(null);
   const materialPanelRef = useRef<HTMLElement | null>(null);
@@ -536,12 +537,11 @@ function App() {
   }, [blockLibraryItems, blockSearch]);
 
   const blockLibraryGroups = useMemo<BlockLibraryGroup[]>(() => (
-    blockLibraryDisplay === 'creative'
-      ? groupBlocksByCreativeCategory(filteredBlockLibraryItems)
-      : groupBlocksByColor(filteredBlockLibraryItems)
-  ), [blockLibraryDisplay, filteredBlockLibraryItems]);
+    groupBlocksByCreativeCategory(filteredBlockLibraryItems)
+  ), [filteredBlockLibraryItems]);
 
   const visibleBlockLibraryCount = filteredBlockLibraryItems.length;
+  const rotateTargetLabel = materialsScope === 'cuboid' && cuboidBounds ? 'Selected Area' : selectedBlock ? 'Selected Block' : '';
 
   useEffect(() => {
     if (loadState !== 'ready') return;
@@ -710,7 +710,6 @@ function App() {
     setSelectedBuildBlock(emptyBuildBlock);
     setRecentBuildBlocks([]);
     setBlockSearch('');
-    setBlockLibraryDisplay('creative');
     setReplaceFromBlock(nextModel.blocks[0]?.stateKey ?? '');
     setReplaceToBlock(emptyBuildBlock);
     setEditNotice('');
@@ -1329,12 +1328,12 @@ function App() {
           />
         </aside>
 
-        <section className="viewport-panel" aria-label="Schematic 3D viewport">
+        <section className={`viewport-panel${selectedBlock ? ' has-selection-modal' : ''}`} aria-label="Schematic 3D viewport">
           {selectedBlock && (
-            <section className="selection-inspector-card" aria-label="Selection inspector">
+            <section className="selection-inspector-card" aria-label="Selected block details">
               <div className="selection-inspector-header">
                 <div>
-                  <p className="eyebrow">Selection Inspector</p>
+                  <p className="eyebrow">Selected Block</p>
                   <strong>{selectedBlock.name}</strong>
                 </div>
                 <button
@@ -1391,7 +1390,47 @@ function App() {
                   </div>
                 </div>
               )}
+
+              {appView === 'edit' && (
+                <div className="placement-grid compact" aria-label="Adjacent placement directions">
+                  {(['up', 'down', 'north', 'south', 'west', 'east'] as Direction[]).map((direction) => (
+                    <button type="button" key={direction} onClick={() => placeAdjacentBlock(direction)}>
+                      {directionLabel(direction)}
+                    </button>
+                  ))}
+                </div>
+              )}
             </section>
+          )}
+
+          {appView === 'edit' && rotateTargetLabel && (
+            <div
+              className="canvas-rotation-controls"
+              ref={rotationControlsRef}
+              aria-label={`Rotate ${rotateTargetLabel.toLocaleLowerCase()}`}
+            >
+              <button
+                type="button"
+                className="rotation-arrow rotation-arrow-left"
+                onClick={() => rotateSelection('counterclockwise')}
+                disabled={materialsScope === 'cuboid' ? !cuboidBounds : !selectedBlock}
+                title={`Rotate ${rotateTargetLabel.toLocaleLowerCase()} left`}
+                aria-label={`Rotate ${rotateTargetLabel.toLocaleLowerCase()} left`}
+              >
+                <RotateCcw size={18} />
+              </button>
+              <span>{rotateTargetLabel}</span>
+              <button
+                type="button"
+                className="rotation-arrow rotation-arrow-right"
+                onClick={() => rotateSelection('clockwise')}
+                disabled={materialsScope === 'cuboid' ? !cuboidBounds : !selectedBlock}
+                title={`Rotate ${rotateTargetLabel.toLocaleLowerCase()} right`}
+                aria-label={`Rotate ${rotateTargetLabel.toLocaleLowerCase()} right`}
+              >
+                <RotateCw size={18} />
+              </button>
+            </div>
           )}
 
           {model && appView === 'edit' && recentBuildBlocks.length > 0 && (
@@ -1505,6 +1544,8 @@ function App() {
             placementPreviewBlock={appView === 'edit' && selectedBuildBlock !== 'minecraft:air' ? selectedBuildBlockPreview : null}
             cuboidBounds={cuboidBounds}
             cuboidCorners={cuboidCorners}
+            rotationTarget={appView === 'edit' && rotateTargetLabel ? (materialsScope === 'cuboid' && cuboidBounds ? 'cuboid' : 'block') : null}
+            rotationControlRef={rotationControlsRef}
             onBlockSelect={handleBlockSelect}
             onAxisOrientationChange={updateAxisGizmo}
             viewerRef={viewerRef}
@@ -1800,7 +1841,7 @@ function App() {
                   className={editPanelTab === 'tools' ? 'is-active' : ''}
                   onClick={() => setEditPanelTab('tools')}
                 >
-                  Build Tools
+                  Block Library
                 </button>
                 <button
                   type="button"
@@ -1823,14 +1864,6 @@ function App() {
               </div>
 
               <section className={`edit-panel inspector-panel${editPanelTab === 'tools' ? ' is-active' : ''}`} aria-label="Edit controls">
-                <div className="section-heading">
-                  <div>
-                    <p className="eyebrow">Edit View</p>
-                    <h2>{formatBlockName(selectedBuildBlock)}</h2>
-                  </div>
-                  <BlockPreview stateKey={selectedBuildBlock} color={selectedBuildBlockPreview.color} />
-                </div>
-
                 <div className="edit-tool-grid" role="group" aria-label="Edit tool">
                   <button
                     type="button"
@@ -1852,52 +1885,12 @@ function App() {
                   </button>
                 </div>
 
-                {selectedBlock ? (
-                  <section className="edit-placement-panel" aria-label="Place adjacent block">
-                    <div className="section-heading compact">
-                      <div>
-                        <h2>Selected Block</h2>
-                        <p className="eyebrow">
-                          {selectedBlockWorldX}, {selectedBlockWorldY}, {selectedBlockWorldZ}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="placement-grid" aria-label="Adjacent placement directions">
-                      {(['up', 'down', 'north', 'south', 'west', 'east'] as Direction[]).map((direction) => (
-                        <button type="button" key={direction} onClick={() => placeAdjacentBlock(direction)}>
-                          {directionLabel(direction)}
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                ) : (
-                  <p className="panel-empty">Select a block in the viewport, then build with it or place the active block beside it.</p>
-                )}
-
                 <section className="edit-library" aria-label="Block library">
                   <div className="section-heading compact">
                     <div>
                       <h2>Block Library</h2>
                       <p className="eyebrow">{visibleBlockLibraryCount.toLocaleString()} blocks</p>
                     </div>
-                  </div>
-                  <div className="block-library-display" role="group" aria-label="Block library display">
-                    <button
-                      type="button"
-                      className={blockLibraryDisplay === 'creative' ? 'is-active' : ''}
-                      onClick={() => setBlockLibraryDisplay('creative')}
-                      aria-pressed={blockLibraryDisplay === 'creative'}
-                    >
-                      Creative
-                    </button>
-                    <button
-                      type="button"
-                      className={blockLibraryDisplay === 'color' ? 'is-active' : ''}
-                      onClick={() => setBlockLibraryDisplay('color')}
-                      aria-pressed={blockLibraryDisplay === 'color'}
-                    >
-                      Color
-                    </button>
                   </div>
                   <label className="material-search">
                     <Search size={16} aria-hidden="true" />
@@ -1909,7 +1902,7 @@ function App() {
                       aria-label="Find any block"
                     />
                   </label>
-                  <div className="block-library-grid" aria-label={`${blockLibraryDisplay === 'creative' ? 'Creative' : 'Color'} block grid`}>
+                  <div className="block-library-grid" aria-label="Creative block grid">
                     {blockLibraryGroups.map((group) => (
                       <section className="block-library-group" key={group.id} aria-label={group.label}>
                         <div className="block-library-group-heading">
@@ -2259,24 +2252,132 @@ function creativeCategoryRank(id: CreativeCategoryId): number {
 function creativeInventoryRank(stateKey: string): number {
   const id = baseBlockId(stateKey);
   const category = creativeCategoryForBlock(stateKey);
+  const inventoryRank = creativeInventoryKeywordRank(category, id);
+  const categoryBase = creativeCategoryRank(category) * 1_000;
 
   if (category === 'colored_blocks') {
-    return 1_000 + colorPrefixRank(id) * 100 + blockVariantRank(stripColorPrefix(id));
+    return categoryBase + inventoryRank * 100 + colorPrefixRank(id) * 10 + blockVariantRank(stripColorPrefix(id));
   }
   if (category === 'natural_blocks') {
-    return 2_000 + orderedBlockRank(id, creativeNaturalOrder) * 100 + blockVariantRank(id);
+    return categoryBase + inventoryRank * 100 + orderedBlockRank(id, creativeNaturalOrder) + blockVariantRank(id);
   }
   if (category === 'functional_blocks') {
-    return 3_000 + orderedBlockRank(id, creativeFunctionalOrder) * 100 + woodTypeRank(id) + blockVariantRank(id);
+    return categoryBase + inventoryRank * 100 + orderedBlockRank(id, creativeFunctionalOrder) + woodTypeRank(id) + blockVariantRank(id);
   }
   if (category === 'redstone_blocks') {
-    return 4_000 + orderedBlockRank(id, creativeRedstoneOrder) * 100 + blockVariantRank(id);
+    return categoryBase + inventoryRank * 100 + orderedBlockRank(id, creativeRedstoneOrder) + blockVariantRank(id);
   }
   if (category === 'tools_and_utilities') {
-    return 5_000 + orderedBlockRank(id, creativeUtilityOrder) * 100 + blockVariantRank(id);
+    return categoryBase + inventoryRank * 100 + orderedBlockRank(id, creativeUtilityOrder) + blockVariantRank(id);
   }
 
-  return orderedBlockRank(id, creativeBuildingOrder) * 100 + woodTypeRank(id) + blockVariantRank(id);
+  return categoryBase + inventoryRank * 100 + orderedBlockRank(id, creativeBuildingOrder) + woodTypeRank(id) + blockVariantRank(id);
+}
+
+function creativeInventoryTabLabel(id: CreativeCategoryId): string {
+  const tab = creativeInventoryData.minecraftCreativeInventory.tabs[id];
+  return tab?.label ?? formatBlockName(id);
+}
+
+function createCreativeInventoryKeywordOrder(): Record<CreativeCategoryId, string[]> {
+  return {
+    building_blocks: creativeInventoryKeywordsForTab('building_blocks'),
+    colored_blocks: creativeInventoryKeywordsForTab('colored_blocks'),
+    natural_blocks: creativeInventoryKeywordsForTab('natural_blocks'),
+    functional_blocks: creativeInventoryKeywordsForTab('functional_blocks'),
+    redstone_blocks: creativeInventoryKeywordsForTab('redstone_blocks'),
+    tools_and_utilities: creativeInventoryKeywordsForTab('tools_and_utilities'),
+  };
+}
+
+function creativeInventoryKeywordsForTab(id: CreativeCategoryId): string[] {
+  const tab = creativeInventoryData.minecraftCreativeInventory.tabs[id];
+  const organization = 'organization' in tab && Array.isArray(tab.organization) ? tab.organization : [];
+  const keywords: string[] = [];
+
+  for (const group of organization) {
+    const inventoryGroup = group as { items?: string[]; variants?: string[] };
+    for (const item of [...(inventoryGroup.items ?? []), ...(inventoryGroup.variants ?? [])]) {
+      keywords.push(normalizeInventoryKeyword(item));
+    }
+  }
+
+  return keywords.filter((keyword, index) => keyword && keywords.indexOf(keyword) === index);
+}
+
+function creativeInventoryKeywordRank(category: CreativeCategoryId, id: string): number {
+  const keywords = creativeInventoryKeywordOrder[category];
+  const match = keywords
+    .map((keyword, index) => ({ keyword, index }))
+    .filter(({ keyword }) => inventoryKeywordMatchesBlockId(keyword, id))
+    .sort((a, b) => b.keyword.length - a.keyword.length || a.index - b.index)[0];
+
+  return match ? match.index : keywords.length;
+}
+
+function inventoryKeywordMatchesBlockId(keyword: string, id: string): boolean {
+  if (keyword === id) return true;
+
+  const singularKeyword = singularInventoryKeyword(keyword);
+  if (singularKeyword !== keyword && inventoryKeywordMatchesBlockId(singularKeyword, id)) return true;
+
+  return id.startsWith(`${keyword}_`)
+    || id.endsWith(`_${keyword}`)
+    || id.includes(`_${keyword}_`);
+}
+
+function normalizeInventoryKeyword(value: string): string {
+  return value
+    .toLocaleLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^colored_/, '')
+    .replace(/^wooden_/, '')
+    .replace(/_variants?$/, '')
+    .replace(/_base_material$/, '')
+    .replace(/^block_of_/, '')
+    .replace(/^redstone_dust$/, 'redstone')
+    .replace(/^target_block$/, 'target')
+    .replace(/^jack_o_lantern$/, 'jack_o_lantern')
+    .replace(/^lapis_lazuli_ore$/, 'lapis_ore')
+    .replace(/^deepslate_ore$/, 'deepslate')
+    .replace(/^wood$/, 'wood')
+    .replace(/^logs$/, 'log')
+    .replace(/^slabs$/, 'slab')
+    .replace(/^stairs$/, 'stairs')
+    .replace(/^fences$/, 'fence')
+    .replace(/^buttons$/, 'button')
+    .replace(/^doors$/, 'door')
+    .replace(/^trapdoors$/, 'trapdoor')
+    .replace(/^pressure_plates$/, 'pressure_plate')
+    .replace(/^signs$/, 'sign')
+    .replace(/^hanging_signs$/, 'hanging_sign')
+    .replace(/^stained_glass_panes$/, 'stained_glass_pane')
+    .replace(/^shulker_boxes$/, 'shulker_box')
+    .replace(/^colored_beds$/, 'bed')
+    .replace(/^beds$/, 'bed')
+    .replace(/^banners$/, 'banner')
+    .replace(/^candles$/, 'candle')
+    .replace(/^froglights$/, 'froglight')
+    .replace(/^saplings$/, 'sapling')
+    .replace(/^tulips$/, 'tulip')
+    .replace(/^vines$/, 'vine')
+    .replace(/^axes$/, 'axe')
+    .replace(/^hoes$/, 'hoe')
+    .replace(/^fish_buckets$/, 'bucket')
+    .replace(/^boats_with_chest$/, 'chest_boat')
+    .replace(/^rafts_with_chest$/, 'chest_raft')
+    .replace(/^firework_rockets$/, 'firework_rocket')
+    .replace(/^music_discs$/, 'music_disc')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+}
+
+function singularInventoryKeyword(keyword: string): string {
+  if (keyword.endsWith('ies')) return `${keyword.slice(0, -3)}y`;
+  if (keyword.endsWith('es') && !keyword.endsWith('ss')) return keyword.slice(0, -2);
+  if (keyword.endsWith('s') && !keyword.endsWith('ss')) return keyword.slice(0, -1);
+  return keyword;
 }
 
 function orderedBlockRank(id: string, order: string[]): number {
