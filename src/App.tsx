@@ -59,6 +59,7 @@ type EditTool = 'select' | 'build';
 type Theme = 'light' | 'dark';
 type MaterialsScope = 'build' | 'cuboid';
 type BlockLibraryDisplay = 'creative' | 'color';
+type ThumbnailLoadState = 'idle' | 'loading' | 'ready' | 'failed';
 type CuboidCornerId = 'a' | 'b';
 type Direction = 'up' | 'down' | 'north' | 'south' | 'west' | 'east';
 type RotationDirection = 'clockwise' | 'counterclockwise';
@@ -2050,6 +2051,7 @@ function App() {
 function BlockPreview({ stateKey, color }: { stateKey: string; color: number }) {
   const previewRef = useRef<HTMLSpanElement | null>(null);
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
+  const [thumbnailState, setThumbnailState] = useState<ThumbnailLoadState>('idle');
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
@@ -2077,10 +2079,18 @@ function BlockPreview({ stateKey, color }: { stateKey: string; color: number }) 
 
     let cancelled = false;
     setThumbnailUrl(null);
-    void createBlockThumbnail(stateKey, color).then((url) => {
-      if (cancelled) return;
-      setThumbnailUrl(url);
-    });
+    setThumbnailState('loading');
+    void createBlockThumbnail(stateKey, color)
+      .then((url) => {
+        if (cancelled) return;
+        setThumbnailUrl(url);
+        setThumbnailState(url ? 'ready' : 'failed');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setThumbnailUrl(null);
+        setThumbnailState('failed');
+      });
 
     return () => {
       cancelled = true;
@@ -2094,13 +2104,17 @@ function BlockPreview({ stateKey, color }: { stateKey: string; color: number }) 
       ref={previewRef}
       className="block-preview"
       data-shape="thumbnail"
+      data-state={thumbnailState}
       aria-hidden="true"
       style={{
         '--block-fallback': fallbackColor,
         '--block-thumbnail': thumbnailUrl ? `url("${thumbnailUrl}")` : 'none',
       } as CSSProperties}
     >
-      {!thumbnailUrl && (
+      {(thumbnailState === 'idle' || thumbnailState === 'loading') && (
+        <span className="block-preview-loader" />
+      )}
+      {thumbnailState === 'failed' && (
         <>
           <span className="block-preview-face block-preview-top" />
           <span className="block-preview-face block-preview-left" />

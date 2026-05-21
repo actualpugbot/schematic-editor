@@ -1768,6 +1768,44 @@ dd {
   background-size: var(--block-preview-size) var(--block-preview-size);
 }
 
+.block-preview-loader {
+  position: absolute;
+  inset: 7px;
+  border: 1px solid color-mix(in oklch, var(--line), var(--block-fallback) 22%);
+  border-radius: 7px;
+  background:
+    linear-gradient(
+      110deg,
+      transparent 0 28%,
+      color-mix(in oklch, var(--paper-strong), white 18%) 42%,
+      transparent 58% 100%
+    ),
+    repeating-linear-gradient(
+      0deg,
+      color-mix(in oklch, var(--block-fallback), var(--paper-strong) 76%) 0 7px,
+      color-mix(in oklch, var(--block-fallback), var(--paper-strong) 68%) 7px 8px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 7px,
+      color-mix(in oklch, var(--block-fallback), var(--paper-strong) 62%) 7px 8px
+    );
+  background-size: 180% 100%, 100% 100%, 100% 100%;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--paper-strong), transparent 52%);
+  opacity: 0.78;
+  animation: block-preview-loading 1.25s ease-in-out infinite;
+}
+
+@keyframes block-preview-loading {
+  0% {
+    background-position: 120% 0, 0 0, 0 0;
+  }
+
+  100% {
+    background-position: -80% 0, 0 0, 0 0;
+  }
+}
+
 .block-preview[data-shape='sprite'] {
   display: grid;
   place-items: center;
@@ -1824,6 +1862,12 @@ dd {
   background-image: linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08)), var(--block-right);
   transform: skewY(-30deg);
   transform-origin: left top;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .block-preview-loader {
+    animation: none;
+  }
 }
 
 .material-visibility {
