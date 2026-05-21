@@ -147,7 +147,21 @@ export function parseBlockStateKey(stateKey: string): BlockStateInfo {
 }
 
 function defaultBlockProperties(id: string, properties: Record<string, string>): Record<string, string> {
+  if (isCropBlock(id)) {
+    return {
+      age: defaultCropAge(id),
+      ...properties,
+    };
+  }
+
   if (isChainBlock(id)) {
+    return {
+      axis: 'y',
+      ...properties,
+    };
+  }
+
+  if (isAxisBlock(id)) {
     return {
       axis: 'y',
       ...properties,
@@ -163,6 +177,191 @@ function defaultBlockProperties(id: string, properties: Record<string, string>):
     };
   }
 
+  if (isSlabBlock(id)) {
+    return {
+      type: 'bottom',
+      ...properties,
+    };
+  }
+
+  if (isDoorBlock(id)) {
+    return {
+      facing: 'north',
+      half: 'lower',
+      hinge: 'left',
+      open: 'false',
+      ...properties,
+    };
+  }
+
+  if (isTrapdoorBlock(id)) {
+    return {
+      facing: 'north',
+      half: 'bottom',
+      open: 'false',
+      ...properties,
+    };
+  }
+
+  if (isFenceGateBlock(id)) {
+    return {
+      facing: 'south',
+      in_wall: 'false',
+      open: 'false',
+      ...properties,
+    };
+  }
+
+  if (isButtonBlock(id)) {
+    return {
+      face: 'floor',
+      facing: 'north',
+      powered: 'false',
+      ...properties,
+    };
+  }
+
+  if (isWeightedPressurePlateBlock(id)) {
+    return {
+      power: '0',
+      ...properties,
+    };
+  }
+
+  if (isPressurePlateBlock(id)) {
+    return {
+      powered: 'false',
+      ...properties,
+    };
+  }
+
+  if (isWallBlock(id)) {
+    return {
+      east: 'none',
+      north: 'none',
+      south: 'none',
+      up: 'true',
+      west: 'none',
+      ...properties,
+    };
+  }
+
+  if (isPaneBlock(id)) {
+    return {
+      east: 'false',
+      north: 'false',
+      south: 'false',
+      west: 'false',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:repeater') {
+    return {
+      delay: '1',
+      facing: 'north',
+      locked: 'false',
+      powered: 'false',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:comparator') {
+    return {
+      facing: 'north',
+      mode: 'compare',
+      powered: 'false',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:lever') {
+    return {
+      face: 'floor',
+      facing: 'north',
+      powered: 'false',
+      ...properties,
+    };
+  }
+
+  if (isRailBlock(id)) {
+    return {
+      shape: 'north_south',
+      ...(isPoweredRailBlock(id) ? { powered: 'false' } : {}),
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:redstone_wire') {
+    return {
+      east: 'none',
+      north: 'none',
+      power: '0',
+      south: 'none',
+      west: 'none',
+      ...properties,
+    };
+  }
+
+  if (isPistonBlock(id)) {
+    return {
+      extended: 'false',
+      facing: 'north',
+      ...properties,
+    };
+  }
+
+  if (isCandleBlock(id)) {
+    return {
+      candles: '1',
+      lit: 'false',
+      ...properties,
+    };
+  }
+
+  if (isCandleCakeBlock(id)) {
+    return {
+      lit: 'false',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:farmland') {
+    return {
+      moisture: '7',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:snow') {
+    return {
+      layers: '1',
+      ...properties,
+    };
+  }
+
+  if (isLeveledCauldronBlock(id)) {
+    return {
+      level: '3',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:daylight_detector') {
+    return {
+      inverted: 'false',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:bamboo') {
+    return {
+      age: '1',
+      leaves: 'large',
+      ...properties,
+    };
+  }
+
   if (isDecorativeLanternBlock(id)) {
     return {
       hanging: 'false',
@@ -170,10 +369,341 @@ function defaultBlockProperties(id: string, properties: Record<string, string>):
     };
   }
 
-  if (id === 'minecraft:smoker') {
+  if (isFurnaceLikeBlock(id)) {
     return {
       facing: 'north',
       lit: 'false',
+      ...properties,
+    };
+  }
+
+  if (isCampfireBlock(id)) {
+    return {
+      facing: 'south',
+      lit: 'true',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:barrel') {
+    return {
+      facing: 'up',
+      open: 'false',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:tripwire_hook') {
+    return {
+      attached: 'false',
+      facing: 'north',
+      powered: 'false',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:bell') {
+    return {
+      attachment: 'floor',
+      facing: 'north',
+      ...properties,
+    };
+  }
+
+  if (isLightningRodBlock(id)) {
+    return {
+      facing: 'up',
+      powered: 'false',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:end_portal_frame') {
+    return {
+      eye: 'false',
+      facing: 'south',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:sculk_sensor') {
+    return {
+      sculk_sensor_phase: 'inactive',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:calibrated_sculk_sensor') {
+    return {
+      facing: 'north',
+      sculk_sensor_phase: 'inactive',
+      ...properties,
+    };
+  }
+
+  if (isHiveBlock(id)) {
+    return {
+      facing: 'south',
+      honey_level: '0',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:cake') {
+    return {
+      bites: '0',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:cocoa') {
+    return {
+      age: '2',
+      facing: 'south',
+      ...properties,
+    };
+  }
+
+  if (isShelfBlock(id)) {
+    return {
+      facing: 'north',
+      powered: 'false',
+      ...properties,
+    };
+  }
+
+  if (isWallCoralFanBlock(id)) {
+    return {
+      facing: 'north',
+      ...properties,
+    };
+  }
+
+  if (isWallTorchBlock(id)) {
+    return {
+      facing: 'north',
+      ...(id === 'minecraft:redstone_wall_torch' ? { lit: 'true' } : {}),
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:redstone_torch') {
+    return {
+      lit: 'true',
+      ...properties,
+    };
+  }
+
+  if (isCrystalBudBlock(id)) {
+    return {
+      facing: 'up',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:end_rod' || id === 'minecraft:ladder') {
+    return {
+      facing: id === 'minecraft:end_rod' ? 'up' : 'north',
+      ...properties,
+    };
+  }
+
+  if (isFacingBlock(id)) {
+    return {
+      facing: 'north',
+      ...properties,
+    };
+  }
+
+  if (isObserverBlock(id)) {
+    return {
+      facing: 'north',
+      powered: 'false',
+      ...properties,
+    };
+  }
+
+  if (isCommandBlock(id)) {
+    return {
+      conditional: 'false',
+      facing: 'north',
+      ...properties,
+    };
+  }
+
+  if (isCopperBulbBlock(id)) {
+    return {
+      lit: 'false',
+      powered: 'false',
+      ...properties,
+    };
+  }
+
+  if (isGlazedTerracottaBlock(id)) {
+    return {
+      facing: 'south',
+      ...properties,
+    };
+  }
+
+  if (isTallPlantBlock(id)) {
+    return {
+      half: 'lower',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:wildflowers') {
+    return {
+      facing: 'north',
+      flower_amount: '4',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:pink_petals') {
+    return {
+      facing: 'north',
+      flower_amount: '4',
+      ...properties,
+    };
+  }
+
+  if (isStemCropBlock(id)) {
+    return {
+      age: defaultStemCropAge(id),
+      ...properties,
+    };
+  }
+
+  if (isAttachedStemBlock(id)) {
+    return {
+      facing: 'west',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:fire') {
+    return {
+      east: 'false',
+      north: 'false',
+      south: 'false',
+      up: 'false',
+      west: 'false',
+      ...properties,
+    };
+  }
+
+  if (isFlatAttachmentBlock(id)) {
+    return {
+      down: 'false',
+      east: 'false',
+      north: 'false',
+      south: 'false',
+      up: 'false',
+      west: 'false',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:tripwire') {
+    return {
+      attached: 'false',
+      east: 'false',
+      north: 'false',
+      south: 'false',
+      west: 'false',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:big_dripleaf') {
+    return {
+      facing: 'north',
+      tilt: 'none',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:big_dripleaf_stem') {
+    return {
+      facing: 'north',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:small_dripleaf') {
+    return {
+      facing: 'north',
+      half: 'lower',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:mangrove_propagule') {
+    return {
+      age: '4',
+      hanging: 'false',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:sea_pickle') {
+    return {
+      pickles: '4',
+      waterlogged: 'true',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:leaf_litter') {
+    return {
+      facing: 'north',
+      segment_amount: '4',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:pale_hanging_moss') {
+    return {
+      tip: 'true',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:pointed_dripstone') {
+    return {
+      thickness: 'tip',
+      vertical_direction: 'up',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:sweet_berry_bush') {
+    return {
+      age: '3',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:torchflower_crop') {
+    return {
+      age: '1',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:redstone_lamp') {
+    return {
+      lit: 'false',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:turtle_egg') {
+    return {
+      eggs: '1',
+      hatch: '0',
       ...properties,
     };
   }
@@ -183,6 +713,228 @@ function defaultBlockProperties(id: string, properties: Record<string, string>):
 
 function isStairsBlock(id: string): boolean {
   return id.replace(/^minecraft:/, '').endsWith('_stairs');
+}
+
+function isCropBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return (
+    path === 'wheat' ||
+    path === 'carrots' ||
+    path === 'potatoes' ||
+    path === 'beetroots' ||
+    path === 'nether_wart'
+  );
+}
+
+function defaultCropAge(id: string): string {
+  switch (id.replace(/^minecraft:/, '')) {
+    case 'beetroots':
+    case 'nether_wart':
+      return '3';
+    default:
+      return '7';
+  }
+}
+
+function isSlabBlock(id: string): boolean {
+  return id.replace(/^minecraft:/, '').endsWith('_slab');
+}
+
+function isAxisBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return (
+    path === 'bamboo_block' ||
+    path === 'stripped_bamboo_block' ||
+    path === 'bone_block' ||
+    path === 'basalt' ||
+    path === 'deepslate' ||
+    path === 'infested_deepslate' ||
+    path === 'polished_basalt' ||
+    path === 'hay_block' ||
+    path === 'purpur_pillar' ||
+    path === 'quartz_pillar' ||
+    path.endsWith('_froglight') ||
+    path.endsWith('_log') ||
+    path.endsWith('_wood') ||
+    path.endsWith('_stem') ||
+    path.endsWith('_hyphae')
+  );
+}
+
+function isDoorBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path.endsWith('_door') && !path.endsWith('_trapdoor');
+}
+
+function isTrapdoorBlock(id: string): boolean {
+  return id.replace(/^minecraft:/, '').endsWith('_trapdoor');
+}
+
+function isFenceGateBlock(id: string): boolean {
+  return id.replace(/^minecraft:/, '').endsWith('_fence_gate');
+}
+
+function isButtonBlock(id: string): boolean {
+  return id.replace(/^minecraft:/, '').endsWith('_button');
+}
+
+function isPressurePlateBlock(id: string): boolean {
+  return id.replace(/^minecraft:/, '').endsWith('_pressure_plate');
+}
+
+function isWeightedPressurePlateBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path === 'light_weighted_pressure_plate' || path === 'heavy_weighted_pressure_plate';
+}
+
+function isWallBlock(id: string): boolean {
+  return id.replace(/^minecraft:/, '').endsWith('_wall');
+}
+
+function isPaneBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path.endsWith('_pane') || path.endsWith('_bars');
+}
+
+function isRailBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path === 'rail' || path.endsWith('_rail');
+}
+
+function isPoweredRailBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path === 'powered_rail' || path === 'detector_rail' || path === 'activator_rail';
+}
+
+function isPistonBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path === 'piston' || path === 'sticky_piston';
+}
+
+function isCandleBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path === 'candle' || path.endsWith('_candle');
+}
+
+function isCandleCakeBlock(id: string): boolean {
+  return id.replace(/^minecraft:/, '').endsWith('_candle_cake') || id === 'minecraft:candle_cake';
+}
+
+function isLeveledCauldronBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path === 'water_cauldron' || path === 'powder_snow_cauldron';
+}
+
+function isFurnaceLikeBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path === 'furnace' || path === 'blast_furnace' || path === 'smoker';
+}
+
+function isCampfireBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path === 'campfire' || path === 'soul_campfire';
+}
+
+function isLightningRodBlock(id: string): boolean {
+  return id.replace(/^minecraft:/, '').endsWith('lightning_rod');
+}
+
+function isHiveBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path === 'beehive' || path === 'bee_nest';
+}
+
+function isShelfBlock(id: string): boolean {
+  return id.replace(/^minecraft:/, '').endsWith('_shelf');
+}
+
+function isWallCoralFanBlock(id: string): boolean {
+  return id.replace(/^minecraft:/, '').endsWith('_coral_wall_fan');
+}
+
+function isWallTorchBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return (
+    path === 'wall_torch' ||
+    path === 'redstone_wall_torch' ||
+    path === 'soul_wall_torch' ||
+    path === 'copper_wall_torch'
+  );
+}
+
+function isGlazedTerracottaBlock(id: string): boolean {
+  return id.replace(/^minecraft:/, '').endsWith('_glazed_terracotta');
+}
+
+function isCrystalBudBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return (
+    path === 'amethyst_cluster' ||
+    path === 'large_amethyst_bud' ||
+    path === 'medium_amethyst_bud' ||
+    path === 'small_amethyst_bud'
+  );
+}
+
+function isTallPlantBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return (
+    path === 'lilac' ||
+    path === 'peony' ||
+    path === 'sunflower' ||
+    path === 'rose_bush' ||
+    path === 'large_fern' ||
+    path === 'tall_grass' ||
+    path === 'tall_seagrass'
+  );
+}
+
+function isStemCropBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path === 'melon_stem' || path === 'pumpkin_stem';
+}
+
+function defaultStemCropAge(id: string): string {
+  const path = id.replace(/^minecraft:/, '');
+  return path === 'torchflower_crop' ? '1' : '7';
+}
+
+function isAttachedStemBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path === 'attached_melon_stem' || path === 'attached_pumpkin_stem';
+}
+
+function isFlatAttachmentBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return (
+    path === 'vine' ||
+    path === 'glow_lichen' ||
+    path === 'sculk_vein' ||
+    path === 'resin_clump'
+  );
+}
+
+function isFacingBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return (
+    path === 'dispenser' ||
+    path === 'dropper' ||
+    path === 'carved_pumpkin' ||
+    path === 'jack_o_lantern'
+  );
+}
+
+function isObserverBlock(id: string): boolean {
+  return id === 'minecraft:observer';
+}
+
+function isCommandBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path === 'command_block' || path === 'chain_command_block' || path === 'repeating_command_block';
+}
+
+function isCopperBulbBlock(id: string): boolean {
+  return id.replace(/^minecraft:/, '').endsWith('copper_bulb');
 }
 
 function isLanternBlock(id: string): boolean {
