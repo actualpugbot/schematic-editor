@@ -7,7 +7,7 @@ import {
   type ResolvedBlockPart,
 } from './minecraftModels';
 
-const thumbnailSize = 64;
+const thumbnailSize = 128;
 const faceOrder: ModelFaceName[] = ['east', 'west', 'up', 'down', 'south', 'north'];
 const faceOffsets: Record<ModelFaceName, [number, number, number]> = {
   down: [0, -1, 0],

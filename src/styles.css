@@ -1766,7 +1766,6 @@ dd {
   background-repeat: no-repeat;
   background-position: center;
   background-size: var(--block-preview-size) var(--block-preview-size);
-  image-rendering: pixelated;
 }
 
 .block-preview[data-shape='sprite'] {

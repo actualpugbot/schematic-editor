@@ -170,7 +170,7 @@ function defaultBlockProperties(id: string, properties: Record<string, string>):
 
   if (isStairsBlock(id)) {
     return {
-      facing: 'east',
+      facing: 'west',
       half: 'bottom',
       shape: 'straight',
       ...properties,
