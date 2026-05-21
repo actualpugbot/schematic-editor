@@ -560,7 +560,7 @@ function App() {
       ...blockLibraryItems.slice(0, 120),
     ];
 
-    preloadBlockThumbnails(previewQueue, { batchSize: 6, signal: controller.signal });
+    preloadBlockThumbnails(previewQueue, { batchSize: 12, signal: controller.signal });
 
     return () => controller.abort();
   }, [blockLibraryItems, loadState, materials, recentBuildBlocks, selectedBuildBlock, selectedBuildBlockPreview.color]);
@@ -569,7 +569,11 @@ function App() {
     if (loadState !== 'ready' || appView !== 'edit') return;
 
     const controller = new AbortController();
-    preloadBlockThumbnails(filteredBlockLibraryItems.slice(0, 160), { batchSize: 8, signal: controller.signal });
+    preloadBlockThumbnails(filteredBlockLibraryItems.slice(0, 420), {
+      batchSize: 24,
+      priority: 'interactive',
+      signal: controller.signal,
+    });
 
     return () => controller.abort();
   }, [appView, filteredBlockLibraryItems, loadState]);
@@ -2103,7 +2107,7 @@ function BlockPreview({ stateKey, color }: { stateKey: string; color: number }) 
         setIsVisible(true);
         observer.disconnect();
       }
-    }, { rootMargin: '160px' });
+    }, { rootMargin: '900px' });
 
     observer.observe(preview);
     return () => observer.disconnect();
@@ -2153,7 +2157,7 @@ function BlockPreview({ stateKey, color }: { stateKey: string; color: number }) 
         '--block-thumbnail': thumbnailUrl ? `url("${thumbnailUrl}")` : 'none',
       } as CSSProperties}
     >
-      {thumbnailState !== 'ready' && (
+      {thumbnailState === 'failed' && (
         <>
           <span className="block-preview-face block-preview-top" />
           <span className="block-preview-face block-preview-left" />

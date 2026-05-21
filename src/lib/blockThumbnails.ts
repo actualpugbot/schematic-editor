@@ -78,11 +78,12 @@ export function getCachedBlockThumbnail(stateKey: string, fallbackColor: number)
 
 export function preloadBlockThumbnails(
   thumbnails: BlockThumbnailRequest[],
-  options: { batchSize?: number; signal?: AbortSignal } = {},
+  options: { batchSize?: number; priority?: 'idle' | 'interactive'; signal?: AbortSignal } = {},
 ) {
   if (typeof window === 'undefined') return;
 
   const batchSize = options.batchSize ?? 6;
+  const priority = options.priority ?? 'idle';
   const pending = uniquePendingThumbnails(thumbnails);
   let index = 0;
 
@@ -98,6 +99,11 @@ export function preloadBlockThumbnails(
       void Promise.allSettled(batch.map(({ stateKey, color }) => createBlockThumbnail(stateKey, color)))
         .then(scheduleNextBatch);
     };
+
+    if (priority === 'interactive') {
+      window.requestAnimationFrame(runBatch);
+      return;
+    }
 
     if ('requestIdleCallback' in window) {
       window.requestIdleCallback(runBatch, { timeout: 700 });
