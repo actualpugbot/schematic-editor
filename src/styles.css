@@ -303,7 +303,7 @@ h2 {
 
 .workspace {
   display: grid;
-  grid-template-columns: 76px minmax(0, 1fr) minmax(340px, 468px);
+  grid-template-columns: 76px minmax(0, 1fr) minmax(390px, 520px);
   gap: 16px;
   min-height: 0;
 }
@@ -755,11 +755,11 @@ dd {
   bottom: 22px;
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: 42px;
-  grid-template-rows: 42px;
-  gap: 6px;
+  grid-auto-columns: 72px;
+  grid-template-rows: 72px;
+  gap: 8px;
   max-width: calc(100% - 48px);
-  padding: 7px;
+  padding: 8px;
   overflow-x: auto;
   overscroll-behavior-inline: contain;
   scroll-snap-type: inline proximity;
@@ -774,8 +774,8 @@ dd {
 .edit-hotbar button {
   position: relative;
   display: grid;
-  width: 42px;
-  height: 42px;
+  width: 72px;
+  height: 72px;
   place-items: center;
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -792,10 +792,10 @@ dd {
 
 .edit-hotbar button > span:last-child {
   position: absolute;
-  right: 4px;
-  bottom: 3px;
+  right: 6px;
+  bottom: 5px;
   color: var(--stone);
-  font-size: 0.6rem;
+  font-size: 0.68rem;
   font-weight: 900;
 }
 
@@ -1031,10 +1031,10 @@ dd {
 
 .section-heading {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: 16px;
+  margin-bottom: 16px;
 }
 
 .section-heading > div {
@@ -1048,6 +1048,10 @@ dd {
 .section-heading.compact {
   align-items: center;
   margin-bottom: 12px;
+}
+
+.section-heading > .block-preview {
+  flex: 0 0 auto;
 }
 
 .selection-actions {
@@ -1328,8 +1332,8 @@ dd {
 
 .edit-tool-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .edit-tool-grid button,
@@ -1443,11 +1447,11 @@ dd {
 
 .block-library-grid {
   display: grid;
-  min-height: min(420px, 45vh);
+  min-height: min(520px, 48vh);
   align-content: start;
-  gap: 12px;
+  gap: 16px;
   overflow: auto;
-  padding: 8px;
+  padding: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: color-mix(in oklch, var(--breakdown-bg), transparent 18%);
@@ -1456,7 +1460,7 @@ dd {
 .block-library-group {
   display: grid;
   align-content: start;
-  gap: 7px;
+  gap: 8px;
 }
 
 .block-library-group-heading {
@@ -1487,17 +1491,17 @@ dd {
 
 .block-library-tile-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, 42px);
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, 72px);
+  gap: 8px;
   justify-content: start;
 }
 
 .block-library-tile {
   position: relative;
-  width: 42px;
+  width: 72px;
   aspect-ratio: 1;
   min-width: 0;
-  min-height: 42px;
+  min-height: 72px;
 }
 
 .block-library-tile::after,
@@ -1547,7 +1551,7 @@ dd {
   min-width: 0;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 8px;
   background: var(--paper-strong);
   color: var(--row-color);
   transition:
@@ -1682,11 +1686,11 @@ dd {
 .material-row {
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  gap: 10px;
   align-items: center;
-  min-height: 42px;
-  padding: 4px 6px;
+  min-height: 70px;
+  padding: 7px 8px;
   border-bottom: 1px solid var(--row-border);
   color: var(--row-color);
   font-size: 0.86rem;
@@ -1713,10 +1717,10 @@ dd {
 .material-pick {
   min-width: 0;
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto 16px;
-  gap: 10px;
+  grid-template-columns: 62px minmax(0, 1fr) auto 16px;
+  gap: 12px;
   align-items: center;
-  min-height: 34px;
+  min-height: 58px;
   background: transparent;
   color: inherit;
   text-align: left;
@@ -1743,6 +1747,7 @@ dd {
 }
 
 .block-preview {
+  --block-preview-size: 56px;
   --block-fallback: #8b8f85;
   --block-thumbnail: none;
   --block-top: none;
@@ -1751,16 +1756,16 @@ dd {
   --block-sprite: none;
   position: relative;
   display: block;
-  width: 28px;
-  height: 28px;
-  transform: translateY(1px);
+  width: var(--block-preview-size);
+  height: var(--block-preview-size);
+  transform: translateY(2px);
 }
 
 .block-preview[data-shape='thumbnail'] {
   background-image: var(--block-thumbnail);
   background-repeat: no-repeat;
   background-position: center;
-  background-size: 28px 28px;
+  background-size: var(--block-preview-size) var(--block-preview-size);
   image-rendering: pixelated;
 }
 
@@ -1793,9 +1798,9 @@ dd {
 
 .block-preview-top {
   top: 0;
-  left: 6px;
-  width: 16px;
-  height: 16px;
+  left: calc(var(--block-preview-size) * 0.2143);
+  width: calc(var(--block-preview-size) * 0.5714);
+  height: calc(var(--block-preview-size) * 0.5714);
   background-image: var(--block-top);
   transform: rotate(45deg) skew(-16deg, -16deg) scaleY(0.82);
   transform-origin: center;
@@ -1803,20 +1808,20 @@ dd {
 
 .block-preview-left,
 .block-preview-right {
-  top: 12px;
-  width: 14px;
-  height: 15px;
+  top: calc(var(--block-preview-size) * 0.4286);
+  width: calc(var(--block-preview-size) * 0.5);
+  height: calc(var(--block-preview-size) * 0.5357);
 }
 
 .block-preview-left {
-  left: 1px;
+  left: calc(var(--block-preview-size) * 0.0357);
   background-image: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.2)), var(--block-left);
   transform: skewY(30deg);
   transform-origin: right top;
 }
 
 .block-preview-right {
-  left: 15px;
+  left: calc(var(--block-preview-size) * 0.5357);
   background-image: linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08)), var(--block-right);
   transform: skewY(-30deg);
   transform-origin: left top;
@@ -1825,8 +1830,8 @@ dd {
 .material-visibility {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   color: var(--stone);
   border: 1px solid transparent;
   border-radius: 7px;
@@ -1844,9 +1849,9 @@ dd {
 }
 
 .material-breakdown {
-  width: calc(100% - 12px);
-  margin: -1px 6px 7px;
-  padding: 8px 12px 9px 50px;
+  width: calc(100% - 16px);
+  margin: -1px 8px 9px;
+  padding: 9px 12px 10px 82px;
   text-align: left;
   background: var(--breakdown-bg);
   border: 1px solid var(--line);
@@ -1978,7 +1983,7 @@ dd {
 
 @media (max-width: 1180px) {
   .workspace {
-    grid-template-columns: 70px minmax(0, 1fr) minmax(318px, 390px);
+    grid-template-columns: 70px minmax(0, 1fr) minmax(370px, 450px);
     gap: 12px;
   }
 
@@ -2102,8 +2107,15 @@ dd {
     left: 12px;
     right: 12px;
     bottom: 12px;
+    grid-auto-columns: 68px;
+    grid-template-rows: 68px;
     max-width: none;
     transform: none;
+  }
+
+  .edit-hotbar button {
+    width: 68px;
+    height: 68px;
   }
 
   .inspector-tabs button {
