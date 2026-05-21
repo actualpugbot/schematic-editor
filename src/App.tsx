@@ -35,7 +35,7 @@ import {
   type SelectionButton,
   type Viewer3DHandle,
 } from './components/Viewer3D';
-import { createBlockThumbnail } from './lib/blockThumbnails';
+import { createBlockThumbnail, getCachedBlockThumbnail, preloadBlockThumbnails } from './lib/blockThumbnails';
 import { writeNbt, type NbtDocument } from './lib/nbt';
 import {
   createSpongeSchematicDocument,
@@ -542,6 +542,37 @@ function App() {
   ), [blockLibraryDisplay, filteredBlockLibraryItems]);
 
   const visibleBlockLibraryCount = filteredBlockLibraryItems.length;
+
+  useEffect(() => {
+    if (loadState !== 'ready') return;
+
+    const controller = new AbortController();
+    const previewQueue = [
+      { stateKey: selectedBuildBlock, color: selectedBuildBlockPreview.color },
+      ...recentBuildBlocks.map((stateKey) => {
+        const preview = createVoxelBlock(0, 0, 0, stateKey);
+        return { stateKey, color: preview.color };
+      }),
+      ...materials.slice(0, 64).map((material) => ({ stateKey: material.stateKey, color: material.color })),
+      ...blockLibraryItems
+        .filter((item) => item.category === 'building_blocks')
+        .slice(0, 180),
+      ...blockLibraryItems.slice(0, 120),
+    ];
+
+    preloadBlockThumbnails(previewQueue, { batchSize: 6, signal: controller.signal });
+
+    return () => controller.abort();
+  }, [blockLibraryItems, loadState, materials, recentBuildBlocks, selectedBuildBlock, selectedBuildBlockPreview.color]);
+
+  useEffect(() => {
+    if (loadState !== 'ready' || appView !== 'edit') return;
+
+    const controller = new AbortController();
+    preloadBlockThumbnails(filteredBlockLibraryItems.slice(0, 160), { batchSize: 8, signal: controller.signal });
+
+    return () => controller.abort();
+  }, [appView, filteredBlockLibraryItems, loadState]);
 
   useEffect(() => {
     if (materialsScope === 'cuboid' && !cuboidBounds) {
@@ -2050,8 +2081,12 @@ function App() {
 
 function BlockPreview({ stateKey, color }: { stateKey: string; color: number }) {
   const previewRef = useRef<HTMLSpanElement | null>(null);
-  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
-  const [thumbnailState, setThumbnailState] = useState<ThumbnailLoadState>('idle');
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(() => getCachedBlockThumbnail(stateKey, color) ?? null);
+  const [thumbnailState, setThumbnailState] = useState<ThumbnailLoadState>(() => {
+    const cachedThumbnail = getCachedBlockThumbnail(stateKey, color);
+    if (cachedThumbnail === undefined) return 'idle';
+    return cachedThumbnail ? 'ready' : 'failed';
+  });
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
@@ -2075,6 +2110,13 @@ function BlockPreview({ stateKey, color }: { stateKey: string; color: number }) 
   }, []);
 
   useEffect(() => {
+    const cachedThumbnail = getCachedBlockThumbnail(stateKey, color);
+    if (cachedThumbnail !== undefined) {
+      setThumbnailUrl(cachedThumbnail);
+      setThumbnailState(cachedThumbnail ? 'ready' : 'failed');
+      return;
+    }
+
     if (!isVisible) return;
 
     let cancelled = false;
@@ -2111,10 +2153,7 @@ function BlockPreview({ stateKey, color }: { stateKey: string; color: number }) 
         '--block-thumbnail': thumbnailUrl ? `url("${thumbnailUrl}")` : 'none',
       } as CSSProperties}
     >
-      {(thumbnailState === 'idle' || thumbnailState === 'loading') && (
-        <span className="block-preview-loader" />
-      )}
-      {thumbnailState === 'failed' && (
+      {thumbnailState !== 'ready' && (
         <>
           <span className="block-preview-face block-preview-top" />
           <span className="block-preview-face block-preview-left" />

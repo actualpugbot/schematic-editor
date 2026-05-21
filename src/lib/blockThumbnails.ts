@@ -22,6 +22,7 @@ const geometryCache = new Map<string, THREE.BufferGeometry>();
 const materialCache = new Map<string, THREE.Material>();
 const textureCache = new Map<string, Promise<THREE.Texture>>();
 const thumbnailCache = new Map<string, Promise<string | null>>();
+const thumbnailResultCache = new Map<string, string | null>();
 const textureLoader = new THREE.TextureLoader();
 textureLoader.setCrossOrigin('anonymous');
 
@@ -53,14 +54,74 @@ interface PreparedThumbnailPart {
   renderOrder: number;
 }
 
+interface BlockThumbnailRequest {
+  stateKey: string;
+  color: number;
+}
+
 export function createBlockThumbnail(stateKey: string, fallbackColor: number): Promise<string | null> {
-  const key = `${stateKey}::${fallbackColor}`;
+  const key = thumbnailCacheKey(stateKey, fallbackColor);
   const cached = thumbnailCache.get(key);
   if (cached) return cached;
 
-  const promise = prepareBlockThumbnail(stateKey, fallbackColor);
+  const promise = prepareBlockThumbnail(stateKey, fallbackColor).then((url) => {
+    thumbnailResultCache.set(key, url);
+    return url;
+  });
   thumbnailCache.set(key, promise);
   return promise;
+}
+
+export function getCachedBlockThumbnail(stateKey: string, fallbackColor: number): string | null | undefined {
+  return thumbnailResultCache.get(thumbnailCacheKey(stateKey, fallbackColor));
+}
+
+export function preloadBlockThumbnails(
+  thumbnails: BlockThumbnailRequest[],
+  options: { batchSize?: number; signal?: AbortSignal } = {},
+) {
+  if (typeof window === 'undefined') return;
+
+  const batchSize = options.batchSize ?? 6;
+  const pending = uniquePendingThumbnails(thumbnails);
+  let index = 0;
+
+  const scheduleNextBatch = () => {
+    if (options.signal?.aborted || index >= pending.length) return;
+
+    const runBatch = () => {
+      if (options.signal?.aborted) return;
+
+      const batch = pending.slice(index, index + batchSize);
+      index += batchSize;
+
+      void Promise.allSettled(batch.map(({ stateKey, color }) => createBlockThumbnail(stateKey, color)))
+        .then(scheduleNextBatch);
+    };
+
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(runBatch, { timeout: 700 });
+      return;
+    }
+
+    globalThis.setTimeout(runBatch, 90);
+  };
+
+  scheduleNextBatch();
+}
+
+function thumbnailCacheKey(stateKey: string, fallbackColor: number): string {
+  return `${stateKey}::${fallbackColor}`;
+}
+
+function uniquePendingThumbnails(thumbnails: BlockThumbnailRequest[]): BlockThumbnailRequest[] {
+  const seen = new Set<string>();
+  return thumbnails.filter(({ stateKey, color }) => {
+    const key = thumbnailCacheKey(stateKey, color);
+    if (seen.has(key) || thumbnailResultCache.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 async function prepareBlockThumbnail(stateKey: string, fallbackColor: number): Promise<string | null> {
