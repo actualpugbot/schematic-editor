@@ -9,6 +9,7 @@ import {
 } from './minecraftModels';
 
 const thumbnailSize = 128;
+const thumbnailPipelineVersion = 3;
 const faceOrder: ModelFaceName[] = ['east', 'west', 'up', 'down', 'south', 'north'];
 const faceOffsets: Record<ModelFaceName, [number, number, number]> = {
   down: [0, -1, 0],
@@ -119,7 +120,7 @@ export function preloadBlockThumbnails(
 }
 
 function thumbnailCacheKey(stateKey: string, fallbackColor: number): string {
-  return `${stateKey}::${fallbackColor}`;
+  return `${thumbnailPipelineVersion}::${stateKey}::${fallbackColor}`;
 }
 
 function uniquePendingThumbnails(thumbnails: BlockThumbnailRequest[]): BlockThumbnailRequest[] {
@@ -160,7 +161,7 @@ function thumbnailPartRequests(stateKey: string): Array<{ stateKey: string; posi
     return [{ stateKey, position: new THREE.Vector3(0, 0, 0) }];
   }
 
-  const facing = horizontalFacing(state.properties.facing) ?? 'south';
+  const facing = 'north';
   const footStateKey = bedStateKey(state.id, facing, 'foot');
   const headStateKey = bedStateKey(state.id, facing, 'head');
   const offset = directionOffset(facing);
@@ -176,7 +177,7 @@ function isBedBlockId(id: string): boolean {
 }
 
 function bedStateKey(id: string, facing: 'north' | 'south' | 'west' | 'east', part: 'head' | 'foot'): string {
-  return `${id}[facing=${facing},occupied=false,part=${part}]`;
+  return `${id}[facing=${facing},occupied=false,part=${part},SchematicEditor_icon=true]`;
 }
 
 function horizontalFacing(value: string | undefined): 'north' | 'south' | 'west' | 'east' | null {
@@ -266,9 +267,9 @@ function createThumbnailRenderer(): ThumbnailRendererContext {
 function fitCameraToGroup(group: THREE.Group, camera: THREE.OrthographicCamera) {
   const box = new THREE.Box3().setFromObject(group);
   const center = box.getCenter(new THREE.Vector3());
-  const size = box.getSize(new THREE.Vector3());
-  const viewSize = Math.max(size.x, size.y, size.z, 1) * 1.55;
   const direction = new THREE.Vector3(2.35, 1.65, 2.55).normalize();
+  const projectedSize = projectedCameraSize(box, direction);
+  const viewSize = Math.max(projectedSize.x, projectedSize.y, 1) * 1.18;
 
   camera.left = -viewSize / 2;
   camera.right = viewSize / 2;
@@ -277,6 +278,44 @@ function fitCameraToGroup(group: THREE.Group, camera: THREE.OrthographicCamera) 
   camera.position.copy(center).add(direction.multiplyScalar(5));
   camera.lookAt(center);
   camera.updateProjectionMatrix();
+}
+
+function projectedCameraSize(box: THREE.Box3, cameraOffsetDirection: THREE.Vector3): THREE.Vector2 {
+  const center = box.getCenter(new THREE.Vector3());
+  const viewDirection = cameraOffsetDirection.clone().multiplyScalar(-1).normalize();
+  const right = new THREE.Vector3().crossVectors(viewDirection, new THREE.Vector3(0, 1, 0)).normalize();
+  const up = new THREE.Vector3().crossVectors(right, viewDirection).normalize();
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+
+  for (const corner of boxCorners(box)) {
+    const relative = corner.sub(center);
+    const x = relative.dot(right);
+    const y = relative.dot(up);
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+  }
+
+  return new THREE.Vector2(maxX - minX, maxY - minY);
+}
+
+function boxCorners(box: THREE.Box3): THREE.Vector3[] {
+  const { min, max } = box;
+  return [
+    new THREE.Vector3(min.x, min.y, min.z),
+    new THREE.Vector3(min.x, min.y, max.z),
+    new THREE.Vector3(min.x, max.y, min.z),
+    new THREE.Vector3(min.x, max.y, max.z),
+    new THREE.Vector3(max.x, min.y, min.z),
+    new THREE.Vector3(max.x, min.y, max.z),
+    new THREE.Vector3(max.x, max.y, min.z),
+    new THREE.Vector3(max.x, max.y, max.z),
+  ];
 }
 
 function geometryForPart(part: ResolvedBlockPart): THREE.BufferGeometry {
@@ -553,6 +592,7 @@ function configureMinecraftTexture(texture: THREE.Texture, textureId: string) {
   texture.generateMipmaps = !cutout;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.flipY = false;
 }
 
 function cropAnimatedTextureToFirstFrame(texture: THREE.Texture) {
@@ -613,6 +653,7 @@ function isAlphaCutoutTexture(textureId: string): boolean {
     || path.includes('mushroom')
     || path.includes('amethyst_bud')
     || path.includes('dripstone')
+    || path.startsWith('entity/bed/')
     || path.startsWith('entity/decorated_pot/')
     || path === 'block/cobweb'
   );

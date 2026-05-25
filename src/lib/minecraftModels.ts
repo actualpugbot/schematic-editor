@@ -1461,15 +1461,21 @@ function bedBlockEntityParts(
   const legZ: [number, number] = part === 'head' ? [13, 16] : [0, 3];
   const leftLegTextureOrigin: [number, number] = part === 'head' ? [50, 6] : [50, 0];
   const rightLegTextureOrigin: [number, number] = part === 'head' ? [50, 18] : [50, 12];
-  const bodyHiddenFaces: ModelFaceName[] = part === 'head' ? ['up'] : ['down'];
-  const legHiddenFaces: ModelFaceName[] = ['down'];
 
   return [
     blockEntityCuboidPart(
       id,
       properties,
       `bed:${part}:main`,
-      { name: 'main', from: [0, 3, 0], to: [16, 9, 16], textureOrigin: bodyTextureOrigin, hiddenFaces: bodyHiddenFaces },
+      {
+        name: 'main',
+        from: [0, 3, 0],
+        to: [16, 9, 16],
+        textureOrigin: bodyTextureOrigin,
+        textureDimensions: [16, 16, 6],
+        faceUvSources: bedBodyFaceUvSources,
+        shade: false,
+      },
       texture,
       rotation,
     ),
@@ -1477,7 +1483,7 @@ function bedBlockEntityParts(
       id,
       properties,
       `bed:${part}:left-leg`,
-      { name: 'left_leg', from: [0, 0, legZ[0]], to: [3, 3, legZ[1]], textureOrigin: leftLegTextureOrigin, hiddenFaces: legHiddenFaces },
+      { name: 'left_leg', from: [0, 0, legZ[0]], to: [3, 3, legZ[1]], textureOrigin: leftLegTextureOrigin, shade: false },
       texture,
       rotation,
     ),
@@ -1485,12 +1491,19 @@ function bedBlockEntityParts(
       id,
       properties,
       `bed:${part}:right-leg`,
-      { name: 'right_leg', from: [13, 0, legZ[0]], to: [16, 3, legZ[1]], textureOrigin: rightLegTextureOrigin, hiddenFaces: legHiddenFaces },
+      { name: 'right_leg', from: [13, 0, legZ[0]], to: [16, 3, legZ[1]], textureOrigin: rightLegTextureOrigin, shade: false },
       texture,
       rotation,
     ),
   ];
 }
+
+const bedBodyFaceUvSources: Partial<Record<ModelFaceName, ModelFaceName>> = {
+  down: 'south',
+  up: 'north',
+  north: 'down',
+  south: 'up',
+};
 
 function bedTexture(id: string): string {
   return `minecraft:entity/bed/${bedColor(id)}`;
@@ -1772,7 +1785,10 @@ interface BlockEntityCuboid {
   from: [number, number, number];
   to: [number, number, number];
   textureOrigin: [number, number];
+  textureDimensions?: [number, number, number];
+  faceUvSources?: Partial<Record<ModelFaceName, ModelFaceName>>;
   hiddenFaces?: ModelFaceName[];
+  shade?: boolean;
 }
 
 function chestTypeFromProperties(properties: Record<string, string>): ChestType {
@@ -1847,6 +1863,7 @@ function blockEntityCuboidPart(
   const width = cuboid.to[0] - cuboid.from[0];
   const height = cuboid.to[1] - cuboid.from[1];
   const depth = cuboid.to[2] - cuboid.from[2];
+  const [textureWidth, textureHeight, textureDepth] = cuboid.textureDimensions ?? [width, height, depth];
   const hiddenFaces = new Set(cuboid.hiddenFaces ?? []);
   const faceTextures = cubeTextures(texture);
 
@@ -1861,7 +1878,7 @@ function blockEntityCuboidPart(
     from: cuboid.from,
     to: cuboid.to,
     textureSize,
-    shade: true,
+    shade: cuboid.shade ?? true,
     uvLock: false,
     variantRotation,
     faceTextures,
@@ -1873,7 +1890,10 @@ function blockEntityCuboidPart(
       west: null,
       east: null,
     },
-    faceUvs: entityCubeUvs(cuboid.textureOrigin[0], cuboid.textureOrigin[1], width, height, depth, hiddenFaces),
+    faceUvs: remapFaceUvs(
+      entityCubeUvs(cuboid.textureOrigin[0], cuboid.textureOrigin[1], textureWidth, textureHeight, textureDepth, hiddenFaces),
+      cuboid.faceUvSources,
+    ),
     faceRotations: {
       down: 0,
       up: 0,
@@ -1898,6 +1918,22 @@ function blockEntityCuboidPart(
       west: false,
       east: false,
     },
+  };
+}
+
+function remapFaceUvs(
+  faceUvs: Record<ModelFaceName, ModelFaceUv | null>,
+  faceUvSources: Partial<Record<ModelFaceName, ModelFaceName>> | undefined,
+): Record<ModelFaceName, ModelFaceUv | null> {
+  if (!faceUvSources) return faceUvs;
+
+  return {
+    down: faceUvs[faceUvSources.down ?? 'down'],
+    up: faceUvs[faceUvSources.up ?? 'up'],
+    north: faceUvs[faceUvSources.north ?? 'north'],
+    south: faceUvs[faceUvSources.south ?? 'south'],
+    west: faceUvs[faceUvSources.west ?? 'west'],
+    east: faceUvs[faceUvSources.east ?? 'east'],
   };
 }
 
