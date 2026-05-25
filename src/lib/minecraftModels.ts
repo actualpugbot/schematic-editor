@@ -973,6 +973,11 @@ export async function resolveBlockParts(stateKey: string): Promise<ResolvedBlock
 async function resolveBlockPartsUncached(stateKey: string): Promise<ResolvedBlockPart[]> {
   const state = parseBlockStateKey(stateKey);
 
+  const forcedBlockEntityParts = forcedSpecialBlockEntityParts(state.id, state.properties, { x: 0, y: 0 });
+  if (forcedBlockEntityParts.length > 0) {
+    return forcedBlockEntityParts;
+  }
+
   const blockstate = await loadBlockstate(state.id);
   if (!blockstate) {
     if (isRenderlessVanillaModelBlock(state.id)) return [];
@@ -1438,6 +1443,17 @@ function specialBlockEntityParts(
   const chestParts = chestBlockEntityParts(id, properties, variantRotation);
   if (chestParts.length > 0) return chestParts;
 
+  const bedParts = bedBlockEntityParts(id, properties, variantRotation);
+  if (bedParts.length > 0) return bedParts;
+
+  return [];
+}
+
+function forcedSpecialBlockEntityParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
   const bedParts = bedBlockEntityParts(id, properties, variantRotation);
   if (bedParts.length > 0) return bedParts;
 
