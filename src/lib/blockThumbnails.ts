@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {
+  parseBlockStateKey,
   resolveBlockParts,
   textureUrl,
   type ModelFaceName,
@@ -50,6 +51,7 @@ interface ThumbnailRendererContext {
 interface PreparedThumbnailPart {
   geometry: THREE.BufferGeometry;
   materials: THREE.Material[];
+  position: THREE.Vector3;
   rotation: THREE.Euler;
   renderOrder: number;
 }
@@ -133,17 +135,67 @@ function uniquePendingThumbnails(thumbnails: BlockThumbnailRequest[]): BlockThum
 async function prepareBlockThumbnail(stateKey: string, fallbackColor: number): Promise<string | null> {
   if (typeof document === 'undefined') return null;
 
-  const parts = await resolveBlockParts(stateKey);
+  const requests = thumbnailPartRequests(stateKey);
+  const parts = (await Promise.all(requests.map(async (request) => {
+    const resolvedParts = await resolveBlockParts(request.stateKey);
+    return resolvedParts.map((part) => ({ part, position: request.position }));
+  }))).flat();
+
   if (parts.length === 0) return null;
 
-  const preparedParts = await Promise.all(parts.map(async (part): Promise<PreparedThumbnailPart> => ({
+  const preparedParts = await Promise.all(parts.map(async ({ part, position }): Promise<PreparedThumbnailPart> => ({
     geometry: geometryForPart(part),
     materials: await materialsForPart(part, fallbackColor),
+    position,
     rotation: variantEuler(part),
     renderOrder: partHasTranslucentFaces(part) ? 10 : 0,
   })));
 
   return enqueueThumbnailRender(() => renderPreparedThumbnail(preparedParts));
+}
+
+function thumbnailPartRequests(stateKey: string): Array<{ stateKey: string; position: THREE.Vector3 }> {
+  const state = parseBlockStateKey(stateKey);
+  if (!isBedBlockId(state.id)) {
+    return [{ stateKey, position: new THREE.Vector3(0, 0, 0) }];
+  }
+
+  const facing = horizontalFacing(state.properties.facing) ?? 'south';
+  const footStateKey = bedStateKey(state.id, facing, 'foot');
+  const headStateKey = bedStateKey(state.id, facing, 'head');
+  const offset = directionOffset(facing);
+
+  return [
+    { stateKey: footStateKey, position: new THREE.Vector3(-offset.x / 2, 0, -offset.z / 2) },
+    { stateKey: headStateKey, position: new THREE.Vector3(offset.x / 2, 0, offset.z / 2) },
+  ];
+}
+
+function isBedBlockId(id: string): boolean {
+  return id.replace(/^minecraft:/, '').endsWith('_bed');
+}
+
+function bedStateKey(id: string, facing: 'north' | 'south' | 'west' | 'east', part: 'head' | 'foot'): string {
+  return `${id}[facing=${facing},occupied=false,part=${part}]`;
+}
+
+function horizontalFacing(value: string | undefined): 'north' | 'south' | 'west' | 'east' | null {
+  if (value === 'north' || value === 'south' || value === 'west' || value === 'east') return value;
+  return null;
+}
+
+function directionOffset(facing: 'north' | 'south' | 'west' | 'east'): { x: number; z: number } {
+  switch (facing) {
+    case 'north':
+      return { x: 0, z: -1 };
+    case 'west':
+      return { x: -1, z: 0 };
+    case 'east':
+      return { x: 1, z: 0 };
+    case 'south':
+    default:
+      return { x: 0, z: 1 };
+  }
 }
 
 async function enqueueThumbnailRender(render: () => string): Promise<string> {
@@ -168,6 +220,7 @@ function renderPreparedThumbnail(parts: PreparedThumbnailPart[]): string {
 
   for (const part of parts) {
     const mesh = new THREE.Mesh(part.geometry, part.materials);
+    mesh.position.copy(part.position);
     mesh.rotation.copy(part.rotation);
     mesh.renderOrder = part.renderOrder;
     context.group.add(mesh);

@@ -326,6 +326,15 @@ function defaultBlockProperties(id: string, properties: Record<string, string>):
     };
   }
 
+  if (isBedBlock(id)) {
+    return {
+      facing: 'north',
+      occupied: 'false',
+      part: 'foot',
+      ...properties,
+    };
+  }
+
   if (id === 'minecraft:farmland') {
     return {
       moisture: '7',
@@ -1429,7 +1438,81 @@ function specialBlockEntityParts(
   const chestParts = chestBlockEntityParts(id, properties, variantRotation);
   if (chestParts.length > 0) return chestParts;
 
+  const bedParts = bedBlockEntityParts(id, properties, variantRotation);
+  if (bedParts.length > 0) return bedParts;
+
   return [];
+}
+
+function bedBlockEntityParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (!isBedBlock(id)) return [];
+
+  const part = properties.part === 'head' ? 'head' : 'foot';
+  const rotation = {
+    x: variantRotation.x,
+    y: variantRotation.y + bedFacingRotation(properties.facing),
+  };
+  const texture = bedTexture(id);
+  const bodyTextureOrigin: [number, number] = part === 'head' ? [0, 0] : [0, 22];
+  const legZ: [number, number] = part === 'head' ? [13, 16] : [0, 3];
+  const leftLegTextureOrigin: [number, number] = part === 'head' ? [50, 6] : [50, 0];
+  const rightLegTextureOrigin: [number, number] = part === 'head' ? [50, 18] : [50, 12];
+  const bodyHiddenFaces: ModelFaceName[] = part === 'head' ? ['up'] : ['down'];
+  const legHiddenFaces: ModelFaceName[] = ['down'];
+
+  return [
+    blockEntityCuboidPart(
+      id,
+      properties,
+      `bed:${part}:main`,
+      { name: 'main', from: [0, 3, 0], to: [16, 9, 16], textureOrigin: bodyTextureOrigin, hiddenFaces: bodyHiddenFaces },
+      texture,
+      rotation,
+    ),
+    blockEntityCuboidPart(
+      id,
+      properties,
+      `bed:${part}:left-leg`,
+      { name: 'left_leg', from: [0, 0, legZ[0]], to: [3, 3, legZ[1]], textureOrigin: leftLegTextureOrigin, hiddenFaces: legHiddenFaces },
+      texture,
+      rotation,
+    ),
+    blockEntityCuboidPart(
+      id,
+      properties,
+      `bed:${part}:right-leg`,
+      { name: 'right_leg', from: [13, 0, legZ[0]], to: [16, 3, legZ[1]], textureOrigin: rightLegTextureOrigin, hiddenFaces: legHiddenFaces },
+      texture,
+      rotation,
+    ),
+  ];
+}
+
+function bedTexture(id: string): string {
+  return `minecraft:entity/bed/${bedColor(id)}`;
+}
+
+function bedColor(id: string): string {
+  const path = id.replace(/^minecraft:/, '');
+  return /^(?<color>[a-z_]+)_bed$/.exec(path)?.groups?.color ?? 'red';
+}
+
+function bedFacingRotation(facing: string | undefined): number {
+  switch (facing) {
+    case 'east':
+      return 270;
+    case 'west':
+      return 90;
+    case 'north':
+      return 180;
+    case 'south':
+    default:
+      return 0;
+  }
 }
 
 function decoratedPotBlockEntityParts(
