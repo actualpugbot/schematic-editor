@@ -2601,16 +2601,8 @@ function colorNameFromBlock(id: string): ColorGroupId | null {
 
 function summarizeMaterials(blocks: VoxelBlock[]): MaterialSummary[] {
   const counts = new Map<string, MaterialSummary>();
-  const countedBeds = new Set<string>();
-
   for (const block of blocks) {
     const id = materialIdForBlock(block);
-    if (isBedMaterial(id)) {
-      const bedKey = bedMaterialCountKey(block);
-      if (countedBeds.has(bedKey)) continue;
-      countedBeds.add(bedKey);
-    }
-
     const current = counts.get(id) ?? {
       id,
       label: formatBlockName(id),
@@ -2623,59 +2615,6 @@ function summarizeMaterials(blocks: VoxelBlock[]): MaterialSummary[] {
   }
 
   return Array.from(counts.values()).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-}
-
-function isBedMaterial(id: string): boolean {
-  return id.replace(/^minecraft:/, '').endsWith('_bed');
-}
-
-function bedMaterialCountKey(block: VoxelBlock): string {
-  const properties = blockStateProperties(block.stateKey);
-  const facing = properties.facing ?? 'north';
-  const isHead = properties.part === 'head';
-  const foot = isHead ? adjacentPoint(block, oppositeDirection(facing)) : block;
-  return `${materialIdForBlock(block)}@${foot.x},${foot.y},${foot.z}`;
-}
-
-function blockStateProperties(stateKey: string): Record<string, string> {
-  const match = /\[(?<properties>.*)\]$/.exec(stateKey);
-  const rawProperties = match?.groups?.properties;
-  if (!rawProperties) return {};
-
-  const properties: Record<string, string> = {};
-  for (const pair of rawProperties.split(',')) {
-    const [key, value] = pair.split('=');
-    if (key && value !== undefined) properties[key] = value;
-  }
-  return properties;
-}
-
-function adjacentPoint(point: Pick<VoxelBlock, 'x' | 'y' | 'z'>, direction: string): Pick<VoxelBlock, 'x' | 'y' | 'z'> {
-  switch (direction) {
-    case 'south':
-      return { x: point.x, y: point.y, z: point.z + 1 };
-    case 'west':
-      return { x: point.x - 1, y: point.y, z: point.z };
-    case 'east':
-      return { x: point.x + 1, y: point.y, z: point.z };
-    case 'north':
-    default:
-      return { x: point.x, y: point.y, z: point.z - 1 };
-  }
-}
-
-function oppositeDirection(direction: string): string {
-  switch (direction) {
-    case 'south':
-      return 'north';
-    case 'west':
-      return 'east';
-    case 'east':
-      return 'west';
-    case 'north':
-    default:
-      return 'south';
-  }
 }
 
 function blockPositionKey(block: VoxelBlock): string {

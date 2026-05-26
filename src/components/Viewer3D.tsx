@@ -1904,7 +1904,6 @@ function configureMinecraftTexture(texture: THREE.Texture, textureId: string) {
   texture.generateMipmaps = !cutout;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.flipY = false;
 }
 
 function cropAnimatedTextureToFirstFrame(texture: THREE.Texture) {
@@ -1999,7 +1998,6 @@ function isAlphaCutoutTexture(textureId: string): boolean {
     || path.includes('amethyst_bud')
     || path.includes('dripstone')
     || path.endsWith('_chain')
-    || path.startsWith('entity/bed/')
     || path.startsWith('entity/decorated_pot/')
     || path === 'block/cobweb'
   );

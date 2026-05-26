@@ -326,15 +326,6 @@ function defaultBlockProperties(id: string, properties: Record<string, string>):
     };
   }
 
-  if (isBedBlock(id)) {
-    return {
-      facing: 'north',
-      occupied: 'false',
-      part: 'foot',
-      ...properties,
-    };
-  }
-
   if (id === 'minecraft:farmland') {
     return {
       moisture: '7',
@@ -973,11 +964,6 @@ export async function resolveBlockParts(stateKey: string): Promise<ResolvedBlock
 async function resolveBlockPartsUncached(stateKey: string): Promise<ResolvedBlockPart[]> {
   const state = parseBlockStateKey(stateKey);
 
-  const forcedBlockEntityParts = forcedSpecialBlockEntityParts(state.id, state.properties, { x: 0, y: 0 });
-  if (forcedBlockEntityParts.length > 0) {
-    return forcedBlockEntityParts;
-  }
-
   const blockstate = await loadBlockstate(state.id);
   if (!blockstate) {
     if (isRenderlessVanillaModelBlock(state.id)) return [];
@@ -1443,105 +1429,7 @@ function specialBlockEntityParts(
   const chestParts = chestBlockEntityParts(id, properties, variantRotation);
   if (chestParts.length > 0) return chestParts;
 
-  const bedParts = bedBlockEntityParts(id, properties, variantRotation);
-  if (bedParts.length > 0) return bedParts;
-
   return [];
-}
-
-function forcedSpecialBlockEntityParts(
-  id: string,
-  properties: Record<string, string>,
-  variantRotation: { x: number; y: number },
-): ResolvedBlockPart[] {
-  const bedParts = bedBlockEntityParts(id, properties, variantRotation);
-  if (bedParts.length > 0) return bedParts;
-
-  return [];
-}
-
-function bedBlockEntityParts(
-  id: string,
-  properties: Record<string, string>,
-  variantRotation: { x: number; y: number },
-): ResolvedBlockPart[] {
-  if (!isBedBlock(id)) return [];
-
-  const part = properties.part === 'head' ? 'head' : 'foot';
-  const rotation = {
-    x: variantRotation.x,
-    y: variantRotation.y + bedFacingRotation(properties.facing),
-  };
-  const texture = bedTexture(id);
-  const bodyTextureOrigin: [number, number] = part === 'head' ? [0, 0] : [0, 22];
-  const legZ: [number, number] = part === 'head' ? [13, 16] : [0, 3];
-  const leftLegTextureOrigin: [number, number] = part === 'head' ? [50, 6] : [50, 0];
-  const rightLegTextureOrigin: [number, number] = part === 'head' ? [50, 18] : [50, 12];
-
-  return [
-    blockEntityCuboidPart(
-      id,
-      properties,
-      `bed:${part}:main`,
-      {
-        name: 'main',
-        from: [0, 3, 0],
-        to: [16, 9, 16],
-        textureOrigin: bodyTextureOrigin,
-        textureDimensions: [16, 16, 6],
-        faceUvSources: bedBodyFaceUvSources,
-        shade: false,
-      },
-      texture,
-      rotation,
-    ),
-    blockEntityCuboidPart(
-      id,
-      properties,
-      `bed:${part}:left-leg`,
-      { name: 'left_leg', from: [0, 0, legZ[0]], to: [3, 3, legZ[1]], textureOrigin: leftLegTextureOrigin, shade: false },
-      texture,
-      rotation,
-    ),
-    blockEntityCuboidPart(
-      id,
-      properties,
-      `bed:${part}:right-leg`,
-      { name: 'right_leg', from: [13, 0, legZ[0]], to: [16, 3, legZ[1]], textureOrigin: rightLegTextureOrigin, shade: false },
-      texture,
-      rotation,
-    ),
-  ];
-}
-
-const bedBodyFaceUvSources: Partial<Record<ModelFaceName, ModelFaceName>> = {
-  down: 'south',
-  up: 'north',
-  north: 'down',
-  south: 'up',
-};
-
-function bedTexture(id: string): string {
-  return `minecraft:entity/bed/${bedColor(id)}`;
-}
-
-function bedColor(id: string): string {
-  const path = id.replace(/^minecraft:/, '');
-  return /^(?<color>[a-z_]+)_bed$/.exec(path)?.groups?.color ?? 'red';
-}
-
-function bedFacingRotation(facing: string | undefined): number {
-  switch (facing) {
-    case 'east':
-      return 270;
-    case 'west':
-      return 90;
-    case 'north':
-      return 180;
-    case 'south':
-    default:
-      return 0;
-  }
 }
 
 function decoratedPotBlockEntityParts(
@@ -1801,10 +1689,7 @@ interface BlockEntityCuboid {
   from: [number, number, number];
   to: [number, number, number];
   textureOrigin: [number, number];
-  textureDimensions?: [number, number, number];
-  faceUvSources?: Partial<Record<ModelFaceName, ModelFaceName>>;
   hiddenFaces?: ModelFaceName[];
-  shade?: boolean;
 }
 
 function chestTypeFromProperties(properties: Record<string, string>): ChestType {
@@ -1879,7 +1764,6 @@ function blockEntityCuboidPart(
   const width = cuboid.to[0] - cuboid.from[0];
   const height = cuboid.to[1] - cuboid.from[1];
   const depth = cuboid.to[2] - cuboid.from[2];
-  const [textureWidth, textureHeight, textureDepth] = cuboid.textureDimensions ?? [width, height, depth];
   const hiddenFaces = new Set(cuboid.hiddenFaces ?? []);
   const faceTextures = cubeTextures(texture);
 
@@ -1894,7 +1778,7 @@ function blockEntityCuboidPart(
     from: cuboid.from,
     to: cuboid.to,
     textureSize,
-    shade: cuboid.shade ?? true,
+    shade: true,
     uvLock: false,
     variantRotation,
     faceTextures,
@@ -1906,10 +1790,7 @@ function blockEntityCuboidPart(
       west: null,
       east: null,
     },
-    faceUvs: remapFaceUvs(
-      entityCubeUvs(cuboid.textureOrigin[0], cuboid.textureOrigin[1], textureWidth, textureHeight, textureDepth, hiddenFaces),
-      cuboid.faceUvSources,
-    ),
+    faceUvs: entityCubeUvs(cuboid.textureOrigin[0], cuboid.textureOrigin[1], width, height, depth, hiddenFaces),
     faceRotations: {
       down: 0,
       up: 0,
@@ -1934,22 +1815,6 @@ function blockEntityCuboidPart(
       west: false,
       east: false,
     },
-  };
-}
-
-function remapFaceUvs(
-  faceUvs: Record<ModelFaceName, ModelFaceUv | null>,
-  faceUvSources: Partial<Record<ModelFaceName, ModelFaceName>> | undefined,
-): Record<ModelFaceName, ModelFaceUv | null> {
-  if (!faceUvSources) return faceUvs;
-
-  return {
-    down: faceUvs[faceUvSources.down ?? 'down'],
-    up: faceUvs[faceUvSources.up ?? 'up'],
-    north: faceUvs[faceUvSources.north ?? 'north'],
-    south: faceUvs[faceUvSources.south ?? 'south'],
-    west: faceUvs[faceUvSources.west ?? 'west'],
-    east: faceUvs[faceUvSources.east ?? 'east'],
   };
 }
 

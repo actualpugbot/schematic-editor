@@ -29,5 +29,3 @@ Pushes to `main` publish the built Vite app to GitHub Pages with GitHub Actions.
 ## Minecraft Assets
 
 The app serves vanilla blockstates, block models, block textures, and block-entity textures from `public/minecraft-assets/`. These assets were copied from `~/dev/mc-datahub/workspace/versions/26.1.1/decompiled/client/assets/minecraft`.
-
-Rendering display bugs should be fixed through the vanilla model, item display, or special-renderer path. See [docs/rendering-fixes.md](docs/rendering-fixes.md) for the expected workflow.

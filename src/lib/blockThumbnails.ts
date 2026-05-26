@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import {
-  parseBlockStateKey,
   resolveBlockParts,
   textureUrl,
   type ModelFaceName,
@@ -9,7 +8,6 @@ import {
 } from './minecraftModels';
 
 const thumbnailSize = 128;
-const thumbnailPipelineVersion = 3;
 const faceOrder: ModelFaceName[] = ['east', 'west', 'up', 'down', 'south', 'north'];
 const faceOffsets: Record<ModelFaceName, [number, number, number]> = {
   down: [0, -1, 0],
@@ -52,7 +50,6 @@ interface ThumbnailRendererContext {
 interface PreparedThumbnailPart {
   geometry: THREE.BufferGeometry;
   materials: THREE.Material[];
-  position: THREE.Vector3;
   rotation: THREE.Euler;
   renderOrder: number;
 }
@@ -120,7 +117,7 @@ export function preloadBlockThumbnails(
 }
 
 function thumbnailCacheKey(stateKey: string, fallbackColor: number): string {
-  return `${thumbnailPipelineVersion}::${stateKey}::${fallbackColor}`;
+  return `${stateKey}::${fallbackColor}`;
 }
 
 function uniquePendingThumbnails(thumbnails: BlockThumbnailRequest[]): BlockThumbnailRequest[] {
@@ -136,67 +133,17 @@ function uniquePendingThumbnails(thumbnails: BlockThumbnailRequest[]): BlockThum
 async function prepareBlockThumbnail(stateKey: string, fallbackColor: number): Promise<string | null> {
   if (typeof document === 'undefined') return null;
 
-  const requests = thumbnailPartRequests(stateKey);
-  const parts = (await Promise.all(requests.map(async (request) => {
-    const resolvedParts = await resolveBlockParts(request.stateKey);
-    return resolvedParts.map((part) => ({ part, position: request.position }));
-  }))).flat();
-
+  const parts = await resolveBlockParts(stateKey);
   if (parts.length === 0) return null;
 
-  const preparedParts = await Promise.all(parts.map(async ({ part, position }): Promise<PreparedThumbnailPart> => ({
+  const preparedParts = await Promise.all(parts.map(async (part): Promise<PreparedThumbnailPart> => ({
     geometry: geometryForPart(part),
     materials: await materialsForPart(part, fallbackColor),
-    position,
     rotation: variantEuler(part),
     renderOrder: partHasTranslucentFaces(part) ? 10 : 0,
   })));
 
   return enqueueThumbnailRender(() => renderPreparedThumbnail(preparedParts));
-}
-
-function thumbnailPartRequests(stateKey: string): Array<{ stateKey: string; position: THREE.Vector3 }> {
-  const state = parseBlockStateKey(stateKey);
-  if (!isBedBlockId(state.id)) {
-    return [{ stateKey, position: new THREE.Vector3(0, 0, 0) }];
-  }
-
-  const facing = 'north';
-  const footStateKey = bedStateKey(state.id, facing, 'foot');
-  const headStateKey = bedStateKey(state.id, facing, 'head');
-  const offset = directionOffset(facing);
-
-  return [
-    { stateKey: footStateKey, position: new THREE.Vector3(-offset.x / 2, 0, -offset.z / 2) },
-    { stateKey: headStateKey, position: new THREE.Vector3(offset.x / 2, 0, offset.z / 2) },
-  ];
-}
-
-function isBedBlockId(id: string): boolean {
-  return id.replace(/^minecraft:/, '').endsWith('_bed');
-}
-
-function bedStateKey(id: string, facing: 'north' | 'south' | 'west' | 'east', part: 'head' | 'foot'): string {
-  return `${id}[facing=${facing},occupied=false,part=${part},SchematicEditor_icon=true]`;
-}
-
-function horizontalFacing(value: string | undefined): 'north' | 'south' | 'west' | 'east' | null {
-  if (value === 'north' || value === 'south' || value === 'west' || value === 'east') return value;
-  return null;
-}
-
-function directionOffset(facing: 'north' | 'south' | 'west' | 'east'): { x: number; z: number } {
-  switch (facing) {
-    case 'north':
-      return { x: 0, z: -1 };
-    case 'west':
-      return { x: -1, z: 0 };
-    case 'east':
-      return { x: 1, z: 0 };
-    case 'south':
-    default:
-      return { x: 0, z: 1 };
-  }
 }
 
 async function enqueueThumbnailRender(render: () => string): Promise<string> {
@@ -221,7 +168,6 @@ function renderPreparedThumbnail(parts: PreparedThumbnailPart[]): string {
 
   for (const part of parts) {
     const mesh = new THREE.Mesh(part.geometry, part.materials);
-    mesh.position.copy(part.position);
     mesh.rotation.copy(part.rotation);
     mesh.renderOrder = part.renderOrder;
     context.group.add(mesh);
@@ -267,9 +213,9 @@ function createThumbnailRenderer(): ThumbnailRendererContext {
 function fitCameraToGroup(group: THREE.Group, camera: THREE.OrthographicCamera) {
   const box = new THREE.Box3().setFromObject(group);
   const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const viewSize = Math.max(size.x, size.y, size.z, 1) * 1.55;
   const direction = new THREE.Vector3(2.35, 1.65, 2.55).normalize();
-  const projectedSize = projectedCameraSize(box, direction);
-  const viewSize = Math.max(projectedSize.x, projectedSize.y, 1) * 1.18;
 
   camera.left = -viewSize / 2;
   camera.right = viewSize / 2;
@@ -278,44 +224,6 @@ function fitCameraToGroup(group: THREE.Group, camera: THREE.OrthographicCamera) 
   camera.position.copy(center).add(direction.multiplyScalar(5));
   camera.lookAt(center);
   camera.updateProjectionMatrix();
-}
-
-function projectedCameraSize(box: THREE.Box3, cameraOffsetDirection: THREE.Vector3): THREE.Vector2 {
-  const center = box.getCenter(new THREE.Vector3());
-  const viewDirection = cameraOffsetDirection.clone().multiplyScalar(-1).normalize();
-  const right = new THREE.Vector3().crossVectors(viewDirection, new THREE.Vector3(0, 1, 0)).normalize();
-  const up = new THREE.Vector3().crossVectors(right, viewDirection).normalize();
-
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-
-  for (const corner of boxCorners(box)) {
-    const relative = corner.sub(center);
-    const x = relative.dot(right);
-    const y = relative.dot(up);
-    minX = Math.min(minX, x);
-    maxX = Math.max(maxX, x);
-    minY = Math.min(minY, y);
-    maxY = Math.max(maxY, y);
-  }
-
-  return new THREE.Vector2(maxX - minX, maxY - minY);
-}
-
-function boxCorners(box: THREE.Box3): THREE.Vector3[] {
-  const { min, max } = box;
-  return [
-    new THREE.Vector3(min.x, min.y, min.z),
-    new THREE.Vector3(min.x, min.y, max.z),
-    new THREE.Vector3(min.x, max.y, min.z),
-    new THREE.Vector3(min.x, max.y, max.z),
-    new THREE.Vector3(max.x, min.y, min.z),
-    new THREE.Vector3(max.x, min.y, max.z),
-    new THREE.Vector3(max.x, max.y, min.z),
-    new THREE.Vector3(max.x, max.y, max.z),
-  ];
 }
 
 function geometryForPart(part: ResolvedBlockPart): THREE.BufferGeometry {
@@ -592,7 +500,6 @@ function configureMinecraftTexture(texture: THREE.Texture, textureId: string) {
   texture.generateMipmaps = !cutout;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.flipY = false;
 }
 
 function cropAnimatedTextureToFirstFrame(texture: THREE.Texture) {
@@ -653,7 +560,6 @@ function isAlphaCutoutTexture(textureId: string): boolean {
     || path.includes('mushroom')
     || path.includes('amethyst_bud')
     || path.includes('dripstone')
-    || path.startsWith('entity/bed/')
     || path.startsWith('entity/decorated_pot/')
     || path === 'block/cobweb'
   );
