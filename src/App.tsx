@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import {
   BoxSelect,
   Brush,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  ClipboardList,
   Cuboid,
   Download,
   Eye,
@@ -66,7 +68,7 @@ type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 type DraggedFileKind = 'none' | 'unsupported-file' | 'unknown-file' | 'schematic-file';
 type InspectorTab = 'selection' | 'materials' | 'layers';
 type EditPanelTab = 'tools' | 'rotate' | 'replace';
-type AppView = 'inspect' | 'edit' | 'texture';
+type AppView = 'inspect' | 'edit' | 'texture' | 'shopping';
 type EditTool = 'select' | 'build';
 type Theme = 'light' | 'dark';
 type MaterialsScope = 'build' | 'cuboid';
@@ -117,6 +119,67 @@ interface MaterialSummary {
   thumbnailLayers?: BlockThumbnailLayer[];
 }
 
+interface ShoppingMaterialGroup {
+  id: string;
+  label: string;
+  materials: MaterialSummary[];
+}
+
+interface ShoppingConfettiParticle {
+  material: MaterialSummary;
+  x: number;
+  y: number;
+  size: number;
+  duration: number;
+  delay: number;
+  drift: number;
+  sway: number;
+  spin: number;
+  squash: number;
+}
+
+interface ShoppingFireworkRocket {
+  material: MaterialSummary;
+  pattern: ShoppingFireworkPattern;
+  startLeft: number;
+  burstLeft: number;
+  size: number;
+  delay: number;
+  duration: number;
+  peakY: number;
+  travelX: number;
+  midTravelX: number;
+  riseY: number;
+  midRiseY: number;
+  swayX: number;
+}
+
+type ShoppingFireworkPattern = 'chrysanthemum' | 'willow' | 'ring' | 'double' | 'palm' | 'crackle';
+
+interface ShoppingFireworkSpark {
+  material: MaterialSummary;
+  pattern: ShoppingFireworkPattern;
+  left: number;
+  top: number;
+  size: number;
+  delay: number;
+  duration: number;
+  startScale: number;
+  endScale: number;
+  dx: number;
+  dy: number;
+  spin: number;
+}
+
+interface ShoppingFireworkFlash {
+  material: MaterialSummary;
+  left: number;
+  top: number;
+  size: number;
+  delay: number;
+  color: string;
+}
+
 interface BlockLibraryItem {
   stateKey: string;
   label: string;
@@ -156,6 +219,7 @@ type ColorGroupId =
 const schematicFileExtensions = new Set(['.litematic', '.schem', '.schematic', '.nbt']);
 const defaultSchematicFileName = 'Medieval House.litematic';
 const themeStorageKey = 'schematic-editor-theme';
+const shoppingListStoragePrefix = 'schematic-editor-shopping-list';
 const emptyBuildBlock = 'minecraft:air';
 const defaultHotbarBlocks = [
   'minecraft:stone',
@@ -412,6 +476,9 @@ function App() {
   const [expandedMaterialIds, setExpandedMaterialIds] = useState<Set<string>>(() => new Set());
   const [materialSearch, setMaterialSearch] = useState('');
   const [hiddenMaterialIds, setHiddenMaterialIds] = useState<Set<string>>(() => new Set());
+  const [shoppingSearch, setShoppingSearch] = useState('');
+  const [checkedShoppingItems, setCheckedShoppingItems] = useState<Set<string>>(() => new Set());
+  const [shoppingCelebrationId, setShoppingCelebrationId] = useState(0);
   const [playerHeadSelections, setPlayerHeadSelections] = useState<Record<string, string>>({});
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('materials');
@@ -442,6 +509,9 @@ function App() {
   const materialPanelRef = useRef<HTMLElement | null>(null);
   const layerPanelRef = useRef<HTMLElement | null>(null);
   const schematicNameInputRef = useRef<HTMLInputElement | null>(null);
+  const skipNextShoppingPersistRef = useRef(false);
+  const shoppingWasCompleteRef = useRef(false);
+  const shoppingCelebrationTimerRef = useRef<number | null>(null);
   const dragDepthRef = useRef(0);
   const visibleWorldY = model ? model.origin.y + visibleLayer : visibleLayer;
   const selectedBlockWorldX = selectedBlock && model ? model.origin.x + selectedBlock.x : null;
@@ -501,6 +571,47 @@ function App() {
 
   const activeMaterials = materialsScope === 'cuboid' ? cuboidMaterials : materials;
   const activeMaterialsLabel = materialsScope === 'cuboid' ? 'Selected Area' : 'Entire Build';
+  const shoppingScope = useMemo(() => (
+    model ? shoppingScopeKey(model, materialsScope, cuboidBounds) : 'none'
+  ), [cuboidBoundsKey, materialsScope, model]);
+  const shoppingStorage = useMemo(() => (
+    model ? shoppingStorageKey(model, shoppingScope, activeMaterials) : ''
+  ), [activeMaterials, model, shoppingScope]);
+  const shoppingItemKeys = useMemo(() => (
+    new Set(activeMaterials.map((material) => shoppingItemKey(shoppingScope, material)))
+  ), [activeMaterials, shoppingScope]);
+  const shoppingMaterials = useMemo(() => {
+    const query = shoppingSearch.trim().toLocaleLowerCase();
+    if (!query) return activeMaterials;
+
+    return activeMaterials.filter((material) => {
+      const label = material.label.toLocaleLowerCase();
+      const id = material.id.toLocaleLowerCase();
+      return label.includes(query) || id.includes(query);
+    });
+  }, [activeMaterials, shoppingSearch]);
+  const shoppingGroups = useMemo(() => groupShoppingMaterials(shoppingMaterials), [shoppingMaterials]);
+  const checkedShoppingMaterialCount = useMemo(() => (
+    activeMaterials.filter((material) => checkedShoppingItems.has(shoppingItemKey(shoppingScope, material))).length
+  ), [activeMaterials, checkedShoppingItems, shoppingScope]);
+  const totalShoppingItems = useMemo(() => (
+    activeMaterials.reduce((sum, material) => sum + material.count, 0)
+  ), [activeMaterials]);
+  const completedShoppingItems = useMemo(() => (
+    activeMaterials.reduce((sum, material) => (
+      checkedShoppingItems.has(shoppingItemKey(shoppingScope, material)) ? sum + material.count : sum
+    ), 0)
+  ), [activeMaterials, checkedShoppingItems, shoppingScope]);
+  const remainingShoppingItems = Math.max(0, totalShoppingItems - completedShoppingItems);
+  const shoppingProgressPercent = totalShoppingItems > 0
+    ? Math.round((completedShoppingItems / totalShoppingItems) * 100)
+    : 0;
+  const shoppingConfettiParticles = useMemo(() => (
+    shoppingCelebrationId > 0 ? createShoppingConfetti(activeMaterials, shoppingCelebrationId) : []
+  ), [activeMaterials, shoppingCelebrationId]);
+  const shoppingFireworks = useMemo(() => (
+    shoppingCelebrationId > 0 ? createShoppingFireworks(activeMaterials, shoppingCelebrationId) : { rockets: [], sparks: [], flashes: [] }
+  ), [activeMaterials, shoppingCelebrationId]);
 
   const filteredMaterials = useMemo(() => {
     const query = materialSearch.trim().toLocaleLowerCase();
@@ -635,6 +746,51 @@ function App() {
       setMaterialsScope('build');
     }
   }, [cuboidBounds, materialsScope]);
+
+  useEffect(() => {
+    if (!shoppingStorage) {
+      setCheckedShoppingItems(new Set());
+      return;
+    }
+
+    const rawItems = window.localStorage.getItem(shoppingStorage);
+    const storedItems = rawItems ? parseShoppingStorage(rawItems) : [];
+    const nextItems = storedItems.filter((item) => shoppingItemKeys.has(item));
+    skipNextShoppingPersistRef.current = true;
+    setCheckedShoppingItems(new Set(nextItems));
+  }, [shoppingItemKeys, shoppingStorage]);
+
+  useEffect(() => {
+    if (!shoppingStorage) return;
+    if (skipNextShoppingPersistRef.current) {
+      skipNextShoppingPersistRef.current = false;
+      return;
+    }
+
+    const nextItems = Array.from(checkedShoppingItems).filter((item) => shoppingItemKeys.has(item));
+    window.localStorage.setItem(shoppingStorage, JSON.stringify(nextItems));
+  }, [checkedShoppingItems, shoppingItemKeys, shoppingStorage]);
+
+  useEffect(() => {
+    const isShoppingComplete = appView === 'shopping'
+      && activeMaterials.length > 0
+      && checkedShoppingMaterialCount === activeMaterials.length;
+
+    if (isShoppingComplete && !shoppingWasCompleteRef.current) {
+      setShoppingCelebrationId((current) => current + 1);
+      if (shoppingCelebrationTimerRef.current) window.clearTimeout(shoppingCelebrationTimerRef.current);
+      shoppingCelebrationTimerRef.current = window.setTimeout(() => {
+        setShoppingCelebrationId(0);
+        shoppingCelebrationTimerRef.current = null;
+      }, 15000);
+    }
+
+    shoppingWasCompleteRef.current = isShoppingComplete;
+  }, [activeMaterials.length, appView, checkedShoppingMaterialCount]);
+
+  useEffect(() => () => {
+    if (shoppingCelebrationTimerRef.current) window.clearTimeout(shoppingCelebrationTimerRef.current);
+  }, []);
 
   useEffect(() => {
     let isCancelled = false;
@@ -1238,6 +1394,29 @@ function App() {
     void navigator.clipboard?.writeText(text).catch(() => undefined);
   };
 
+  const openShoppingList = () => {
+    if (!model) return;
+    setShoppingSearch('');
+    setAppView('shopping');
+  };
+
+  const toggleShoppingItem = (material: MaterialSummary) => {
+    const key = shoppingItemKey(shoppingScope, material);
+    setCheckedShoppingItems((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const resetShoppingList = () => {
+    setCheckedShoppingItems(new Set());
+  };
+
   const stepCuboidCorner = (corner: CuboidCornerId, axis: 'x' | 'y' | 'z', delta: number) => {
     if (!model) return;
     setCuboidCorners((current) => {
@@ -1340,7 +1519,7 @@ function App() {
         </div>
       </header>
 
-      <div className="workspace">
+      <div className={`workspace${appView === 'shopping' ? ' is-shopping' : ''}`}>
         <aside className="left-rail" aria-label="Primary controls">
           <div className="rail-cluster rail-mode-switch" role="tablist" aria-label="Schematic mode">
             <button
@@ -1380,7 +1559,7 @@ function App() {
 
           <div className="rail-divider" />
 
-          <div className="rail-cluster" aria-label={appView === 'edit' ? 'Edit tools' : appView === 'texture' ? 'Texture tools' : 'Inspect panels'}>
+          <div className="rail-cluster" aria-label={appView === 'edit' ? 'Edit tools' : appView === 'texture' ? 'Texture tools' : appView === 'shopping' ? 'Shopping list tools' : 'Inspect panels'}>
             {appView === 'edit' ? (
               <>
                 <button
@@ -1429,6 +1608,29 @@ function App() {
                 >
                   <SlidersHorizontal size={19} />
                   <span>Adjust</span>
+                </button>
+              </>
+            ) : appView === 'shopping' ? (
+              <>
+                <button
+                  type="button"
+                  className="is-active"
+                  onClick={openShoppingList}
+                  aria-pressed
+                  disabled={!model}
+                  title="Shopping list"
+                >
+                  <ClipboardList size={19} />
+                  <span>List</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openInspectorPanel('materials')}
+                  disabled={!model}
+                  title="Back to materials"
+                >
+                  <Cuboid size={19} />
+                  <span>Blocks</span>
                 </button>
               </>
             ) : (
@@ -1516,7 +1718,240 @@ function App() {
           />
         </aside>
 
-        <section className={`viewport-panel${selectedBlock && appView !== 'texture' ? ' has-selection-modal' : ''}`} aria-label="Schematic 3D viewport">
+        <section
+          className={`viewport-panel${appView === 'shopping' ? ' shopping-viewport' : ''}${selectedBlock && appView !== 'texture' && appView !== 'shopping' ? ' has-selection-modal' : ''}`}
+          aria-label={appView === 'shopping' ? 'Shopping list' : 'Schematic 3D viewport'}
+        >
+          {appView === 'shopping' && model ? (
+            <section className="shopping-board" aria-label="Required resources shopping list">
+              {(shoppingConfettiParticles.length > 0 || shoppingFireworks.rockets.length > 0) && (
+                <div className="shopping-confetti" aria-hidden="true" key={shoppingCelebrationId}>
+                  {shoppingConfettiParticles.map((particle, index) => (
+                    <span
+                      className="shopping-confetti-piece"
+                      key={`confetti-${particle.material.id}-${index}`}
+                      style={{
+                        '--confetti-x': `${particle.x}%`,
+                        '--confetti-y': `${particle.y}px`,
+                        '--confetti-size': `${particle.size}px`,
+                        '--confetti-duration': `${particle.duration}ms`,
+                        '--confetti-delay': `${particle.delay}ms`,
+                        '--confetti-drift': `${particle.drift}px`,
+                        '--confetti-sway': `${particle.sway}px`,
+                        '--confetti-spin': `${particle.spin}deg`,
+                        '--confetti-squash': particle.squash.toString(),
+                      } as CSSProperties}
+                    >
+                      <BlockPreview
+                        stateKey={particle.material.stateKey}
+                        color={particle.material.color}
+                        layers={particle.material.thumbnailLayers}
+                      />
+                    </span>
+                  ))}
+                  {shoppingFireworks.rockets.map((rocket, index) => (
+                    <span
+                      className={`shopping-firework-rocket is-${rocket.pattern}`}
+                      key={`rocket-${rocket.material.id}-${index}`}
+                      style={{
+                        '--firework-start-left': `${rocket.startLeft}%`,
+                        '--firework-burst-left': `${rocket.burstLeft}%`,
+                        '--firework-size': `${rocket.size}px`,
+                        '--firework-delay': `${rocket.delay}ms`,
+                        '--firework-duration': `${rocket.duration}ms`,
+                        '--firework-travel-x': `${rocket.travelX}vw`,
+                        '--firework-mid-travel-x': `${rocket.midTravelX}vw`,
+                        '--firework-rise-y': `${rocket.riseY}vh`,
+                        '--firework-mid-rise-y': `${rocket.midRiseY}vh`,
+                        '--firework-sway-x': `${rocket.swayX}px`,
+                      } as CSSProperties}
+                    >
+                      <BlockPreview
+                        stateKey={rocket.material.stateKey}
+                        color={rocket.material.color}
+                        layers={rocket.material.thumbnailLayers}
+                      />
+                    </span>
+                  ))}
+                  {shoppingFireworks.flashes.map((flash, index) => (
+                    <span
+                      className="shopping-firework-flash"
+                      key={`flash-${flash.material.id}-${index}`}
+                      style={{
+                        '--flash-left': `${flash.left}%`,
+                        '--flash-top': `${flash.top}%`,
+                        '--flash-size': `${flash.size}px`,
+                        '--flash-delay': `${flash.delay}ms`,
+                        '--flash-color': flash.color,
+                      } as CSSProperties}
+                    />
+                  ))}
+                  {shoppingFireworks.sparks.map((spark, index) => (
+                    <span
+                      className={`shopping-firework-spark is-${spark.pattern}`}
+                      key={`spark-${spark.material.id}-${index}`}
+                      style={{
+                        '--spark-left': `${spark.left}%`,
+                        '--spark-top': `${spark.top}%`,
+                        '--spark-size': `${spark.size}px`,
+                        '--spark-delay': `${spark.delay}ms`,
+                        '--spark-duration': `${spark.duration}ms`,
+                        '--spark-start-scale': spark.startScale.toString(),
+                        '--spark-end-scale': spark.endScale.toString(),
+                        '--spark-dx': `${spark.dx}px`,
+                        '--spark-dy': `${spark.dy}px`,
+                        '--spark-spin': `${spark.spin}deg`,
+                        '--spark-glow': materialColorCss(spark.material),
+                      } as CSSProperties}
+                    >
+                      <BlockPreview
+                        stateKey={spark.material.stateKey}
+                        color={spark.material.color}
+                        layers={spark.material.thumbnailLayers}
+                      />
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="shopping-header">
+                <div className="shopping-title-block">
+                  <p className="eyebrow">Shopping List</p>
+                  <h2>{schematicName}</h2>
+                </div>
+                <div className="shopping-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => openInspectorPanel('materials')}
+                  >
+                    <Cuboid size={16} />
+                    Materials
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={resetShoppingList}
+                    disabled={checkedShoppingMaterialCount === 0}
+                  >
+                    <RotateCcw size={16} />
+                    Reset
+                  </button>
+                </div>
+              </div>
+
+              <div className="shopping-toolbar">
+                <div className="segmented-control shopping-scope" role="group" aria-label="Shopping list scope">
+                  <button
+                    type="button"
+                    className={materialsScope === 'build' ? 'is-active' : ''}
+                    onClick={() => setMaterialsScope('build')}
+                  >
+                    Entire Build
+                  </button>
+                  <button
+                    type="button"
+                    className={materialsScope === 'cuboid' ? 'is-active' : ''}
+                    onClick={() => {
+                      if (cuboidBounds) {
+                        setMaterialsScope('cuboid');
+                      } else {
+                        beginCuboidSelection();
+                        setAppView('inspect');
+                        setInspectorTab('selection');
+                      }
+                    }}
+                  >
+                    Selected Area
+                  </button>
+                </div>
+                <label className="material-search shopping-search">
+                  <Search size={16} aria-hidden="true" />
+                  <input
+                    type="search"
+                    value={shoppingSearch}
+                    onChange={(event) => setShoppingSearch(event.target.value)}
+                    placeholder="Search shopping list"
+                    aria-label="Search shopping list"
+                  />
+                </label>
+              </div>
+
+              <div
+                className="shopping-progress"
+                style={{ '--shopping-progress': `${shoppingProgressPercent}%` } as CSSProperties}
+                aria-label={`${shoppingProgressPercent}% collected`}
+              >
+                <div>
+                  <span>Total</span>
+                  <strong>{totalShoppingItems.toLocaleString()}</strong>
+                </div>
+                <div>
+                  <span>Collected</span>
+                  <strong>{completedShoppingItems.toLocaleString()}</strong>
+                </div>
+                <div>
+                  <span>Remaining</span>
+                  <strong>{remainingShoppingItems.toLocaleString()}</strong>
+                </div>
+                <div>
+                  <span>Rows</span>
+                  <strong>{checkedShoppingMaterialCount.toLocaleString()} / {activeMaterials.length.toLocaleString()}</strong>
+                </div>
+              </div>
+
+              <div className="shopping-list" aria-live="polite">
+                {shoppingGroups.map((group) => (
+                  <section className="shopping-group" key={group.id} aria-label={group.label}>
+                    <div className="shopping-group-heading">
+                      <span>{group.label}</span>
+                      <strong>{group.materials.length.toLocaleString()}</strong>
+                    </div>
+                    <div className="shopping-group-items">
+                      {group.materials.map((material) => {
+                        const itemKey = shoppingItemKey(shoppingScope, material);
+                        const isChecked = checkedShoppingItems.has(itemKey);
+
+                        return (
+                          <button
+                            type="button"
+                            key={itemKey}
+                            className={`shopping-row${isChecked ? ' is-checked' : ''}`}
+                            onClick={() => toggleShoppingItem(material)}
+                            aria-pressed={isChecked}
+                          >
+                            <span className="shopping-check" aria-hidden="true">
+                              {isChecked && <Check size={16} strokeWidth={3} />}
+                            </span>
+                            <BlockPreview
+                              stateKey={material.stateKey}
+                              color={material.color}
+                              layers={material.thumbnailLayers}
+                            />
+                            <span className="shopping-row-label">
+                              <strong>{material.label}</strong>
+                              <span>{material.id}</span>
+                            </span>
+                            <span className="shopping-row-count">{material.count.toLocaleString()}</span>
+                            <MaterialBreakdown materialId={material.id} count={material.count} />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
+                {shoppingGroups.length === 0 && (
+                  <p className="material-empty">
+                    {materialsScope === 'cuboid' && !cuboidBounds
+                      ? 'Select an area to create a shopping list for that region.'
+                      : shoppingSearch.trim()
+                        ? `No shopping list items match "${shoppingSearch.trim()}".`
+                        : 'No non-air blocks in this shopping list.'}
+                  </p>
+                )}
+              </div>
+            </section>
+          ) : (
+            <>
           {selectedBlock && appView !== 'texture' && (
             <section className="selection-inspector-card" aria-label="Selected block details">
               <div className="selection-inspector-header">
@@ -1792,8 +2227,11 @@ function App() {
               viewerRef={viewerRef}
             />
           )}
+            </>
+          )}
         </section>
 
+      {appView !== 'shopping' && (
       <aside className="control-rail" aria-label="Schematic controls">
         {error && (
           <section className="notice error" role="alert">
@@ -2106,6 +2544,14 @@ function App() {
                   </h2>
                   <p className="eyebrow">{activeMaterialsLabel}</p>
                 </div>
+                <button
+                  type="button"
+                  className="secondary-button material-shopping-link"
+                  onClick={openShoppingList}
+                >
+                  <ClipboardList size={16} />
+                  Shopping List
+                </button>
               </div>
               <div className="segmented-control" role="group" aria-label="Materials scope">
                 <button
@@ -2452,6 +2898,7 @@ function App() {
           </>
         )}
       </aside>
+      )}
       </div>
     </main>
   );
@@ -3078,6 +3525,277 @@ function summarizeMaterials(blocks: VoxelBlock[]): MaterialSummary[] {
   }
 
   return Array.from(counts.values()).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+
+function shoppingItemKey(scopeKey: string, material: MaterialSummary): string {
+  return `${scopeKey}:${material.id}:${material.count}`;
+}
+
+function shoppingScopeKey(model: SchematicModel, scope: MaterialsScope, bounds: CuboidBounds | null): string {
+  if (scope === 'cuboid' && bounds) return `cuboid:${boundsKey(bounds)}`;
+  return `build:${model.dimensions.width}x${model.dimensions.height}x${model.dimensions.length}`;
+}
+
+function shoppingStorageKey(model: SchematicModel, scopeKey: string, materials: MaterialSummary[]): string {
+  const dimensions = `${model.dimensions.width}x${model.dimensions.height}x${model.dimensions.length}`;
+  const materialHash = hashText(materials.map((material) => `${material.id}:${material.count}`).join('|'));
+  const identity = hashText(`${model.name}|${model.source}|${dimensions}|${scopeKey}|${materialHash}`);
+  return `${shoppingListStoragePrefix}:${identity}`;
+}
+
+function parseShoppingStorage(rawItems: string): string[] {
+  try {
+    const parsed = JSON.parse(rawItems);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function hashText(text: string): string {
+  let hash = 5381;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash << 5) + hash) ^ text.charCodeAt(index);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function groupShoppingMaterials(materials: MaterialSummary[]): ShoppingMaterialGroup[] {
+  const groups = new Map<string, ShoppingMaterialGroup>();
+  for (const material of materials) {
+    const category = shoppingCategoryForMaterial(material.id);
+    const group = groups.get(category.id) ?? { ...category, materials: [] };
+    group.materials.push(material);
+    groups.set(category.id, group);
+  }
+
+  return Array.from(groups.values()).sort((a, b) => (
+    shoppingCategoryRank(a.id) - shoppingCategoryRank(b.id)
+      || a.label.localeCompare(b.label)
+  ));
+}
+
+function createShoppingConfetti(materials: MaterialSummary[], seed: number): ShoppingConfettiParticle[] {
+  if (materials.length === 0) return [];
+
+  const particleCount = 780;
+  return Array.from({ length: particleCount }, (_, index) => {
+    const material = materials[index % materials.length];
+    const random = seededUnit(seed * 101 + index * 17);
+    const randomTwo = seededUnit(seed * 137 + index * 29);
+    const randomThree = seededUnit(seed * 173 + index * 41);
+    const randomFour = seededUnit(seed * 191 + index * 43);
+    const randomFive = seededUnit(seed * 223 + index * 47);
+    const lane = index % 4;
+    const x = lane === 0
+      ? 8 + random * 34
+      : lane === 1
+        ? 58 + random * 34
+        : random * 100;
+    const duration = 6200 + randomFour * 3600;
+
+    return {
+      material,
+      x,
+      y: -180 - randomTwo * 420,
+      size: Math.round(24 + randomThree * 28),
+      duration: Math.round(duration),
+      delay: Math.round(randomFive * 1850),
+      drift: Math.round((randomTwo - 0.5) * 920),
+      sway: Math.round((randomFive - 0.5) * 260),
+      spin: Math.round((random > 0.5 ? 1 : -1) * (720 + randomThree * 2160)),
+      squash: 0.26 + randomFour * 0.6,
+    };
+  });
+}
+
+function createShoppingFireworks(
+  materials: MaterialSummary[],
+  seed: number,
+): { rockets: ShoppingFireworkRocket[]; sparks: ShoppingFireworkSpark[]; flashes: ShoppingFireworkFlash[] } {
+  if (materials.length === 0) return { rockets: [], sparks: [], flashes: [] };
+
+  const duration = 15000;
+  const rocketCount = 44;
+  const rockets = Array.from({ length: rocketCount }, (_, index) => {
+    const random = seededUnit(seed * 211 + index * 31);
+    const randomTwo = seededUnit(seed * 251 + index * 43);
+    const randomThree = seededUnit(seed * 271 + index * 53);
+    const patternPick = seededUnit(seed * 293 + index * 37);
+    const pattern: ShoppingFireworkPattern = patternPick < 0.17
+      ? 'ring'
+      : patternPick < 0.34
+        ? 'willow'
+        : patternPick < 0.51
+          ? 'double'
+          : patternPick < 0.68
+            ? 'palm'
+            : patternPick < 0.84
+              ? 'crackle'
+              : 'chrysanthemum';
+    const material = materials[(index * 5) % materials.length];
+    const isLeftLaunch = index % 2 === 0;
+    const startLeft = isLeftLaunch
+      ? 5 + random * 25
+      : 70 + random * 25;
+    const burstLeft = isLeftLaunch
+      ? 10 + randomTwo * 28
+      : 62 + randomTwo * 28;
+    const peakY = clamp(-10 + randomThree * 58, -6, 48);
+    const travelX = burstLeft - startLeft;
+    const midTravelX = travelX * (0.38 + random * 0.18);
+    const riseY = -(102 - peakY);
+    const midRiseY = riseY * (0.46 + randomTwo * 0.14);
+    const swayX = Math.round((randomThree - 0.5) * 92);
+    const cadence = duration / rocketCount;
+
+    return {
+      material,
+      pattern,
+      startLeft,
+      burstLeft,
+      size: 28 + Math.round(randomTwo * 30),
+      delay: Math.round(index * cadence + randomTwo * 150),
+      duration: 1180 + Math.round(random * 430),
+      peakY,
+      travelX,
+      midTravelX,
+      riseY,
+      midRiseY,
+      swayX,
+    };
+  });
+
+  const flashes = rockets.map((rocket, index) => ({
+    material: rocket.material,
+    left: rocket.burstLeft,
+    top: rocket.peakY,
+    size: rocket.pattern === 'double' || rocket.pattern === 'chrysanthemum'
+      ? 260 + Math.round(seededUnit(seed * 367 + index * 67) * 180)
+      : rocket.pattern === 'crackle'
+        ? 190 + Math.round(seededUnit(seed * 371 + index * 67) * 130)
+        : 220 + Math.round(seededUnit(seed * 373 + index * 67) * 150),
+    delay: rocket.delay + rocket.duration - 145,
+    color: materialColorCss(rocket.material),
+  }));
+
+  const sparks = rockets.flatMap((rocket, rocketIndex) => {
+    const pattern = rocket.pattern;
+    const sparkCount = pattern === 'ring'
+      ? 18 + Math.round(seededUnit(seed * 307 + rocketIndex * 47) * 10)
+      : pattern === 'willow'
+        ? 20 + Math.round(seededUnit(seed * 311 + rocketIndex * 47) * 14)
+        : pattern === 'double'
+          ? 28 + Math.round(seededUnit(seed * 313 + rocketIndex * 47) * 14)
+          : pattern === 'palm'
+            ? 12 + Math.round(seededUnit(seed * 317 + rocketIndex * 47) * 8)
+            : pattern === 'crackle'
+              ? 32 + Math.round(seededUnit(seed * 319 + rocketIndex * 47) * 18)
+              : 26 + Math.round(seededUnit(seed * 323 + rocketIndex * 47) * 16);
+    const explodeDelay = rocket.delay + rocket.duration - 130;
+    const burstRadius = pattern === 'double'
+      ? 176
+      : pattern === 'willow'
+        ? 148
+        : pattern === 'palm'
+          ? 210
+          : pattern === 'crackle'
+            ? 156
+            : pattern === 'chrysanthemum'
+              ? 196
+              : 136;
+
+    return Array.from({ length: sparkCount }, (_, sparkIndex) => {
+      const random = seededUnit(seed * 331 + rocketIndex * 59 + sparkIndex * 13);
+      const randomTwo = seededUnit(seed * 353 + rocketIndex * 61 + sparkIndex * 17);
+      const material = materials[(rocketIndex * 7 + sparkIndex) % materials.length];
+      const baseAngle = (Math.PI * 2 * sparkIndex) / sparkCount;
+      const starPoint = pattern === 'palm' ? (sparkIndex % 2 === 0 ? 1 : 0.42) : 1;
+      const angle = baseAngle + (pattern === 'willow' ? random * 0.55 : pattern === 'crackle' ? random * 1.25 : random * 0.34);
+      const isOuterRing = pattern !== 'double' || sparkIndex % 2 === 0;
+      const distance = ((isOuterRing ? burstRadius : burstRadius * 0.46) * starPoint)
+        + random * (pattern === 'double' ? 96 : pattern === 'palm' ? 58 : pattern === 'crackle' ? 180 : 128);
+      const gravity = pattern === 'willow'
+        ? 200 + randomTwo * 220
+        : pattern === 'palm'
+          ? (randomTwo - 0.5) * 54
+          : pattern === 'crackle'
+            ? 104 + randomTwo * 145
+            : pattern === 'double'
+              ? randomTwo * 98
+              : (randomTwo - 0.5) * 76;
+      const dx = Math.cos(angle) * distance;
+      const dy = Math.sin(angle) * distance + gravity;
+
+      return {
+        material,
+        pattern,
+        left: rocket.burstLeft,
+        top: rocket.peakY,
+        size: 10 + Math.round(random * (pattern === 'palm' ? 24 : pattern === 'double' ? 18 : pattern === 'crackle' ? 14 : 22)),
+        delay: explodeDelay + (pattern === 'crackle' ? Math.round(randomTwo * 220) : 0),
+        duration: pattern === 'willow'
+          ? 2600 + Math.round(random * 1100)
+          : pattern === 'palm'
+            ? 1700 + Math.round(random * 700)
+            : pattern === 'crackle'
+              ? 900 + Math.round(random * 650)
+            : 1600 + Math.round(random * 950),
+        startScale: pattern === 'double' && !isOuterRing ? 0.2 : pattern === 'palm' ? 0.26 : 0.3,
+        endScale: pattern === 'willow' ? 0.64 + random * 0.28 : pattern === 'palm' ? 0.82 + random * 0.46 : pattern === 'crackle' ? 0.48 + random * 0.28 : 0.9 + random * 0.34,
+        dx,
+        dy,
+        spin: Math.round((random > 0.5 ? 1 : -1) * (280 + random * 520)),
+      };
+    });
+  });
+
+  return { rockets, sparks, flashes };
+}
+
+function seededUnit(seed: number): number {
+  const value = Math.sin(seed) * 10000;
+  return value - Math.floor(value);
+}
+
+function materialColorCss(material: MaterialSummary): string {
+  return `#${material.color.toString(16).padStart(6, '0')}`;
+}
+
+function shoppingCategoryForMaterial(materialId: string): { id: string; label: string } {
+  const id = stripBlockStateProperties(materialId).replace(/^minecraft:/, '');
+  if (woodTypeOrder.some((wood) => id.includes(wood))) return { id: 'wood', label: 'Wood' };
+  if (id.includes('stone') || id.includes('deepslate') || id.includes('tuff') || id.includes('brick')
+    || id.includes('andesite') || id.includes('diorite') || id.includes('granite') || id.includes('basalt')
+    || id.includes('blackstone') || id.includes('quartz') || id.includes('sandstone') || id === 'cobblestone'
+    || id === 'netherrack' || id === 'end_stone' || id === 'obsidian') {
+    return { id: 'stone', label: 'Stone' };
+  }
+  if (id.includes('glass') || id.includes('pane')) return { id: 'glass', label: 'Glass' };
+  if (id.includes('redstone') || id.includes('repeater') || id.includes('comparator') || id.includes('piston')
+    || id.includes('observer') || id.includes('hopper') || id.includes('rail') || id.includes('lever')
+    || id.includes('button') || id.includes('pressure_plate') || id.includes('dispenser') || id.includes('dropper')) {
+    return { id: 'redstone', label: 'Redstone' };
+  }
+  if (id.includes('leaves') || id.includes('sapling') || id.includes('grass') || id.includes('dirt')
+    || id.includes('flower') || id.includes('moss') || id.includes('sand') || id.includes('gravel')
+    || id.includes('coral') || id.includes('vine') || id.includes('fern')) {
+    return { id: 'nature', label: 'Nature' };
+  }
+  if (id.includes('torch') || id.includes('lantern') || id.includes('chest') || id.includes('barrel')
+    || id.includes('furnace') || id.includes('crafting_table') || id.includes('anvil') || id.includes('bed')
+    || id.includes('door') || id.includes('ladder') || id.includes('scaffolding')) {
+    return { id: 'utility', label: 'Utility' };
+  }
+  if (dyeColorOrder.some((color) => id.includes(color)) || id.includes('terracotta') || id.includes('concrete')
+    || id.includes('wool') || id.includes('banner') || id.includes('carpet') || id.includes('candle')) {
+    return { id: 'decorative', label: 'Color & Decor' };
+  }
+  return { id: 'other', label: 'Other' };
+}
+
+function shoppingCategoryRank(id: string): number {
+  return ['wood', 'stone', 'glass', 'redstone', 'nature', 'utility', 'decorative', 'other'].indexOf(id);
 }
 
 function materialQuantityForBlock(block: VoxelBlock): number {
