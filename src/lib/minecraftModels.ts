@@ -1319,6 +1319,9 @@ function syntheticBlockParts(
   properties: Record<string, string>,
   variantRotation: { x: number; y: number },
 ): ResolvedBlockPart[] {
+  const signParts = syntheticSignParts(id, properties, variantRotation);
+  if (signParts.length > 0) return signParts;
+
   const playerHeadParts = syntheticPlayerHeadParts(id, properties, variantRotation);
   if (playerHeadParts.length > 0) return playerHeadParts;
 
@@ -1326,6 +1329,96 @@ function syntheticBlockParts(
   if (movingPistonParts.length > 0) return movingPistonParts;
 
   return [];
+}
+
+function syntheticSignParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (!isStandingSignBlock(id) && !isWallSignBlock(id) && !isHangingSignBlock(id)) return [];
+
+  if (isHangingSignBlock(id)) {
+    return syntheticHangingSignParts(id, properties, variantRotation);
+  }
+
+  return syntheticStandingOrWallSignParts(id, properties, variantRotation);
+}
+
+function syntheticStandingOrWallSignParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  const wallMounted = isWallSignBlock(id);
+  const texture = signTexture(id);
+  const rotation = {
+    x: variantRotation.x,
+    y: variantRotation.y + (wallMounted ? horizontalFacingRotation(properties.facing) : headRotationFromProperty(properties.rotation)),
+  };
+  const board: [number, number, number][] = wallMounted
+    ? [[2, 5, 0.5], [14, 13, 1.5]]
+    : [[2, 6, 7], [14, 14, 9]];
+  const parts = [
+    syntheticCuboidPart(id, properties, `sign:${wallMounted ? 'wall' : 'standing'}:board:${texture}`, board[0], board[1], texture, rotation),
+  ];
+
+  if (!wallMounted) {
+    parts.push(
+      syntheticCuboidPart(id, properties, `sign:standing:post:${texture}`, [7, 0, 7], [9, 7, 9], texture, rotation),
+    );
+  }
+
+  return parts;
+}
+
+function syntheticHangingSignParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  const wallMounted = isWallHangingSignBlock(id);
+  const texture = hangingSignTexture(id);
+  const rotation = {
+    x: variantRotation.x,
+    y: variantRotation.y + (wallMounted ? horizontalFacingRotation(properties.facing) : headRotationFromProperty(properties.rotation)),
+  };
+  const parts = [
+    syntheticCuboidPart(id, properties, `hanging-sign:${wallMounted ? 'wall' : 'ceiling'}:board:${texture}`, [1, 3, 7], [15, 13, 9], texture, rotation),
+  ];
+
+  if (wallMounted) {
+    parts.push(
+      syntheticCuboidPart(id, properties, `hanging-sign:wall:bracket-left:${texture}`, [2, 13, 3], [4, 15, 8], texture, rotation),
+      syntheticCuboidPart(id, properties, `hanging-sign:wall:bracket-right:${texture}`, [12, 13, 3], [14, 15, 8], texture, rotation),
+    );
+    return parts;
+  }
+
+  parts.push(
+    syntheticCuboidPart(id, properties, `hanging-sign:ceiling:chain-left:${texture}`, [2, 13, 7], [4, 16, 9], texture, rotation),
+    syntheticCuboidPart(id, properties, `hanging-sign:ceiling:chain-right:${texture}`, [12, 13, 7], [14, 16, 9], texture, rotation),
+  );
+  return parts;
+}
+
+function signTexture(id: string): string {
+  return `minecraft:block/${signWoodType(id)}_planks`;
+}
+
+function hangingSignTexture(id: string): string {
+  const wood = signWoodType(id);
+  if (wood === 'bamboo') return 'minecraft:block/bamboo_planks';
+  if (wood === 'crimson' || wood === 'warped') return `minecraft:block/stripped_${wood}_stem`;
+  return `minecraft:block/stripped_${wood}_log`;
+}
+
+function signWoodType(id: string): string {
+  const path = id.replace(/^minecraft:/, '');
+  if (path === 'sign' || path === 'wall_sign' || path === 'hanging_sign' || path === 'wall_hanging_sign') return 'oak';
+
+  const match = /^(?<wood>.+?)_(?:wall_)?(?:hanging_)?sign$/.exec(path);
+  return match?.groups?.wood ?? 'oak';
 }
 
 function syntheticPlayerHeadParts(
@@ -1382,21 +1475,28 @@ function horizontalFacingRotation(facing: string | undefined): number {
 
 function isStandingSignBlock(id: string): boolean {
   const path = id.replace(/^minecraft:/, '');
-  return path.endsWith('_sign') && !path.endsWith('_wall_sign') && !path.endsWith('_hanging_sign') && !path.endsWith('_wall_hanging_sign');
+  return (path === 'sign' || path.endsWith('_sign'))
+    && !path.endsWith('_wall_sign')
+    && !path.endsWith('_hanging_sign')
+    && !path.endsWith('_wall_hanging_sign');
 }
 
 function isWallSignBlock(id: string): boolean {
   const path = id.replace(/^minecraft:/, '');
-  return path.endsWith('_wall_sign');
+  return path === 'wall_sign' || path.endsWith('_wall_sign');
 }
 
 function isHangingSignBlock(id: string): boolean {
   const path = id.replace(/^minecraft:/, '');
-  return path.endsWith('_hanging_sign') || path.endsWith('_wall_hanging_sign');
+  return path === 'hanging_sign'
+    || path === 'wall_hanging_sign'
+    || path.endsWith('_hanging_sign')
+    || path.endsWith('_wall_hanging_sign');
 }
 
 function isWallHangingSignBlock(id: string): boolean {
-  return id.replace(/^minecraft:/, '').endsWith('_wall_hanging_sign');
+  const path = id.replace(/^minecraft:/, '');
+  return path === 'wall_hanging_sign' || path.endsWith('_wall_hanging_sign');
 }
 
 function isBannerBlock(id: string): boolean {

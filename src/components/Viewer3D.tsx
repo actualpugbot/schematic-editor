@@ -1089,7 +1089,13 @@ function setBlockStateProperty(stateKey: string, key: string, value: string): st
 }
 
 function blockMaterialId(block: VoxelBlock): string {
-  return block.stateKey.split('[', 1)[0];
+  const id = block.stateKey.split('[', 1)[0];
+  const path = id.replace(/^minecraft:/, '');
+  if (path === 'wall_sign') return id.replace(/wall_sign$/, 'sign');
+  if (path === 'wall_hanging_sign') return id.replace(/wall_hanging_sign$/, 'hanging_sign');
+  if (path.endsWith('_wall_sign')) return id.replace(/_wall_sign$/, '_sign');
+  if (path.endsWith('_wall_hanging_sign')) return id.replace(/_wall_hanging_sign$/, '_hanging_sign');
+  return id;
 }
 
 function hiddenFacesForPart(

@@ -2601,7 +2601,11 @@ function materialIdForBlock(block: VoxelBlock): string {
 
 function materialIdForStateKey(stateKey: string): string {
   const id = stripBlockStateProperties(stateKey);
+  const path = id.replace(/^minecraft:/, '');
+  if (path === 'wall_sign') return id.replace(/wall_sign$/, 'sign');
+  if (path === 'wall_hanging_sign') return id.replace(/wall_hanging_sign$/, 'hanging_sign');
   if (isWallSignStateKey(id)) return id.replace(/_wall_sign$/, '_sign');
+  if (isWallHangingSignStateKey(id)) return id.replace(/_wall_hanging_sign$/, '_hanging_sign');
   return id;
 }
 
@@ -3148,6 +3152,11 @@ function isDoorStateKey(stateKey: string): boolean {
 function isWallSignStateKey(stateKey: string): boolean {
   const id = stripBlockStateProperties(stateKey).replace(/^minecraft:/, '');
   return id.endsWith('_wall_sign');
+}
+
+function isWallHangingSignStateKey(stateKey: string): boolean {
+  const id = stripBlockStateProperties(stateKey).replace(/^minecraft:/, '');
+  return id.endsWith('_wall_hanging_sign');
 }
 
 function blockPositionKey(block: VoxelBlock): string {
