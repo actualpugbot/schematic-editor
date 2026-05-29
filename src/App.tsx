@@ -40,7 +40,12 @@ import {
   type Viewer3DHandle,
   textureAdjustmentKey,
 } from './components/Viewer3D';
-import { createBlockThumbnail, getCachedBlockThumbnail, preloadBlockThumbnails } from './lib/blockThumbnails';
+import {
+  createBlockThumbnail,
+  getCachedBlockThumbnail,
+  preloadBlockThumbnails,
+  type BlockThumbnailLayer,
+} from './lib/blockThumbnails';
 import { textureUrl, type ModelFaceName } from './lib/minecraftModels';
 import { writeNbt, type NbtDocument } from './lib/nbt';
 import {
@@ -109,6 +114,7 @@ interface MaterialSummary {
   count: number;
   color: number;
   stateKey: string;
+  thumbnailLayers?: BlockThumbnailLayer[];
 }
 
 interface BlockLibraryItem {
@@ -595,7 +601,11 @@ function App() {
         const preview = createVoxelBlock(0, 0, 0, stateKey);
         return { stateKey, color: preview.color };
       }),
-      ...materials.slice(0, 64).map((material) => ({ stateKey: material.stateKey, color: material.color })),
+      ...materials.slice(0, 64).map((material) => ({
+        stateKey: material.stateKey,
+        color: material.color,
+        layers: material.thumbnailLayers,
+      })),
       ...blockLibraryItems
         .filter((item) => item.category === 'building_blocks')
         .slice(0, 180),
@@ -2155,7 +2165,11 @@ function App() {
                           aria-controls={breakdownId}
                           onClick={() => toggleMaterialBreakdown(material.id)}
                         >
-                          <BlockPreview stateKey={material.stateKey} color={material.color} />
+                          <BlockPreview
+                            stateKey={material.stateKey}
+                            color={material.color}
+                            layers={material.thumbnailLayers}
+                          />
                           <span>{material.label}</span>
                           <strong>{material.count.toLocaleString()}</strong>
                           <ChevronDown className="material-disclosure" size={15} aria-hidden="true" />
@@ -2443,11 +2457,11 @@ function App() {
   );
 }
 
-function BlockPreview({ stateKey, color }: { stateKey: string; color: number }) {
+function BlockPreview({ stateKey, color, layers }: { stateKey: string; color: number; layers?: BlockThumbnailLayer[] }) {
   const previewRef = useRef<HTMLSpanElement | null>(null);
-  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(() => getCachedBlockThumbnail(stateKey, color) ?? null);
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(() => getCachedBlockThumbnail(stateKey, color, layers) ?? null);
   const [thumbnailState, setThumbnailState] = useState<ThumbnailLoadState>(() => {
-    const cachedThumbnail = getCachedBlockThumbnail(stateKey, color);
+    const cachedThumbnail = getCachedBlockThumbnail(stateKey, color, layers);
     if (cachedThumbnail === undefined) return 'idle';
     return cachedThumbnail ? 'ready' : 'failed';
   });
@@ -2474,7 +2488,7 @@ function BlockPreview({ stateKey, color }: { stateKey: string; color: number }) 
   }, []);
 
   useEffect(() => {
-    const cachedThumbnail = getCachedBlockThumbnail(stateKey, color);
+    const cachedThumbnail = getCachedBlockThumbnail(stateKey, color, layers);
     if (cachedThumbnail !== undefined) {
       setThumbnailUrl(cachedThumbnail);
       setThumbnailState(cachedThumbnail ? 'ready' : 'failed');
@@ -2486,7 +2500,7 @@ function BlockPreview({ stateKey, color }: { stateKey: string; color: number }) 
     let cancelled = false;
     setThumbnailUrl(null);
     setThumbnailState('loading');
-    void createBlockThumbnail(stateKey, color)
+    void createBlockThumbnail(stateKey, color, layers)
       .then((url) => {
         if (cancelled) return;
         setThumbnailUrl(url);
@@ -2501,7 +2515,7 @@ function BlockPreview({ stateKey, color }: { stateKey: string; color: number }) 
     return () => {
       cancelled = true;
     };
-  }, [color, isVisible, stateKey]);
+  }, [color, isVisible, layers, stateKey]);
 
   const fallbackColor = `#${color.toString(16).padStart(6, '0')}`;
 
@@ -2582,7 +2596,13 @@ function CuboidCornerControls({
 }
 
 function materialIdForBlock(block: VoxelBlock): string {
-  return stripBlockStateProperties(block.stateKey);
+  return materialIdForStateKey(block.stateKey);
+}
+
+function materialIdForStateKey(stateKey: string): string {
+  const id = stripBlockStateProperties(stateKey);
+  if (isWallSignStateKey(id)) return id.replace(/_wall_sign$/, '_sign');
+  return id;
 }
 
 function parseTextureAdjustmentKey(key: string): [string, string, ModelFaceName, string] {
@@ -3038,14 +3058,18 @@ function summarizeMaterials(blocks: VoxelBlock[]): MaterialSummary[] {
   const counts = new Map<string, MaterialSummary>();
   for (const block of blocks) {
     const id = materialIdForBlock(block);
+    const quantity = materialQuantityForBlock(block);
+    if (quantity === 0) continue;
+
     const current = counts.get(id) ?? {
       id,
       label: formatBlockName(id),
       count: 0,
       color: block.color,
       stateKey: id,
+      thumbnailLayers: materialThumbnailLayers(block.stateKey),
     };
-    current.count += materialQuantityForBlock(block);
+    current.count += quantity;
     counts.set(id, current);
   }
 
@@ -3053,12 +3077,77 @@ function summarizeMaterials(blocks: VoxelBlock[]): MaterialSummary[] {
 }
 
 function materialQuantityForBlock(block: VoxelBlock): number {
+  if (isDoorStateKey(block.stateKey) && parseStateKey(block.stateKey)?.properties.half === 'upper') return 0;
+  if (isBedStateKey(block.stateKey) && parseStateKey(block.stateKey)?.properties.part === 'head') return 0;
   return isDoubleSlabStateKey(block.stateKey) ? 2 : 1;
+}
+
+function materialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] | undefined {
+  if (isBedStateKey(stateKey)) return bedMaterialThumbnailLayers(stateKey);
+  if (isDoorStateKey(stateKey)) return doorMaterialThumbnailLayers(stateKey);
+  return undefined;
+}
+
+function doorMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {
+  const baseState = stripBlockStateProperties(stateKey);
+  const parsed = parseStateKey(stateKey);
+  const doorProperties = {
+    facing: parsed?.properties.facing ?? 'north',
+    hinge: parsed?.properties.hinge ?? 'left',
+    open: parsed?.properties.open ?? 'false',
+  };
+
+  return [
+    { stateKey: withBlockStateProperties(baseState, { ...doorProperties, half: 'lower' }) },
+    { stateKey: withBlockStateProperties(baseState, { ...doorProperties, half: 'upper' }), offset: [0, 1, 0] },
+  ];
+}
+
+function bedMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {
+  const baseState = stripBlockStateProperties(stateKey);
+  const parsed = parseStateKey(stateKey);
+  const thumbnailFacing = 'west';
+  const bedProperties = {
+    facing: thumbnailFacing,
+    occupied: parsed?.properties.occupied ?? 'false',
+  };
+
+  return [
+    { stateKey: withBlockStateProperties(baseState, { ...bedProperties, part: 'foot' }) },
+    {
+      stateKey: withBlockStateProperties(baseState, { ...bedProperties, part: 'head' }),
+      offset: bedHeadOffset(thumbnailFacing),
+    },
+  ];
+}
+
+function bedHeadOffset(facing: string): [number, number, number] {
+  switch (facing) {
+    case 'north':
+      return [0, 0, -1];
+    case 'east':
+      return [1, 0, 0];
+    case 'west':
+      return [-1, 0, 0];
+    case 'south':
+    default:
+      return [0, 0, 1];
+  }
 }
 
 function isDoubleSlabStateKey(stateKey: string): boolean {
   return stripBlockStateProperties(stateKey).replace(/^minecraft:/, '').endsWith('_slab')
     && parseStateKey(stateKey)?.properties.type === 'double';
+}
+
+function isDoorStateKey(stateKey: string): boolean {
+  const id = stripBlockStateProperties(stateKey).replace(/^minecraft:/, '');
+  return id.endsWith('_door') && !id.endsWith('_trapdoor');
+}
+
+function isWallSignStateKey(stateKey: string): boolean {
+  const id = stripBlockStateProperties(stateKey).replace(/^minecraft:/, '');
+  return id.endsWith('_wall_sign');
 }
 
 function blockPositionKey(block: VoxelBlock): string {

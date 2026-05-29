@@ -50,21 +50,32 @@ interface ThumbnailRendererContext {
 interface PreparedThumbnailPart {
   geometry: THREE.BufferGeometry;
   materials: THREE.Material[];
+  position: THREE.Vector3;
   rotation: THREE.Euler;
   renderOrder: number;
 }
 
-interface BlockThumbnailRequest {
+export interface BlockThumbnailLayer {
   stateKey: string;
-  color: number;
+  offset?: [number, number, number];
 }
 
-export function createBlockThumbnail(stateKey: string, fallbackColor: number): Promise<string | null> {
-  const key = thumbnailCacheKey(stateKey, fallbackColor);
+export interface BlockThumbnailRequest {
+  stateKey: string;
+  color: number;
+  layers?: BlockThumbnailLayer[];
+}
+
+export function createBlockThumbnail(
+  stateKey: string,
+  fallbackColor: number,
+  layers?: BlockThumbnailLayer[],
+): Promise<string | null> {
+  const key = thumbnailCacheKey(stateKey, fallbackColor, layers);
   const cached = thumbnailCache.get(key);
   if (cached) return cached;
 
-  const promise = prepareBlockThumbnail(stateKey, fallbackColor).then((url) => {
+  const promise = prepareBlockThumbnail(stateKey, fallbackColor, layers).then((url) => {
     thumbnailResultCache.set(key, url);
     return url;
   });
@@ -72,8 +83,12 @@ export function createBlockThumbnail(stateKey: string, fallbackColor: number): P
   return promise;
 }
 
-export function getCachedBlockThumbnail(stateKey: string, fallbackColor: number): string | null | undefined {
-  return thumbnailResultCache.get(thumbnailCacheKey(stateKey, fallbackColor));
+export function getCachedBlockThumbnail(
+  stateKey: string,
+  fallbackColor: number,
+  layers?: BlockThumbnailLayer[],
+): string | null | undefined {
+  return thumbnailResultCache.get(thumbnailCacheKey(stateKey, fallbackColor, layers));
 }
 
 export function preloadBlockThumbnails(
@@ -96,7 +111,7 @@ export function preloadBlockThumbnails(
       const batch = pending.slice(index, index + batchSize);
       index += batchSize;
 
-      void Promise.allSettled(batch.map(({ stateKey, color }) => createBlockThumbnail(stateKey, color)))
+      void Promise.allSettled(batch.map(({ stateKey, color, layers }) => createBlockThumbnail(stateKey, color, layers)))
         .then(scheduleNextBatch);
     };
 
@@ -116,32 +131,48 @@ export function preloadBlockThumbnails(
   scheduleNextBatch();
 }
 
-function thumbnailCacheKey(stateKey: string, fallbackColor: number): string {
-  return `${stateKey}::${fallbackColor}`;
+function thumbnailCacheKey(stateKey: string, fallbackColor: number, layers?: BlockThumbnailLayer[]): string {
+  if (!layers || layers.length === 0) return `${stateKey}::${fallbackColor}`;
+
+  const layerKey = layers
+    .map((layer) => `${layer.stateKey}@${(layer.offset ?? [0, 0, 0]).join(',')}`)
+    .join('|');
+  return `${stateKey}::${fallbackColor}::${layerKey}`;
 }
 
 function uniquePendingThumbnails(thumbnails: BlockThumbnailRequest[]): BlockThumbnailRequest[] {
   const seen = new Set<string>();
-  return thumbnails.filter(({ stateKey, color }) => {
-    const key = thumbnailCacheKey(stateKey, color);
+  return thumbnails.filter(({ stateKey, color, layers }) => {
+    const key = thumbnailCacheKey(stateKey, color, layers);
     if (seen.has(key) || thumbnailResultCache.has(key)) return false;
     seen.add(key);
     return true;
   });
 }
 
-async function prepareBlockThumbnail(stateKey: string, fallbackColor: number): Promise<string | null> {
+async function prepareBlockThumbnail(
+  stateKey: string,
+  fallbackColor: number,
+  layers?: BlockThumbnailLayer[],
+): Promise<string | null> {
   if (typeof document === 'undefined') return null;
 
-  const parts = await resolveBlockParts(stateKey);
-  if (parts.length === 0) return null;
-
-  const preparedParts = await Promise.all(parts.map(async (part): Promise<PreparedThumbnailPart> => ({
-    geometry: geometryForPart(part),
-    materials: await materialsForPart(part, fallbackColor),
-    rotation: variantEuler(part),
-    renderOrder: partHasTranslucentFaces(part) ? 10 : 0,
-  })));
+  const resolvedLayers = layers && layers.length > 0 ? layers : [{ stateKey }];
+  const preparedParts = (
+    await Promise.all(resolvedLayers.map(async (layer) => {
+      const parts = await resolveBlockParts(layer.stateKey);
+      const [x, y, z] = layer.offset ?? [0, 0, 0];
+      const position = new THREE.Vector3(x, y, z);
+      return Promise.all(parts.map(async (part): Promise<PreparedThumbnailPart> => ({
+        geometry: geometryForPart(part),
+        materials: await materialsForPart(part, fallbackColor),
+        position,
+        rotation: variantEuler(part),
+        renderOrder: partHasTranslucentFaces(part) ? 10 : 0,
+      })));
+    }))
+  ).flat();
+  if (preparedParts.length === 0) return null;
 
   return enqueueThumbnailRender(() => renderPreparedThumbnail(preparedParts));
 }
@@ -168,6 +199,7 @@ function renderPreparedThumbnail(parts: PreparedThumbnailPart[]): string {
 
   for (const part of parts) {
     const mesh = new THREE.Mesh(part.geometry, part.materials);
+    mesh.position.copy(part.position);
     mesh.rotation.copy(part.rotation);
     mesh.renderOrder = part.renderOrder;
     context.group.add(mesh);
