@@ -12,6 +12,7 @@ import {
   EyeOff,
   FileUp,
   Focus,
+  ImageIcon,
   Layers,
   MousePointer2,
   Moon,
@@ -23,6 +24,7 @@ import {
   Rotate3D,
   ScanSearch,
   Search,
+  SlidersHorizontal,
   Sun,
   Upload,
   X,
@@ -33,9 +35,13 @@ import {
   type CameraMode,
   type PlacementPoint,
   type SelectionButton,
+  type TextureAdjustmentMap,
+  type TextureFaceHit,
   type Viewer3DHandle,
+  textureAdjustmentKey,
 } from './components/Viewer3D';
 import { createBlockThumbnail, getCachedBlockThumbnail, preloadBlockThumbnails } from './lib/blockThumbnails';
+import { textureUrl, type ModelFaceName } from './lib/minecraftModels';
 import { writeNbt, type NbtDocument } from './lib/nbt';
 import {
   createSpongeSchematicDocument,
@@ -55,7 +61,7 @@ type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 type DraggedFileKind = 'none' | 'unsupported-file' | 'unknown-file' | 'schematic-file';
 type InspectorTab = 'selection' | 'materials' | 'layers';
 type EditPanelTab = 'tools' | 'rotate' | 'replace';
-type AppView = 'inspect' | 'edit';
+type AppView = 'inspect' | 'edit' | 'texture';
 type EditTool = 'select' | 'build';
 type Theme = 'light' | 'dark';
 type MaterialsScope = 'build' | 'cuboid';
@@ -63,6 +69,14 @@ type ThumbnailLoadState = 'idle' | 'loading' | 'ready' | 'failed';
 type CuboidCornerId = 'a' | 'b';
 type Direction = 'up' | 'down' | 'north' | 'south' | 'west' | 'east';
 type RotationDirection = 'clockwise' | 'counterclockwise';
+
+interface TextureSelection {
+  stateKey: string;
+  blockId: string;
+  partKey: string;
+  face: ModelFaceName;
+  textureId: string | null;
+}
 
 interface PendingCuboidCorner {
   corner: CuboidCornerId;
@@ -404,11 +418,17 @@ function App() {
   const [selectedBuildBlock, setSelectedBuildBlock] = useState(emptyBuildBlock);
   const [recentBuildBlocks, setRecentBuildBlocks] = useState<string[]>([]);
   const [blockSearch, setBlockSearch] = useState('');
+  const [textureBlockSearch, setTextureBlockSearch] = useState('');
+  const [selectedTextureBlock, setSelectedTextureBlock] = useState('minecraft:oak_planks');
+  const [selectedTextureFace, setSelectedTextureFace] = useState<TextureSelection | null>(null);
+  const [textureAdjustments, setTextureAdjustments] = useState<TextureAdjustmentMap>({});
+  const [textureExportText, setTextureExportText] = useState('');
   const [replaceFromBlock, setReplaceFromBlock] = useState('');
   const [replaceToBlock, setReplaceToBlock] = useState(emptyBuildBlock);
   const [editNotice, setEditNotice] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
   const viewerRef = useRef<Viewer3DHandle | null>(null);
+  const defaultTextureViewerRef = useRef<Viewer3DHandle | null>(null);
   const axisGizmoRef = useRef<HTMLDivElement | null>(null);
   const rotationControlsRef = useRef<HTMLDivElement | null>(null);
   const materialItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -541,6 +561,28 @@ function App() {
   ), [filteredBlockLibraryItems]);
 
   const visibleBlockLibraryCount = filteredBlockLibraryItems.length;
+  const textureLibraryItems = useMemo(() => {
+    const query = textureBlockSearch.trim().toLocaleLowerCase();
+    return blockLibraryItems.filter((item) => {
+      if (!query) return true;
+      return item.stateKey.toLocaleLowerCase().includes(query) || item.label.toLocaleLowerCase().includes(query);
+    });
+  }, [blockLibraryItems, textureBlockSearch]);
+  const texturePreviewModel = useMemo<SchematicModel>(() => createTexturePreviewModel(selectedTextureBlock), [selectedTextureBlock]);
+  const displayedModel = appView === 'texture' ? texturePreviewModel : model;
+  const displayedHiddenMaterialIds = useMemo(() => new Set<string>(), []);
+  const selectedTextureAdjustmentKey = selectedTextureFace
+    ? textureAdjustmentKey(
+      selectedTextureFace.blockId,
+      selectedTextureFace.face,
+      selectedTextureFace.textureId,
+      selectedTextureFace.partKey,
+    )
+    : '';
+  const selectedTextureAdjustment = selectedTextureAdjustmentKey
+    ? textureAdjustments[selectedTextureAdjustmentKey] ?? { offsetU: 0, offsetV: 0, rotation: 0 }
+    : { offsetU: 0, offsetV: 0, rotation: 0 };
+  const exportedTextureAdjustmentCount = Object.keys(textureAdjustments).length;
   const rotateTargetLabel = materialsScope === 'cuboid' && cuboidBounds ? 'Selected Area' : selectedBlock ? 'Selected Block' : '';
 
   useEffect(() => {
@@ -1074,6 +1116,118 @@ function App() {
     setRecentBuildBlocks((current) => [stateKey, ...current.filter((block) => block !== stateKey)]);
   };
 
+  const chooseTextureBlock = (stateKey: string) => {
+    setSelectedTextureBlock(stateKey);
+    setSelectedTextureFace(null);
+    setTextureExportText('');
+    setCameraMode('orbit');
+    setAppView('texture');
+  };
+
+  const handleTextureFaceSelect = (hit: TextureFaceHit) => {
+    setSelectedTextureFace({
+      stateKey: selectedTextureBlock,
+      blockId: hit.block.name,
+      partKey: hit.partKey,
+      face: hit.face,
+      textureId: hit.textureId,
+    });
+  };
+
+  const updateSelectedTextureAdjustment = (updates: Partial<{ offsetU: number; offsetV: number; rotation: number }>) => {
+    if (!selectedTextureFace) return;
+    const key = textureAdjustmentKey(
+      selectedTextureFace.blockId,
+      selectedTextureFace.face,
+      selectedTextureFace.textureId,
+      selectedTextureFace.partKey,
+    );
+    setTextureAdjustments((current) => {
+      const previous = current[key] ?? { offsetU: 0, offsetV: 0, rotation: 0 };
+      const next = {
+        ...previous,
+        ...updates,
+      };
+      return {
+        ...current,
+        [key]: {
+          offsetU: clamp(Math.round(next.offsetU * 10) / 10, -32, 32),
+          offsetV: clamp(Math.round(next.offsetV * 10) / 10, -32, 32),
+          rotation: ((Math.round(next.rotation / 90) * 90) % 360 + 360) % 360,
+        },
+      };
+    });
+  };
+
+  const dragSelectedTexture = (deltaU: number, deltaV: number, hit?: TextureFaceHit) => {
+    const face = selectedTextureFace ?? (hit
+      ? {
+        stateKey: selectedTextureBlock,
+        blockId: hit.block.name,
+        partKey: hit.partKey,
+        face: hit.face,
+        textureId: hit.textureId,
+      }
+      : null);
+    if (!face) return;
+    const key = textureAdjustmentKey(face.blockId, face.face, face.textureId, face.partKey);
+    setTextureAdjustments((current) => {
+      const previous = current[key] ?? { offsetU: 0, offsetV: 0, rotation: 0 };
+      return {
+        ...current,
+        [key]: {
+          ...previous,
+          offsetU: clamp(Math.round((previous.offsetU + deltaU) * 10) / 10, -32, 32),
+          offsetV: clamp(Math.round((previous.offsetV + deltaV) * 10) / 10, -32, 32),
+        },
+      };
+    });
+  };
+
+  const rotateSelectedTexture = () => {
+    if (!selectedTextureFace) return;
+    updateSelectedTextureAdjustment({ rotation: selectedTextureAdjustment.rotation + 90 });
+  };
+
+  const resetSelectedTextureAdjustment = () => {
+    if (!selectedTextureFace) return;
+    const key = textureAdjustmentKey(
+      selectedTextureFace.blockId,
+      selectedTextureFace.face,
+      selectedTextureFace.textureId,
+      selectedTextureFace.partKey,
+    );
+    setTextureAdjustments((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const exportTextureAdjustments = () => {
+    const adjustments = Object.entries(textureAdjustments).map(([key, adjustment]) => {
+      const [blockId, partKey, face, textureId] = parseTextureAdjustmentKey(key);
+      return {
+        blockId,
+        partKey,
+        face,
+        textureId: textureId === 'fallback' ? null : textureId,
+        offsetU: adjustment.offsetU,
+        offsetV: adjustment.offsetV,
+        rotation: adjustment.rotation,
+      };
+    });
+    const payload = {
+      kind: 'schematic-editor-texture-adjustments',
+      version: 1,
+      selectedBlock: selectedTextureBlock,
+      adjustments,
+    };
+    const text = JSON.stringify(payload, null, 2);
+    setTextureExportText(text);
+    void navigator.clipboard?.writeText(text).catch(() => undefined);
+  };
+
   const stepCuboidCorner = (corner: CuboidCornerId, axis: 'x' | 'y' | 'z', delta: number) => {
     if (!model) return;
     setCuboidCorners((current) => {
@@ -1201,11 +1355,22 @@ function App() {
               <Brush size={19} />
               <span>Edit</span>
             </button>
+            <button
+              type="button"
+              role="tab"
+              className={appView === 'texture' ? 'is-active' : ''}
+              onClick={() => setAppView('texture')}
+              aria-selected={appView === 'texture'}
+              title="Texture mode"
+            >
+              <ImageIcon size={19} />
+              <span>UV</span>
+            </button>
           </div>
 
           <div className="rail-divider" />
 
-          <div className="rail-cluster" aria-label={appView === 'edit' ? 'Edit tools' : 'Inspect panels'}>
+          <div className="rail-cluster" aria-label={appView === 'edit' ? 'Edit tools' : appView === 'texture' ? 'Texture tools' : 'Inspect panels'}>
             {appView === 'edit' ? (
               <>
                 <button
@@ -1241,6 +1406,19 @@ function App() {
                 >
                   <Replace size={19} />
                   <span>Replace</span>
+                </button>
+              </>
+            ) : appView === 'texture' ? (
+              <>
+                <button
+                  type="button"
+                  className="is-active"
+                  onClick={() => setAppView('texture')}
+                  aria-pressed
+                  title="Texture adjustment"
+                >
+                  <SlidersHorizontal size={19} />
+                  <span>Adjust</span>
                 </button>
               </>
             ) : (
@@ -1328,8 +1506,8 @@ function App() {
           />
         </aside>
 
-        <section className={`viewport-panel${selectedBlock ? ' has-selection-modal' : ''}`} aria-label="Schematic 3D viewport">
-          {selectedBlock && (
+        <section className={`viewport-panel${selectedBlock && appView !== 'texture' ? ' has-selection-modal' : ''}`} aria-label="Schematic 3D viewport">
+          {selectedBlock && appView !== 'texture' && (
             <section className="selection-inspector-card" aria-label="Selected block details">
               <div className="selection-inspector-header">
                 <div>
@@ -1504,7 +1682,7 @@ function App() {
               >
                 <BoxSelect size={19} />
               </button>
-              <button type="button" onClick={() => showPanel('materials')} title="Materials">
+              <button type="button" onClick={() => appView === 'texture' ? setAppView('texture') : showPanel('materials')} title={appView === 'texture' ? 'Texture adjustments' : 'Materials'}>
                 <Cuboid size={19} />
               </button>
             </div>
@@ -1529,27 +1707,81 @@ function App() {
             <span className="axis-label axis-x">X</span>
           </div>
 
-          <Viewer3D
-            model={model}
-            cameraMode={cameraMode}
-            spectatorSpeed={spectatorSpeed}
-            visibleLayer={visibleLayer}
-            singleLayer={singleLayer}
-            autoRotate={false}
-            showGrid
-            theme={theme}
-            hiddenMaterialIds={hiddenMaterialIds}
-            playerHeadSelections={playerHeadSelections}
-            selectedBlock={selectedBlock}
-            placementPreviewBlock={appView === 'edit' && selectedBuildBlock !== 'minecraft:air' ? selectedBuildBlockPreview : null}
-            cuboidBounds={cuboidBounds}
-            cuboidCorners={cuboidCorners}
-            rotationTarget={appView === 'edit' && rotateTargetLabel ? (materialsScope === 'cuboid' && cuboidBounds ? 'cuboid' : 'block') : null}
-            rotationControlRef={rotationControlsRef}
-            onBlockSelect={handleBlockSelect}
-            onAxisOrientationChange={updateAxisGizmo}
-            viewerRef={viewerRef}
-          />
+          {appView === 'texture' ? (
+            <div className="texture-compare-canvases" aria-label="Texture comparison previews">
+              <div className="texture-compare-pane">
+                <span>Default</span>
+                <Viewer3D
+                  model={texturePreviewModel}
+                  cameraMode="orbit"
+                  spectatorSpeed={spectatorSpeed}
+                  visibleLayer={0}
+                  singleLayer={false}
+                  autoRotate={false}
+                  showGrid={false}
+                  theme={theme}
+                  hiddenMaterialIds={displayedHiddenMaterialIds}
+                  playerHeadSelections={playerHeadSelections}
+                  selectedBlock={null}
+                  placementPreviewBlock={null}
+                  cuboidBounds={null}
+                  cuboidCorners={emptyCuboidCorners()}
+                  textureAdjustments={{}}
+                  textureEditMode={false}
+                  onAxisOrientationChange={updateAxisGizmo}
+                  viewerRef={defaultTextureViewerRef}
+                />
+              </div>
+              <div className="texture-compare-pane">
+                <span>Adjusted</span>
+                <Viewer3D
+                  model={texturePreviewModel}
+                  cameraMode="orbit"
+                  spectatorSpeed={spectatorSpeed}
+                  visibleLayer={0}
+                  singleLayer={false}
+                  autoRotate={false}
+                  showGrid={false}
+                  theme={theme}
+                  hiddenMaterialIds={displayedHiddenMaterialIds}
+                  playerHeadSelections={playerHeadSelections}
+                  selectedBlock={null}
+                  placementPreviewBlock={null}
+                  cuboidBounds={null}
+                  cuboidCorners={emptyCuboidCorners()}
+                  textureAdjustments={textureAdjustments}
+                  textureEditMode
+                  onTextureFaceSelect={handleTextureFaceSelect}
+                  onTextureFaceDrag={dragSelectedTexture}
+                  onAxisOrientationChange={updateAxisGizmo}
+                  viewerRef={viewerRef}
+                />
+              </div>
+            </div>
+          ) : (
+            <Viewer3D
+              model={displayedModel}
+              cameraMode={cameraMode}
+              spectatorSpeed={spectatorSpeed}
+              visibleLayer={visibleLayer}
+              singleLayer={singleLayer}
+              autoRotate={false}
+              showGrid
+              theme={theme}
+              hiddenMaterialIds={hiddenMaterialIds}
+              playerHeadSelections={playerHeadSelections}
+              selectedBlock={selectedBlock}
+              placementPreviewBlock={appView === 'edit' && selectedBuildBlock !== 'minecraft:air' ? selectedBuildBlockPreview : null}
+              cuboidBounds={cuboidBounds}
+              cuboidCorners={cuboidCorners}
+              rotationTarget={appView === 'edit' && rotateTargetLabel ? (materialsScope === 'cuboid' && cuboidBounds ? 'cuboid' : 'block') : null}
+              rotationControlRef={rotationControlsRef}
+              textureAdjustments={textureAdjustments}
+              onBlockSelect={handleBlockSelect}
+              onAxisOrientationChange={updateAxisGizmo}
+              viewerRef={viewerRef}
+            />
+          )}
         </section>
 
       <aside className="control-rail" aria-label="Schematic controls">
@@ -1560,7 +1792,142 @@ function App() {
           </section>
         )}
 
-        {model && (
+        {appView === 'texture' ? (
+          <section className="texture-panel" aria-label="Texture adjustment editor">
+            <div className="section-heading compact">
+              <div>
+                <h2>Texture Adjustments</h2>
+                <p className="eyebrow">{textureLibraryItems.length.toLocaleString()} blocks</p>
+              </div>
+              <ImageIcon size={18} />
+            </div>
+
+            <label className="material-search">
+              <Search size={16} aria-hidden="true" />
+              <input
+                type="search"
+                value={textureBlockSearch}
+                onChange={(event) => setTextureBlockSearch(event.target.value)}
+                placeholder="Find block to preview"
+                aria-label="Find block to preview"
+              />
+            </label>
+
+            <div className="texture-editor-layout">
+              <div className="texture-block-list" aria-label="Texture block list">
+                {textureLibraryItems.map((item) => (
+                  <button
+                    type="button"
+                    key={item.stateKey}
+                    className={selectedTextureBlock === item.stateKey ? 'is-active' : ''}
+                    onClick={() => chooseTextureBlock(item.stateKey)}
+                    title={item.label}
+                    aria-pressed={selectedTextureBlock === item.stateKey}
+                  >
+                    <BlockPreview stateKey={item.stateKey} color={item.color} />
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              <section className="texture-face-editor" aria-label="Selected texture face">
+                <div className="texture-face-summary">
+                  <div>
+                    <p className="eyebrow">Preview block</p>
+                    <strong>{formatBlockName(selectedTextureBlock)}</strong>
+                  </div>
+                  <SlidersHorizontal size={18} />
+                </div>
+
+                {selectedTextureFace ? (
+                  <>
+                    <div className="texture-preview-frame">
+                      {selectedTextureFace.textureId ? (
+                        <img src={textureUrl(selectedTextureFace.textureId)} alt="" />
+                      ) : (
+                        <div className="texture-preview-empty">fallback</div>
+                      )}
+                    </div>
+                    <dl className="texture-face-metadata">
+                      <div>
+                        <dt>Face</dt>
+                        <dd>{selectedTextureFace.face}</dd>
+                      </div>
+                      <div>
+                        <dt>Texture</dt>
+                        <dd>{selectedTextureFace.textureId ?? 'fallback'}</dd>
+                      </div>
+                    </dl>
+                    <div className="texture-control-grid">
+                      <label>
+                        <span>U offset</span>
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={selectedTextureAdjustment.offsetU}
+                          onChange={(event) => updateSelectedTextureAdjustment({ offsetU: Number(event.target.value) || 0 })}
+                        />
+                      </label>
+                      <label>
+                        <span>V offset</span>
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={selectedTextureAdjustment.offsetV}
+                          onChange={(event) => updateSelectedTextureAdjustment({ offsetV: Number(event.target.value) || 0 })}
+                        />
+                      </label>
+                    </div>
+                    <div className="texture-nudge-grid" aria-label="Nudge selected texture">
+                      <button type="button" onClick={() => updateSelectedTextureAdjustment({ offsetV: selectedTextureAdjustment.offsetV - 1 })}>
+                        <ChevronUp size={16} />
+                      </button>
+                      <button type="button" onClick={() => updateSelectedTextureAdjustment({ offsetU: selectedTextureAdjustment.offsetU - 1 })}>
+                        <ChevronLeft size={16} />
+                      </button>
+                      <button type="button" onClick={() => updateSelectedTextureAdjustment({ offsetU: selectedTextureAdjustment.offsetU + 1 })}>
+                        <ChevronRight size={16} />
+                      </button>
+                      <button type="button" onClick={() => updateSelectedTextureAdjustment({ offsetV: selectedTextureAdjustment.offsetV + 1 })}>
+                        <ChevronDown size={16} />
+                      </button>
+                    </div>
+                    <div className="rotation-actions">
+                      <button type="button" onClick={rotateSelectedTexture}>
+                        <RotateCw size={16} />
+                        Rotate 90
+                      </button>
+                      <button type="button" onClick={resetSelectedTextureAdjustment}>
+                        <RotateCcw size={16} />
+                        Reset Face
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="panel-empty">Click a visible side of the preview block to select its texture.</p>
+                )}
+
+                <button
+                  type="button"
+                  className="primary-button texture-export-button"
+                  onClick={exportTextureAdjustments}
+                  disabled={exportedTextureAdjustmentCount === 0}
+                >
+                  <Download size={16} />
+                  Export Adjustments
+                </button>
+                {textureExportText && (
+                  <textarea
+                    className="texture-export-text"
+                    value={textureExportText}
+                    readOnly
+                    aria-label="Exported texture adjustment JSON"
+                  />
+                )}
+              </section>
+            </div>
+          </section>
+        ) : model && (
           <>
             {appView === 'inspect' ? (
               <>
@@ -2216,6 +2583,74 @@ function CuboidCornerControls({
 
 function materialIdForBlock(block: VoxelBlock): string {
   return block.stateKey.split('[', 1)[0];
+}
+
+function parseTextureAdjustmentKey(key: string): [string, string, ModelFaceName, string] {
+  const parts = key.split('::');
+  if (parts.length === 3) {
+    const [blockId, face, textureId] = parts;
+    return [blockId, '*', face as ModelFaceName, textureId];
+  }
+
+  const [blockId, partKey, face, textureId] = parts.map((part) => {
+    try {
+      return decodeURIComponent(part);
+    } catch {
+      return part;
+    }
+  });
+  return [blockId, partKey, face as ModelFaceName, textureId];
+}
+
+function createTexturePreviewModel(stateKey: string): SchematicModel {
+  const blocks = previewBlocksForTextureEditor(stateKey);
+  const dimensions = isBedStateKey(stateKey)
+    ? { width: 1, height: 1, length: 2 }
+    : { width: 1, height: 1, length: 1 };
+
+  return finalizeSchematicModel({
+    name: formatBlockName(stateKey),
+    source: 'Sample',
+    dimensions,
+    origin: { x: 0, y: 0, z: 0 },
+    blocks,
+    paletteSize: new Set(blocks.map((block) => block.stateKey)).size,
+    warnings: [],
+  });
+}
+
+function previewBlocksForTextureEditor(stateKey: string): VoxelBlock[] {
+  if (!isBedStateKey(stateKey)) return [createVoxelBlock(0, 0, 0, stateKey)];
+
+  const baseState = stripBlockStateProperties(stateKey);
+  return [
+    createVoxelBlock(0, 0, 0, withBlockStateProperties(baseState, { facing: 'south', occupied: 'false', part: 'foot' })),
+    createVoxelBlock(0, 0, 1, withBlockStateProperties(baseState, { facing: 'south', occupied: 'false', part: 'head' })),
+  ];
+}
+
+function isBedStateKey(stateKey: string): boolean {
+  return stripBlockStateProperties(stateKey).replace(/^minecraft:/, '').endsWith('_bed');
+}
+
+function stripBlockStateProperties(stateKey: string): string {
+  return stateKey.split('[', 1)[0];
+}
+
+function withBlockStateProperties(stateKey: string, properties: Record<string, string>): string {
+  const id = stripBlockStateProperties(stateKey);
+  const existing = new Map<string, string>();
+  const rawProperties = /\[(?<properties>.*)\]$/.exec(stateKey)?.groups?.properties;
+  if (rawProperties) {
+    for (const pair of rawProperties.split(',')) {
+      const [key, value] = pair.split('=');
+      if (key && value !== undefined) existing.set(key, value);
+    }
+  }
+  for (const [key, value] of Object.entries(properties)) {
+    existing.set(key, value);
+  }
+  return `${id}[${Array.from(existing.entries()).map(([key, value]) => `${key}=${value}`).join(',')}]`;
 }
 
 function compareBlockLibraryItems(a: string, b: string): number {

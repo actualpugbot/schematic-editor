@@ -1724,6 +1724,7 @@ function bedCuboids(part: 'head' | 'foot'): BlockEntityCuboid[] {
       from: [0, 3, 0],
       to: [16, 19, 6],
       textureOrigin: bodyOrigin,
+      faceUvs: part === 'head' ? { down: [22, 22, 38, 28] } : undefined,
       elementRotation: { origin: [8, 6, 3], axis: 'x', angle: 90 },
     },
     { name: 'leg0', from: [0, 0, 0], to: [3, 3, 3], textureOrigin: legOrigins[0] },
@@ -1762,6 +1763,7 @@ interface BlockEntityCuboid {
   from: [number, number, number];
   to: [number, number, number];
   textureOrigin: [number, number];
+  faceUvs?: Partial<Record<ModelFaceName, ModelFaceUv>>;
   hiddenFaces?: ModelFaceName[];
   elementRotation?: ModelElementRotation;
 }
@@ -1840,9 +1842,14 @@ function blockEntityCuboidPart(
   const depth = cuboid.to[2] - cuboid.from[2];
   const hiddenFaces = new Set(cuboid.hiddenFaces ?? []);
   const faceTextures = cubeTextures(texture);
+  const faceUvs = entityCubeUvs(cuboid.textureOrigin[0], cuboid.textureOrigin[1], width, height, depth, hiddenFaces);
 
   for (const face of hiddenFaces) {
     faceTextures[face] = null;
+  }
+
+  for (const [face, uv] of Object.entries(cuboid.faceUvs ?? {}) as Array<[ModelFaceName, ModelFaceUv]>) {
+    if (!hiddenFaces.has(face)) faceUvs[face] = uv;
   }
 
   return {
@@ -1865,7 +1872,7 @@ function blockEntityCuboidPart(
       west: null,
       east: null,
     },
-    faceUvs: entityCubeUvs(cuboid.textureOrigin[0], cuboid.textureOrigin[1], width, height, depth, hiddenFaces),
+    faceUvs,
     faceRotations: {
       down: 0,
       up: 0,

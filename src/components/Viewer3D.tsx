@@ -26,7 +26,11 @@ interface Viewer3DProps {
   cuboidCorners?: CuboidCornerPoints | null;
   rotationTarget?: 'block' | 'cuboid' | null;
   rotationControlRef?: MutableRefObject<HTMLDivElement | null>;
+  textureAdjustments?: TextureAdjustmentMap;
+  textureEditMode?: boolean;
   onBlockSelect?: (block: VoxelBlock | null, button: SelectionButton, placementPoint: PlacementPoint | null) => void;
+  onTextureFaceSelect?: (hit: TextureFaceHit) => void;
+  onTextureFaceDrag?: (deltaU: number, deltaV: number, hit: TextureFaceHit) => void;
   onAxisOrientationChange?: (orientation: AxisGizmoOrientation) => void;
   onReady?: () => void;
 }
@@ -72,6 +76,20 @@ export interface Viewer3DHandle {
 export type SelectionButton = 'primary' | 'secondary';
 export type CameraMode = 'orbit' | 'spectator';
 export type PlacementPoint = CuboidCornerPoint;
+export type TextureAdjustmentMap = Record<string, TextureFaceAdjustment>;
+
+export interface TextureFaceAdjustment {
+  offsetU: number;
+  offsetV: number;
+  rotation: number;
+}
+
+export interface TextureFaceHit {
+  block: VoxelBlock;
+  partKey: string;
+  face: ModelFaceName;
+  textureId: string | null;
+}
 
 interface SpectatorCameraState {
   position: THREE.Vector3;
@@ -147,8 +165,11 @@ export function Viewer3D(props: InternalViewerProps) {
   const latestCuboidBoundsRef = useRef<CuboidBounds | null | undefined>(props.cuboidBounds);
   const latestCuboidCornersRef = useRef<CuboidCornerPoints | null | undefined>(props.cuboidCorners);
   const latestRotationTargetRef = useRef<'block' | 'cuboid' | null | undefined>(props.rotationTarget);
+  const textureEditModeRef = useRef(Boolean(props.textureEditMode));
   const cameraModeRef = useRef<CameraMode>(props.cameraMode);
   const onBlockSelectRef = useRef(props.onBlockSelect);
+  const onTextureFaceSelectRef = useRef(props.onTextureFaceSelect);
+  const onTextureFaceDragRef = useRef(props.onTextureFaceDrag);
   const onAxisOrientationChangeRef = useRef(props.onAxisOrientationChange);
   const spectatorStateRef = useRef<SpectatorCameraState>({
     position: new THREE.Vector3(24, 20, 28),
@@ -202,6 +223,10 @@ export function Viewer3D(props: InternalViewerProps) {
   }, [props.rotationTarget]);
 
   useEffect(() => {
+    textureEditModeRef.current = Boolean(props.textureEditMode);
+  }, [props.textureEditMode]);
+
+  useEffect(() => {
     cameraModeRef.current = props.cameraMode;
   }, [props.cameraMode]);
 
@@ -212,6 +237,14 @@ export function Viewer3D(props: InternalViewerProps) {
   useEffect(() => {
     onBlockSelectRef.current = props.onBlockSelect;
   }, [props.onBlockSelect]);
+
+  useEffect(() => {
+    onTextureFaceSelectRef.current = props.onTextureFaceSelect;
+  }, [props.onTextureFaceSelect]);
+
+  useEffect(() => {
+    onTextureFaceDragRef.current = props.onTextureFaceDrag;
+  }, [props.onTextureFaceDrag]);
 
   useEffect(() => {
     onAxisOrientationChangeRef.current = props.onAxisOrientationChange;
@@ -312,16 +345,36 @@ export function Viewer3D(props: InternalViewerProps) {
     resize();
 
     const pointerStart = { x: 0, y: 0 };
+    let textureDragStart: { x: number; y: number; hit: TextureFaceHit } | null = null;
     const handlePointerDown = (event: PointerEvent) => {
       pointerStart.x = event.clientX;
       pointerStart.y = event.clientY;
       renderer.domElement.focus();
+      if (textureEditModeRef.current && event.button === 0 && cameraModeRef.current !== 'spectator') {
+        const hit = pickTextureFace(event, renderer, camera, modelGroup);
+        if (hit) {
+          event.preventDefault();
+          textureDragStart = { x: event.clientX, y: event.clientY, hit };
+          controls.enabled = false;
+          onTextureFaceSelectRef.current?.(hit);
+          renderer.domElement.setPointerCapture(event.pointerId);
+        }
+        return;
+      }
       if (cameraModeRef.current === 'spectator' && event.button === 0) {
         renderer.domElement.requestPointerLock();
       }
     };
     const handlePointerUp = (event: PointerEvent) => {
       if (event.button !== 0 && event.button !== 2) return;
+      if (textureDragStart) {
+        textureDragStart = null;
+        if (cameraModeRef.current !== 'spectator') controls.enabled = true;
+        if (renderer.domElement.hasPointerCapture(event.pointerId)) {
+          renderer.domElement.releasePointerCapture(event.pointerId);
+        }
+        return;
+      }
       if (cameraModeRef.current === 'spectator') return;
       const distance = Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y);
       if (distance > 5) return;
@@ -339,6 +392,14 @@ export function Viewer3D(props: InternalViewerProps) {
     };
     const handlePointerMove = (event: PointerEvent) => {
       if (cameraModeRef.current === 'spectator') return;
+      if (textureDragStart) {
+        const deltaX = event.clientX - textureDragStart.x;
+        const deltaY = event.clientY - textureDragStart.y;
+        const { hit } = textureDragStart;
+        textureDragStart = { x: event.clientX, y: event.clientY, hit };
+        onTextureFaceDragRef.current?.(deltaX / 8, deltaY / 8, hit);
+        return;
+      }
       updatePlacementPreview(
         placementPreview,
         pickPlacementPoint(
@@ -555,7 +616,7 @@ export function Viewer3D(props: InternalViewerProps) {
 
     let cancelled = false;
 
-    void createBlockMeshes(filteredBlocks, props.playerHeadSelections).then((meshes) => {
+    void createBlockMeshes(filteredBlocks, props.playerHeadSelections, props.textureAdjustments ?? {}).then((meshes) => {
       if (cancelled) return;
       clearGroup(group, false);
       for (const mesh of meshes) {
@@ -567,7 +628,7 @@ export function Viewer3D(props: InternalViewerProps) {
     return () => {
       cancelled = true;
     };
-  }, [filteredBlocks, props.model, props.playerHeadSelections]);
+  }, [filteredBlocks, props.model, props.playerHeadSelections, props.textureAdjustments]);
 
   useEffect(() => {
     const gridGroup = gridRef.current;
@@ -902,6 +963,7 @@ function resetSpectatorKeys(keys: {
 async function createBlockMeshes(
   blocks: VoxelBlock[],
   playerHeadSelections: Record<string, string>,
+  textureAdjustments: TextureAdjustmentMap = {},
 ): Promise<THREE.InstancedMesh[]> {
   const groups = new Map<
     string,
@@ -941,7 +1003,8 @@ async function createBlockMeshes(
         partsByBlock,
       );
       const hiddenFaceKey = hiddenFaceCacheKey(hiddenFaces);
-      const key = `${part.isFallback ? `${part.key}::${block.color}` : part.key}::hidden:${hiddenFaceKey}`;
+      const adjustmentKey = textureAdjustmentCacheKey(part, textureAdjustments);
+      const key = `${part.isFallback ? `${part.key}::${block.color}` : part.key}::hidden:${hiddenFaceKey}::adjust:${adjustmentKey}`;
       const group = groups.get(key);
 
       if (group) {
@@ -961,7 +1024,7 @@ async function createBlockMeshes(
   const meshes: THREE.InstancedMesh[] = [];
 
   for (const group of groups.values()) {
-    const geometry = geometryForPart(group.part);
+    const geometry = geometryForPart(group.part, textureAdjustments);
     const materials = materialsForPart(group.part, group.fallbackColor, group.hiddenFaces);
     const mesh = new THREE.InstancedMesh(geometry, materials, group.blocks.length);
     mesh.castShadow = false;
@@ -978,6 +1041,7 @@ async function createBlockMeshes(
 
     mesh.instanceMatrix.needsUpdate = true;
     mesh.userData.blocks = group.blocks;
+    mesh.userData.part = group.part;
     meshes.push(mesh);
   }
 
@@ -1476,6 +1540,34 @@ function pickBlock(
   return blocks?.[hit.instanceId] ?? null;
 }
 
+function pickTextureFace(
+  event: PointerEvent,
+  renderer: THREE.WebGLRenderer,
+  camera: THREE.PerspectiveCamera,
+  modelGroup: THREE.Group,
+): TextureFaceHit | null {
+  const hit = pickModelIntersection(event, renderer, camera, modelGroup);
+  if (!hit || hit.instanceId === undefined) return null;
+
+  const mesh = hit.object as THREE.InstancedMesh;
+  const blocks = mesh.userData.blocks as VoxelBlock[] | undefined;
+  const part = mesh.userData.part as ResolvedBlockPart | undefined;
+  const block = blocks?.[hit.instanceId];
+  if (!block || !part) return null;
+
+  const materialIndex = hit.face?.materialIndex;
+  const face = typeof materialIndex === 'number' && faceOrder[materialIndex]
+    ? faceOrder[materialIndex]
+    : faceFromIntersectionNormal(hit, mesh);
+
+  return {
+    block,
+    partKey: part.key,
+    face,
+    textureId: part.faceTextures[face],
+  };
+}
+
 function pickPlacementPoint(
   event: PointerEvent,
   renderer: THREE.WebGLRenderer,
@@ -1580,11 +1672,11 @@ function pointKey(point: PlacementPoint): string {
   return `${point.x},${point.y},${point.z}`;
 }
 
-function geometryForPart(part: ResolvedBlockPart): THREE.BufferGeometry {
+function geometryForPart(part: ResolvedBlockPart, textureAdjustments: TextureAdjustmentMap = {}): THREE.BufferGeometry {
   const uvKey = faceOrder
     .map(
       (face) =>
-        `${face}:${part.faceUvs[face]?.join(',') ?? 'default'}:${part.faceRotations[face]}:${part.variantRotation.x}:${
+        `${face}:${part.faceUvs[face]?.join(',') ?? 'default'}:${part.faceRotations[face]}:${textureAdjustmentFaceKey(part, face, textureAdjustments)}:${part.variantRotation.x}:${
           part.variantRotation.y
         }`,
     )
@@ -1600,7 +1692,7 @@ function geometryForPart(part: ResolvedBlockPart): THREE.BufferGeometry {
   const cached = geometryCache.get(key);
   if (cached) return cached;
 
-  const geometry = createModelElementGeometry(part);
+  const geometry = createModelElementGeometry(part, textureAdjustments);
 
   if (part.elementRotation) {
     const origin = new THREE.Vector3(
@@ -1634,7 +1726,7 @@ function geometryForPart(part: ResolvedBlockPart): THREE.BufferGeometry {
   return geometry;
 }
 
-function createModelElementGeometry(part: ResolvedBlockPart): THREE.BufferGeometry {
+function createModelElementGeometry(part: ResolvedBlockPart, textureAdjustments: TextureAdjustmentMap = {}): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();
   const positions: number[] = [];
   const normals: number[] = [];
@@ -1649,7 +1741,12 @@ function createModelElementGeometry(part: ResolvedBlockPart): THREE.BufferGeomet
     const baseUvs = part.uvLock
       ? uvLockedCorners(part, face, facePositions)
       : uvToCorners(part.faceUvs[face] ?? defaultFaceUv(part, face), part.textureSize);
-    const faceUvs = rotateUvCorners(baseUvs, part.faceRotations[face]);
+    const faceUvs = applyTextureAdjustment(
+      rotateUvCorners(baseUvs, part.faceRotations[face]),
+      part,
+      face,
+      textureAdjustments,
+    );
     const normal = faceOffsets[face];
 
     faceCornerOrder.forEach((cornerIndex) => {
@@ -1773,6 +1870,69 @@ function rotateUvCorners(corners: Array<[number, number]>, degrees: number): Arr
     rotated = [rotated[2], rotated[0], rotated[3], rotated[1]];
   }
 
+  return rotated;
+}
+
+export function textureAdjustmentKey(
+  blockId: string,
+  face: ModelFaceName,
+  textureId: string | null,
+  partKey = '*',
+): string {
+  return [blockId, partKey, face, textureId ?? 'fallback'].map(encodeURIComponent).join('::');
+}
+
+function textureAdjustmentForFace(
+  part: ResolvedBlockPart,
+  face: ModelFaceName,
+  textureAdjustments: TextureAdjustmentMap,
+): TextureFaceAdjustment | null {
+  return textureAdjustments[textureAdjustmentKey(part.blockId, face, part.faceTextures[face], part.key)]
+    ?? textureAdjustments[textureAdjustmentKey(part.blockId, face, part.faceTextures[face])]
+    ?? textureAdjustments[legacyTextureAdjustmentKey(part.blockId, face, part.faceTextures[face])]
+    ?? null;
+}
+
+function legacyTextureAdjustmentKey(blockId: string, face: ModelFaceName, textureId: string | null): string {
+  return `${blockId}::${face}::${textureId ?? 'fallback'}`;
+}
+
+function textureAdjustmentFaceKey(
+  part: ResolvedBlockPart,
+  face: ModelFaceName,
+  textureAdjustments: TextureAdjustmentMap,
+): string {
+  const adjustment = textureAdjustmentForFace(part, face, textureAdjustments);
+  if (!adjustment) return 'none';
+  return `${adjustment.offsetU},${adjustment.offsetV},${adjustment.rotation}`;
+}
+
+function textureAdjustmentCacheKey(part: ResolvedBlockPart, textureAdjustments: TextureAdjustmentMap): string {
+  return faceOrder.map((face) => `${face}:${textureAdjustmentFaceKey(part, face, textureAdjustments)}`).join('|');
+}
+
+function applyTextureAdjustment(
+  corners: Array<[number, number]>,
+  part: ResolvedBlockPart,
+  face: ModelFaceName,
+  textureAdjustments: TextureAdjustmentMap,
+): Array<[number, number]> {
+  const adjustment = textureAdjustmentForFace(part, face, textureAdjustments);
+  if (!adjustment) return corners;
+
+  const [textureWidth, textureHeight] = part.textureSize ?? [16, 16];
+  const offsetU = adjustment.offsetU / textureWidth;
+  const offsetV = -adjustment.offsetV / textureHeight;
+  const shifted = corners.map(([u, v]) => [u + offsetU, v + offsetV] as [number, number]);
+  const turns = (((adjustment.rotation % 360) + 360) % 360) / 90;
+  if (!turns) return shifted;
+
+  const centerU = shifted.reduce((sum, [u]) => sum + u, 0) / shifted.length;
+  const centerV = shifted.reduce((sum, [, v]) => sum + v, 0) / shifted.length;
+  let rotated = shifted;
+  for (let index = 0; index < turns; index += 1) {
+    rotated = rotated.map(([u, v]) => [centerU + (v - centerV), centerV - (u - centerU)] as [number, number]);
+  }
   return rotated;
 }
 
