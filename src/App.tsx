@@ -2582,7 +2582,7 @@ function CuboidCornerControls({
 }
 
 function materialIdForBlock(block: VoxelBlock): string {
-  return block.stateKey.split('[', 1)[0];
+  return stripBlockStateProperties(block.stateKey);
 }
 
 function parseTextureAdjustmentKey(key: string): [string, string, ModelFaceName, string] {
@@ -3043,13 +3043,22 @@ function summarizeMaterials(blocks: VoxelBlock[]): MaterialSummary[] {
       label: formatBlockName(id),
       count: 0,
       color: block.color,
-      stateKey: block.stateKey,
+      stateKey: id,
     };
-    current.count += 1;
+    current.count += materialQuantityForBlock(block);
     counts.set(id, current);
   }
 
   return Array.from(counts.values()).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+
+function materialQuantityForBlock(block: VoxelBlock): number {
+  return isDoubleSlabStateKey(block.stateKey) ? 2 : 1;
+}
+
+function isDoubleSlabStateKey(stateKey: string): boolean {
+  return stripBlockStateProperties(stateKey).replace(/^minecraft:/, '').endsWith('_slab')
+    && parseStateKey(stateKey)?.properties.type === 'double';
 }
 
 function blockPositionKey(block: VoxelBlock): string {
@@ -3406,7 +3415,9 @@ function playerHeadLabel(texture: PlayerHeadTexture, index: number): string {
 }
 
 function formatBlockName(id: string): string {
-  return id
+  const blockId = stripBlockStateProperties(id);
+
+  return blockId
     .replace(/^minecraft:/, '')
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
@@ -3415,7 +3426,7 @@ function formatBlockName(id: string): string {
 
 function MaterialBreakdown({ materialId, count }: { materialId: string; count: number }) {
   const breakdown = storageBreakdown(materialId, count);
-  const label = `${count.toLocaleString()} blocks: ${breakdown.stacks.toLocaleString()} stacks of ${breakdown.stackSize.toLocaleString()} plus ${breakdown.remainder.toLocaleString()} items, ${breakdown.shulkerBoxes} shulker boxes`;
+  const label = `${count.toLocaleString()} items: ${breakdown.stacks.toLocaleString()} stacks of ${breakdown.stackSize.toLocaleString()} plus ${breakdown.remainder.toLocaleString()} items, ${breakdown.shulkerBoxes} shulker boxes`;
 
   return (
     <span className="material-breakdown-count" aria-label={label}>
@@ -3481,7 +3492,7 @@ function formatShulkerBoxes(value: number): string {
 }
 
 function itemStackSize(materialId: string): number {
-  const id = materialId.replace(/^minecraft:/, '');
+  const id = stripBlockStateProperties(materialId).replace(/^minecraft:/, '');
   if (id.endsWith('_bed') || id.endsWith('shulker_box') || id === 'cake') return 1;
   if (id.endsWith('_sign') || id.endsWith('_wall_sign') || id.endsWith('_hanging_sign') || id.endsWith('_wall_hanging_sign')) return 16;
   if (id.endsWith('_banner') || id.endsWith('_wall_banner')) return 16;
