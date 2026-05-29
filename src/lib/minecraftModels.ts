@@ -1414,8 +1414,7 @@ function isRenderlessVanillaModelBlock(id: string): boolean {
     || isStandingSignBlock(id)
     || isWallSignBlock(id)
     || isHangingSignBlock(id)
-    || isBannerBlock(id)
-    || isBedBlock(id);
+    || isBannerBlock(id);
 }
 
 function specialBlockEntityParts(
@@ -1428,6 +1427,9 @@ function specialBlockEntityParts(
 
   const chestParts = chestBlockEntityParts(id, properties, variantRotation);
   if (chestParts.length > 0) return chestParts;
+
+  const bedParts = bedBlockEntityParts(id, properties, variantRotation);
+  if (bedParts.length > 0) return bedParts;
 
   return [];
 }
@@ -1677,6 +1679,77 @@ function chestBlockEntityParts(
   );
 }
 
+function bedColorTexture(id: string): string {
+  const color = id.replace(/^minecraft:/, '').replace(/_bed$/, '');
+  return `minecraft:entity/bed/${color}`;
+}
+
+function bedFacingRotation(facing: string | undefined): number {
+  switch (facing) {
+    case 'east':
+      return 90;
+    case 'south':
+      return 180;
+    case 'west':
+      return 270;
+    case 'north':
+    default:
+      return 0;
+  }
+}
+
+// Bed geometry replicates the vanilla BedRenderer: each half is a standing
+// 16x16x6 mattress box laid flat by a +90deg rotation about X (which maps the
+// pillow/blanket "sleeping surface" to the upward face), plus two 3x3x3 legs at
+// the half's outer corners. Head and foot are separate blocks; the head half is
+// rotated an extra 180deg (see bedBlockEntityParts) so the two halves meet with
+// the pillow at the outer head end and legs at the four outer corners.
+//
+// Texture regions are intentionally paired the opposite way from the part name:
+// the +0deg (foot) block carries the pillow region [0,0] and the +180deg (head)
+// block carries the plain region [0,22]. Combined with the per-part rotation and
+// the head/foot block placement, this lands the pillow at the bed's head end with
+// the correct orientation. Pairing them the "obvious" way renders the bed facing
+// backwards (a 180deg error).
+function bedCuboids(part: 'head' | 'foot'): BlockEntityCuboid[] {
+  const bodyOrigin: [number, number] = part === 'head' ? [0, 22] : [0, 0];
+  const legOrigins: [number, number][] =
+    part === 'head'
+      ? [[50, 0], [50, 12]]
+      : [[50, 6], [50, 18]];
+
+  return [
+    {
+      name: 'body',
+      from: [0, 3, 0],
+      to: [16, 19, 6],
+      textureOrigin: bodyOrigin,
+      elementRotation: { origin: [8, 6, 3], axis: 'x', angle: 90 },
+    },
+    { name: 'leg0', from: [0, 0, 0], to: [3, 3, 3], textureOrigin: legOrigins[0] },
+    { name: 'leg1', from: [13, 0, 0], to: [16, 3, 3], textureOrigin: legOrigins[1] },
+  ];
+}
+
+function bedBlockEntityParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (!isBedBlock(id)) return [];
+
+  const part = properties.part === 'head' ? 'foot' : 'head';
+  const texture = bedColorTexture(id);
+  const bedRotation = {
+    x: variantRotation.x,
+    y: variantRotation.y + bedFacingRotation(properties.facing) + (part === 'head' ? 180 : 0),
+  };
+
+  return bedCuboids(part).map((cuboid) =>
+    blockEntityCuboidPart(id, properties, `bed:${part}:${cuboid.name}`, cuboid, texture, bedRotation),
+  );
+}
+
 function isChestBlock(id: string): boolean {
   const path = id.replace(/^minecraft:/, '');
   return /(^|_)chest$/.test(path);
@@ -1690,6 +1763,7 @@ interface BlockEntityCuboid {
   to: [number, number, number];
   textureOrigin: [number, number];
   hiddenFaces?: ModelFaceName[];
+  elementRotation?: ModelElementRotation;
 }
 
 function chestTypeFromProperties(properties: Record<string, string>): ChestType {
@@ -1780,6 +1854,7 @@ function blockEntityCuboidPart(
     textureSize,
     shade: true,
     uvLock: false,
+    elementRotation: cuboid.elementRotation,
     variantRotation,
     faceTextures,
     faceTints: {
