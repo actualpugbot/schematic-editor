@@ -125,61 +125,6 @@ interface ShoppingMaterialGroup {
   materials: MaterialSummary[];
 }
 
-interface ShoppingConfettiParticle {
-  material: MaterialSummary;
-  x: number;
-  y: number;
-  size: number;
-  duration: number;
-  delay: number;
-  drift: number;
-  sway: number;
-  spin: number;
-  squash: number;
-}
-
-interface ShoppingFireworkRocket {
-  material: MaterialSummary;
-  pattern: ShoppingFireworkPattern;
-  startLeft: number;
-  burstLeft: number;
-  size: number;
-  delay: number;
-  duration: number;
-  peakY: number;
-  travelX: number;
-  midTravelX: number;
-  riseY: number;
-  midRiseY: number;
-  swayX: number;
-}
-
-type ShoppingFireworkPattern = 'chrysanthemum' | 'willow' | 'ring' | 'double' | 'palm' | 'crackle';
-
-interface ShoppingFireworkSpark {
-  material: MaterialSummary;
-  pattern: ShoppingFireworkPattern;
-  left: number;
-  top: number;
-  size: number;
-  delay: number;
-  duration: number;
-  startScale: number;
-  endScale: number;
-  dx: number;
-  dy: number;
-  spin: number;
-}
-
-interface ShoppingFireworkFlash {
-  material: MaterialSummary;
-  left: number;
-  top: number;
-  size: number;
-  delay: number;
-  color: string;
-}
-
 interface BlockLibraryItem {
   stateKey: string;
   label: string;
@@ -478,7 +423,6 @@ function App() {
   const [hiddenMaterialIds, setHiddenMaterialIds] = useState<Set<string>>(() => new Set());
   const [shoppingSearch, setShoppingSearch] = useState('');
   const [checkedShoppingItems, setCheckedShoppingItems] = useState<Set<string>>(() => new Set());
-  const [shoppingCelebrationId, setShoppingCelebrationId] = useState(0);
   const [playerHeadSelections, setPlayerHeadSelections] = useState<Record<string, string>>({});
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('materials');
@@ -510,8 +454,6 @@ function App() {
   const layerPanelRef = useRef<HTMLElement | null>(null);
   const schematicNameInputRef = useRef<HTMLInputElement | null>(null);
   const skipNextShoppingPersistRef = useRef(false);
-  const shoppingWasCompleteRef = useRef(false);
-  const shoppingCelebrationTimerRef = useRef<number | null>(null);
   const dragDepthRef = useRef(0);
   const visibleWorldY = model ? model.origin.y + visibleLayer : visibleLayer;
   const selectedBlockWorldX = selectedBlock && model ? model.origin.x + selectedBlock.x : null;
@@ -606,13 +548,6 @@ function App() {
   const shoppingProgressPercent = totalShoppingItems > 0
     ? Math.round((completedShoppingItems / totalShoppingItems) * 100)
     : 0;
-  const shoppingConfettiParticles = useMemo(() => (
-    shoppingCelebrationId > 0 ? createShoppingConfetti(activeMaterials, shoppingCelebrationId) : []
-  ), [activeMaterials, shoppingCelebrationId]);
-  const shoppingFireworks = useMemo(() => (
-    shoppingCelebrationId > 0 ? createShoppingFireworks(activeMaterials, shoppingCelebrationId) : { rockets: [], sparks: [], flashes: [] }
-  ), [activeMaterials, shoppingCelebrationId]);
-
   const filteredMaterials = useMemo(() => {
     const query = materialSearch.trim().toLocaleLowerCase();
     if (!query) return activeMaterials;
@@ -770,27 +705,6 @@ function App() {
     const nextItems = Array.from(checkedShoppingItems).filter((item) => shoppingItemKeys.has(item));
     window.localStorage.setItem(shoppingStorage, JSON.stringify(nextItems));
   }, [checkedShoppingItems, shoppingItemKeys, shoppingStorage]);
-
-  useEffect(() => {
-    const isShoppingComplete = appView === 'shopping'
-      && activeMaterials.length > 0
-      && checkedShoppingMaterialCount === activeMaterials.length;
-
-    if (isShoppingComplete && !shoppingWasCompleteRef.current) {
-      setShoppingCelebrationId((current) => current + 1);
-      if (shoppingCelebrationTimerRef.current) window.clearTimeout(shoppingCelebrationTimerRef.current);
-      shoppingCelebrationTimerRef.current = window.setTimeout(() => {
-        setShoppingCelebrationId(0);
-        shoppingCelebrationTimerRef.current = null;
-      }, 15000);
-    }
-
-    shoppingWasCompleteRef.current = isShoppingComplete;
-  }, [activeMaterials.length, appView, checkedShoppingMaterialCount]);
-
-  useEffect(() => () => {
-    if (shoppingCelebrationTimerRef.current) window.clearTimeout(shoppingCelebrationTimerRef.current);
-  }, []);
 
   useEffect(() => {
     let isCancelled = false;
@@ -1724,95 +1638,6 @@ function App() {
         >
           {appView === 'shopping' && model ? (
             <section className="shopping-board" aria-label="Required resources shopping list">
-              {(shoppingConfettiParticles.length > 0 || shoppingFireworks.rockets.length > 0) && (
-                <div className="shopping-confetti" aria-hidden="true" key={shoppingCelebrationId}>
-                  {shoppingConfettiParticles.map((particle, index) => (
-                    <span
-                      className="shopping-confetti-piece"
-                      key={`confetti-${particle.material.id}-${index}`}
-                      style={{
-                        '--confetti-x': `${particle.x}%`,
-                        '--confetti-y': `${particle.y}px`,
-                        '--confetti-size': `${particle.size}px`,
-                        '--confetti-duration': `${particle.duration}ms`,
-                        '--confetti-delay': `${particle.delay}ms`,
-                        '--confetti-drift': `${particle.drift}px`,
-                        '--confetti-sway': `${particle.sway}px`,
-                        '--confetti-spin': `${particle.spin}deg`,
-                        '--confetti-squash': particle.squash.toString(),
-                      } as CSSProperties}
-                    >
-                      <BlockPreview
-                        stateKey={particle.material.stateKey}
-                        color={particle.material.color}
-                        layers={particle.material.thumbnailLayers}
-                      />
-                    </span>
-                  ))}
-                  {shoppingFireworks.rockets.map((rocket, index) => (
-                    <span
-                      className={`shopping-firework-rocket is-${rocket.pattern}`}
-                      key={`rocket-${rocket.material.id}-${index}`}
-                      style={{
-                        '--firework-start-left': `${rocket.startLeft}%`,
-                        '--firework-burst-left': `${rocket.burstLeft}%`,
-                        '--firework-size': `${rocket.size}px`,
-                        '--firework-delay': `${rocket.delay}ms`,
-                        '--firework-duration': `${rocket.duration}ms`,
-                        '--firework-travel-x': `${rocket.travelX}vw`,
-                        '--firework-mid-travel-x': `${rocket.midTravelX}vw`,
-                        '--firework-rise-y': `${rocket.riseY}vh`,
-                        '--firework-mid-rise-y': `${rocket.midRiseY}vh`,
-                        '--firework-sway-x': `${rocket.swayX}px`,
-                      } as CSSProperties}
-                    >
-                      <BlockPreview
-                        stateKey={rocket.material.stateKey}
-                        color={rocket.material.color}
-                        layers={rocket.material.thumbnailLayers}
-                      />
-                    </span>
-                  ))}
-                  {shoppingFireworks.flashes.map((flash, index) => (
-                    <span
-                      className="shopping-firework-flash"
-                      key={`flash-${flash.material.id}-${index}`}
-                      style={{
-                        '--flash-left': `${flash.left}%`,
-                        '--flash-top': `${flash.top}%`,
-                        '--flash-size': `${flash.size}px`,
-                        '--flash-delay': `${flash.delay}ms`,
-                        '--flash-color': flash.color,
-                      } as CSSProperties}
-                    />
-                  ))}
-                  {shoppingFireworks.sparks.map((spark, index) => (
-                    <span
-                      className={`shopping-firework-spark is-${spark.pattern}`}
-                      key={`spark-${spark.material.id}-${index}`}
-                      style={{
-                        '--spark-left': `${spark.left}%`,
-                        '--spark-top': `${spark.top}%`,
-                        '--spark-size': `${spark.size}px`,
-                        '--spark-delay': `${spark.delay}ms`,
-                        '--spark-duration': `${spark.duration}ms`,
-                        '--spark-start-scale': spark.startScale.toString(),
-                        '--spark-end-scale': spark.endScale.toString(),
-                        '--spark-dx': `${spark.dx}px`,
-                        '--spark-dy': `${spark.dy}px`,
-                        '--spark-spin': `${spark.spin}deg`,
-                        '--spark-glow': materialColorCss(spark.material),
-                      } as CSSProperties}
-                    >
-                      <BlockPreview
-                        stateKey={spark.material.stateKey}
-                        color={spark.material.color}
-                        layers={spark.material.thumbnailLayers}
-                      />
-                    </span>
-                  ))}
-                </div>
-              )}
               <div className="shopping-header">
                 <div className="shopping-title-block">
                   <p className="eyebrow">Shopping List</p>
@@ -3573,193 +3398,6 @@ function groupShoppingMaterials(materials: MaterialSummary[]): ShoppingMaterialG
     shoppingCategoryRank(a.id) - shoppingCategoryRank(b.id)
       || a.label.localeCompare(b.label)
   ));
-}
-
-function createShoppingConfetti(materials: MaterialSummary[], seed: number): ShoppingConfettiParticle[] {
-  if (materials.length === 0) return [];
-
-  const particleCount = 780;
-  return Array.from({ length: particleCount }, (_, index) => {
-    const material = materials[index % materials.length];
-    const random = seededUnit(seed * 101 + index * 17);
-    const randomTwo = seededUnit(seed * 137 + index * 29);
-    const randomThree = seededUnit(seed * 173 + index * 41);
-    const randomFour = seededUnit(seed * 191 + index * 43);
-    const randomFive = seededUnit(seed * 223 + index * 47);
-    const lane = index % 4;
-    const x = lane === 0
-      ? 8 + random * 34
-      : lane === 1
-        ? 58 + random * 34
-        : random * 100;
-    const duration = 6200 + randomFour * 3600;
-
-    return {
-      material,
-      x,
-      y: -180 - randomTwo * 420,
-      size: Math.round(24 + randomThree * 28),
-      duration: Math.round(duration),
-      delay: Math.round(randomFive * 1850),
-      drift: Math.round((randomTwo - 0.5) * 920),
-      sway: Math.round((randomFive - 0.5) * 260),
-      spin: Math.round((random > 0.5 ? 1 : -1) * (720 + randomThree * 2160)),
-      squash: 0.26 + randomFour * 0.6,
-    };
-  });
-}
-
-function createShoppingFireworks(
-  materials: MaterialSummary[],
-  seed: number,
-): { rockets: ShoppingFireworkRocket[]; sparks: ShoppingFireworkSpark[]; flashes: ShoppingFireworkFlash[] } {
-  if (materials.length === 0) return { rockets: [], sparks: [], flashes: [] };
-
-  const duration = 15000;
-  const rocketCount = 44;
-  const rockets = Array.from({ length: rocketCount }, (_, index) => {
-    const random = seededUnit(seed * 211 + index * 31);
-    const randomTwo = seededUnit(seed * 251 + index * 43);
-    const randomThree = seededUnit(seed * 271 + index * 53);
-    const patternPick = seededUnit(seed * 293 + index * 37);
-    const pattern: ShoppingFireworkPattern = patternPick < 0.17
-      ? 'ring'
-      : patternPick < 0.34
-        ? 'willow'
-        : patternPick < 0.51
-          ? 'double'
-          : patternPick < 0.68
-            ? 'palm'
-            : patternPick < 0.84
-              ? 'crackle'
-              : 'chrysanthemum';
-    const material = materials[(index * 5) % materials.length];
-    const isLeftLaunch = index % 2 === 0;
-    const startLeft = isLeftLaunch
-      ? 5 + random * 25
-      : 70 + random * 25;
-    const burstLeft = isLeftLaunch
-      ? 10 + randomTwo * 28
-      : 62 + randomTwo * 28;
-    const peakY = clamp(-10 + randomThree * 58, -6, 48);
-    const travelX = burstLeft - startLeft;
-    const midTravelX = travelX * (0.38 + random * 0.18);
-    const riseY = -(102 - peakY);
-    const midRiseY = riseY * (0.46 + randomTwo * 0.14);
-    const swayX = Math.round((randomThree - 0.5) * 92);
-    const cadence = duration / rocketCount;
-
-    return {
-      material,
-      pattern,
-      startLeft,
-      burstLeft,
-      size: 28 + Math.round(randomTwo * 30),
-      delay: Math.round(index * cadence + randomTwo * 150),
-      duration: 1180 + Math.round(random * 430),
-      peakY,
-      travelX,
-      midTravelX,
-      riseY,
-      midRiseY,
-      swayX,
-    };
-  });
-
-  const flashes = rockets.map((rocket, index) => ({
-    material: rocket.material,
-    left: rocket.burstLeft,
-    top: rocket.peakY,
-    size: rocket.pattern === 'double' || rocket.pattern === 'chrysanthemum'
-      ? 260 + Math.round(seededUnit(seed * 367 + index * 67) * 180)
-      : rocket.pattern === 'crackle'
-        ? 190 + Math.round(seededUnit(seed * 371 + index * 67) * 130)
-        : 220 + Math.round(seededUnit(seed * 373 + index * 67) * 150),
-    delay: rocket.delay + rocket.duration - 145,
-    color: materialColorCss(rocket.material),
-  }));
-
-  const sparks = rockets.flatMap((rocket, rocketIndex) => {
-    const pattern = rocket.pattern;
-    const sparkCount = pattern === 'ring'
-      ? 18 + Math.round(seededUnit(seed * 307 + rocketIndex * 47) * 10)
-      : pattern === 'willow'
-        ? 20 + Math.round(seededUnit(seed * 311 + rocketIndex * 47) * 14)
-        : pattern === 'double'
-          ? 28 + Math.round(seededUnit(seed * 313 + rocketIndex * 47) * 14)
-          : pattern === 'palm'
-            ? 12 + Math.round(seededUnit(seed * 317 + rocketIndex * 47) * 8)
-            : pattern === 'crackle'
-              ? 32 + Math.round(seededUnit(seed * 319 + rocketIndex * 47) * 18)
-              : 26 + Math.round(seededUnit(seed * 323 + rocketIndex * 47) * 16);
-    const explodeDelay = rocket.delay + rocket.duration - 130;
-    const burstRadius = pattern === 'double'
-      ? 176
-      : pattern === 'willow'
-        ? 148
-        : pattern === 'palm'
-          ? 210
-          : pattern === 'crackle'
-            ? 156
-            : pattern === 'chrysanthemum'
-              ? 196
-              : 136;
-
-    return Array.from({ length: sparkCount }, (_, sparkIndex) => {
-      const random = seededUnit(seed * 331 + rocketIndex * 59 + sparkIndex * 13);
-      const randomTwo = seededUnit(seed * 353 + rocketIndex * 61 + sparkIndex * 17);
-      const material = materials[(rocketIndex * 7 + sparkIndex) % materials.length];
-      const baseAngle = (Math.PI * 2 * sparkIndex) / sparkCount;
-      const starPoint = pattern === 'palm' ? (sparkIndex % 2 === 0 ? 1 : 0.42) : 1;
-      const angle = baseAngle + (pattern === 'willow' ? random * 0.55 : pattern === 'crackle' ? random * 1.25 : random * 0.34);
-      const isOuterRing = pattern !== 'double' || sparkIndex % 2 === 0;
-      const distance = ((isOuterRing ? burstRadius : burstRadius * 0.46) * starPoint)
-        + random * (pattern === 'double' ? 96 : pattern === 'palm' ? 58 : pattern === 'crackle' ? 180 : 128);
-      const gravity = pattern === 'willow'
-        ? 200 + randomTwo * 220
-        : pattern === 'palm'
-          ? (randomTwo - 0.5) * 54
-          : pattern === 'crackle'
-            ? 104 + randomTwo * 145
-            : pattern === 'double'
-              ? randomTwo * 98
-              : (randomTwo - 0.5) * 76;
-      const dx = Math.cos(angle) * distance;
-      const dy = Math.sin(angle) * distance + gravity;
-
-      return {
-        material,
-        pattern,
-        left: rocket.burstLeft,
-        top: rocket.peakY,
-        size: 10 + Math.round(random * (pattern === 'palm' ? 24 : pattern === 'double' ? 18 : pattern === 'crackle' ? 14 : 22)),
-        delay: explodeDelay + (pattern === 'crackle' ? Math.round(randomTwo * 220) : 0),
-        duration: pattern === 'willow'
-          ? 2600 + Math.round(random * 1100)
-          : pattern === 'palm'
-            ? 1700 + Math.round(random * 700)
-            : pattern === 'crackle'
-              ? 900 + Math.round(random * 650)
-            : 1600 + Math.round(random * 950),
-        startScale: pattern === 'double' && !isOuterRing ? 0.2 : pattern === 'palm' ? 0.26 : 0.3,
-        endScale: pattern === 'willow' ? 0.64 + random * 0.28 : pattern === 'palm' ? 0.82 + random * 0.46 : pattern === 'crackle' ? 0.48 + random * 0.28 : 0.9 + random * 0.34,
-        dx,
-        dy,
-        spin: Math.round((random > 0.5 ? 1 : -1) * (280 + random * 520)),
-      };
-    });
-  });
-
-  return { rockets, sparks, flashes };
-}
-
-function seededUnit(seed: number): number {
-  const value = Math.sin(seed) * 10000;
-  return value - Math.floor(value);
-}
-
-function materialColorCss(material: MaterialSummary): string {
-  return `#${material.color.toString(16).padStart(6, '0')}`;
 }
 
 function shoppingCategoryForMaterial(materialId: string): { id: string; label: string } {
