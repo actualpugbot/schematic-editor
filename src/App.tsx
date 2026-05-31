@@ -2168,7 +2168,7 @@ function App() {
                     title={item.label}
                     aria-pressed={selectedTextureBlock === item.stateKey}
                   >
-                    <BlockPreview stateKey={item.stateKey} color={item.color} />
+                    <BlockPreview stateKey={item.stateKey} color={item.color} layers={materialThumbnailLayers(item.stateKey)} />
                     <span>{item.label}</span>
                   </button>
                 ))}
@@ -2649,7 +2649,7 @@ function App() {
                                   aria-label={`Use ${item.label}`}
                                   aria-pressed={isSelected}
                                 >
-                                  <BlockPreview stateKey={item.stateKey} color={item.color} />
+                                  <BlockPreview stateKey={item.stateKey} color={item.color} layers={materialThumbnailLayers(item.stateKey)} />
                                 </button>
                               </div>
                             );
@@ -2977,9 +2977,7 @@ function parseTextureAdjustmentKey(key: string): [string, string, ModelFaceName,
 
 function createTexturePreviewModel(stateKey: string): SchematicModel {
   const blocks = previewBlocksForTextureEditor(stateKey);
-  const dimensions = isBedStateKey(stateKey)
-    ? { width: 1, height: 1, length: 2 }
-    : { width: 1, height: 1, length: 1 };
+  const dimensions = previewDimensionsForTextureEditor(stateKey);
 
   return finalizeSchematicModel({
     name: formatBlockName(stateKey),
@@ -2993,6 +2991,32 @@ function createTexturePreviewModel(stateKey: string): SchematicModel {
 }
 
 function previewBlocksForTextureEditor(stateKey: string): VoxelBlock[] {
+  if (isDoorStateKey(stateKey)) {
+    const baseState = stripBlockStateProperties(stateKey);
+    const parsed = parseStateKey(stateKey);
+    const doorProperties = {
+      facing: parsed?.properties.facing ?? 'south',
+      hinge: parsed?.properties.hinge ?? 'left',
+      open: parsed?.properties.open ?? 'false',
+    };
+
+    return [
+      createVoxelBlock(0, 0, 0, withBlockStateProperties(baseState, { ...doorProperties, half: 'lower' })),
+      createVoxelBlock(0, 1, 0, withBlockStateProperties(baseState, { ...doorProperties, half: 'upper' })),
+    ];
+  }
+
+  if (isPitcherCropStateKey(stateKey)) {
+    const baseState = stripBlockStateProperties(stateKey);
+    const parsed = parseStateKey(stateKey);
+    const age = parsed?.properties.age ?? '4';
+
+    return [
+      createVoxelBlock(0, 0, 0, withBlockStateProperties(baseState, { age, half: 'lower' })),
+      createVoxelBlock(0, 1, 0, withBlockStateProperties(baseState, { age, half: 'upper' })),
+    ];
+  }
+
   if (!isBedStateKey(stateKey)) return [createVoxelBlock(0, 0, 0, stateKey)];
 
   const baseState = stripBlockStateProperties(stateKey);
@@ -3000,6 +3024,12 @@ function previewBlocksForTextureEditor(stateKey: string): VoxelBlock[] {
     createVoxelBlock(0, 0, 0, withBlockStateProperties(baseState, { facing: 'south', occupied: 'false', part: 'foot' })),
     createVoxelBlock(0, 0, 1, withBlockStateProperties(baseState, { facing: 'south', occupied: 'false', part: 'head' })),
   ];
+}
+
+function previewDimensionsForTextureEditor(stateKey: string): SchematicModel['dimensions'] {
+  if (isBedStateKey(stateKey)) return { width: 1, height: 1, length: 2 };
+  if (isDoorStateKey(stateKey) || isPitcherCropStateKey(stateKey)) return { width: 1, height: 2, length: 1 };
+  return { width: 1, height: 1, length: 1 };
 }
 
 function isBedStateKey(stateKey: string): boolean {
@@ -3522,6 +3552,7 @@ function materialQuantityForBlock(block: VoxelBlock): number {
 function materialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] | undefined {
   if (isBedStateKey(stateKey)) return bedMaterialThumbnailLayers(stateKey);
   if (isDoorStateKey(stateKey)) return doorMaterialThumbnailLayers(stateKey);
+  if (isPitcherCropStateKey(stateKey)) return pitcherCropMaterialThumbnailLayers(stateKey);
   return undefined;
 }
 
@@ -3556,6 +3587,21 @@ function bedMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {
       offset: bedHeadOffset(thumbnailFacing),
     },
   ];
+}
+
+function pitcherCropMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {
+  const baseState = stripBlockStateProperties(stateKey);
+  const parsed = parseStateKey(stateKey);
+  const age = parsed?.properties.age ?? '4';
+
+  return [
+    { stateKey: withBlockStateProperties(baseState, { age, half: 'lower' }) },
+    { stateKey: withBlockStateProperties(baseState, { age, half: 'upper' }), offset: [0, 1, 0] },
+  ];
+}
+
+function isPitcherCropStateKey(stateKey: string): boolean {
+  return stripBlockStateProperties(stateKey) === 'minecraft:pitcher_crop';
 }
 
 function bedHeadOffset(facing: string): [number, number, number] {

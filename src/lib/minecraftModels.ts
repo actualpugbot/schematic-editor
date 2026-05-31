@@ -186,7 +186,7 @@ function defaultBlockProperties(id: string, properties: Record<string, string>):
 
   if (isDoorBlock(id)) {
     return {
-      facing: 'north',
+      facing: 'south',
       half: 'lower',
       hinge: 'left',
       open: 'false',
@@ -196,7 +196,7 @@ function defaultBlockProperties(id: string, properties: Record<string, string>):
 
   if (isTrapdoorBlock(id)) {
     return {
-      facing: 'north',
+      facing: 'south',
       half: 'bottom',
       open: 'false',
       ...properties,
@@ -205,7 +205,7 @@ function defaultBlockProperties(id: string, properties: Record<string, string>):
 
   if (isFenceGateBlock(id)) {
     return {
-      facing: 'south',
+      facing: 'east',
       in_wall: 'false',
       open: 'false',
       ...properties,
@@ -286,7 +286,7 @@ function defaultBlockProperties(id: string, properties: Record<string, string>):
 
   if (isRailBlock(id)) {
     return {
-      shape: 'north_south',
+      shape: 'east_west',
       ...(isPoweredRailBlock(id) ? { powered: 'false' } : {}),
       ...properties,
     };
@@ -306,7 +306,7 @@ function defaultBlockProperties(id: string, properties: Record<string, string>):
   if (isPistonBlock(id)) {
     return {
       extended: 'false',
-      facing: 'north',
+      facing: 'south',
       ...properties,
     };
   }
@@ -371,8 +371,17 @@ function defaultBlockProperties(id: string, properties: Record<string, string>):
 
   if (isFurnaceLikeBlock(id)) {
     return {
-      facing: 'north',
+      facing: 'south',
       lit: 'false',
+      ...properties,
+    };
+  }
+
+  if (isChestBlock(id)) {
+    return {
+      facing: 'east',
+      type: 'single',
+      waterlogged: 'false',
       ...properties,
     };
   }
@@ -402,6 +411,14 @@ function defaultBlockProperties(id: string, properties: Record<string, string>):
     };
   }
 
+  if (id === 'minecraft:scaffolding') {
+    return {
+      bottom: 'false',
+      distance: '0',
+      ...properties,
+    };
+  }
+
   if (id === 'minecraft:bell') {
     return {
       attachment: 'floor',
@@ -421,6 +438,35 @@ function defaultBlockProperties(id: string, properties: Record<string, string>):
   if (id === 'minecraft:end_portal_frame') {
     return {
       eye: 'false',
+      facing: 'south',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:respawn_anchor') {
+    return {
+      charges: '4',
+      ...properties,
+    };
+  }
+
+  if (isAnvilBlock(id)) {
+    return {
+      facing: 'east',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:grindstone') {
+    return {
+      face: 'floor',
+      facing: 'east',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:lectern' || id === 'minecraft:stonecutter' || id === 'minecraft:loom') {
+    return {
       facing: 'south',
       ...properties,
     };
@@ -466,8 +512,25 @@ function defaultBlockProperties(id: string, properties: Record<string, string>):
 
   if (isShelfBlock(id)) {
     return {
-      facing: 'north',
+      facing: 'south',
       powered: 'false',
+      ...properties,
+    };
+  }
+
+  if (isWallSignBlock(id) || isWallHangingSignBlock(id)) {
+    return {
+      facing: 'east',
+      waterlogged: 'false',
+      ...properties,
+    };
+  }
+
+  if (isStandingSignBlock(id) || isHangingSignBlock(id)) {
+    return {
+      attached: 'false',
+      rotation: '4',
+      waterlogged: 'false',
       ...properties,
     };
   }
@@ -503,21 +566,21 @@ function defaultBlockProperties(id: string, properties: Record<string, string>):
 
   if (id === 'minecraft:end_rod' || id === 'minecraft:ladder') {
     return {
-      facing: id === 'minecraft:end_rod' ? 'up' : 'north',
+      facing: id === 'minecraft:end_rod' ? 'up' : 'east',
       ...properties,
     };
   }
 
   if (isFacingBlock(id)) {
     return {
-      facing: 'north',
+      facing: 'south',
       ...properties,
     };
   }
 
   if (isObserverBlock(id)) {
     return {
-      facing: 'north',
+      facing: 'south',
       powered: 'false',
       ...properties,
     };
@@ -572,6 +635,89 @@ function defaultBlockProperties(id: string, properties: Record<string, string>):
   if (isStemCropBlock(id)) {
     return {
       age: defaultStemCropAge(id),
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:pitcher_crop') {
+    return {
+      age: '4',
+      half: 'lower',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:chorus_flower') {
+    return {
+      age: '4',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:mycelium' || id === 'minecraft:grass_block') {
+    return {
+      snowy: 'false',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:mushroom_stem' || id === 'minecraft:red_mushroom_block' || id === 'minecraft:brown_mushroom_block') {
+    return {
+      down: 'true',
+      east: 'true',
+      north: 'true',
+      south: 'true',
+      up: 'true',
+      west: 'true',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:pale_moss_carpet') {
+    return {
+      bottom: 'true',
+      east: 'none',
+      north: 'none',
+      south: 'none',
+      west: 'none',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:trial_spawner') {
+    return {
+      ominous: 'false',
+      trial_spawner_state: 'active',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:vault') {
+    return {
+      facing: 'south',
+      ominous: 'false',
+      vault_state: 'active',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:hopper') {
+    return {
+      facing: 'east',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:sculk_shrieker') {
+    return {
+      can_summon: 'false',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:sculk_catalyst') {
+    return {
+      bloom: 'false',
       ...properties,
     };
   }
@@ -708,6 +854,19 @@ function defaultBlockProperties(id: string, properties: Record<string, string>):
     };
   }
 
+  if (id === 'minecraft:chiseled_bookshelf') {
+    return {
+      facing: 'south',
+      slot_0_occupied: 'true',
+      slot_1_occupied: 'true',
+      slot_2_occupied: 'true',
+      slot_3_occupied: 'true',
+      slot_4_occupied: 'true',
+      slot_5_occupied: 'true',
+      ...properties,
+    };
+  }
+
   return properties;
 }
 
@@ -809,6 +968,11 @@ function isPoweredRailBlock(id: string): boolean {
 function isPistonBlock(id: string): boolean {
   const path = id.replace(/^minecraft:/, '');
   return path === 'piston' || path === 'sticky_piston';
+}
+
+function isAnvilBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path === 'anvil' || path === 'chipped_anvil' || path === 'damaged_anvil';
 }
 
 function isCandleBlock(id: string): boolean {
@@ -1322,6 +1486,12 @@ function syntheticBlockParts(
   const signParts = syntheticSignParts(id, properties, variantRotation);
   if (signParts.length > 0) return signParts;
 
+  const bannerParts = syntheticBannerParts(id, properties, variantRotation);
+  if (bannerParts.length > 0) return bannerParts;
+
+  const conduitParts = syntheticConduitParts(id, properties, variantRotation);
+  if (conduitParts.length > 0) return conduitParts;
+
   const playerHeadParts = syntheticPlayerHeadParts(id, properties, variantRotation);
   if (playerHeadParts.length > 0) return playerHeadParts;
 
@@ -1329,6 +1499,93 @@ function syntheticBlockParts(
   if (movingPistonParts.length > 0) return movingPistonParts;
 
   return [];
+}
+
+function syntheticBannerParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (!isBannerBlock(id)) return [];
+
+  const wallMounted = id.replace(/^minecraft:/, '').endsWith('_wall_banner');
+  const bannerTexture = solidColorTexture(bannerColor(id));
+  const poleTexture = 'minecraft:block/oak_planks';
+  const rotation = {
+    x: variantRotation.x,
+    y: variantRotation.y + (wallMounted ? horizontalFacingRotation(properties.facing) : headRotationFromProperty(properties.rotation)),
+  };
+  const banner = wallMounted
+    ? syntheticCuboidPart(id, properties, `banner:wall:${bannerTexture}`, [3, 4, 0.75], [13, 15, 1.25], bannerTexture, rotation)
+    : syntheticCuboidPart(id, properties, `banner:standing:${bannerTexture}`, [3, 4, 7.75], [13, 15, 8.25], bannerTexture, rotation);
+
+  if (wallMounted) return [banner];
+
+  return [
+    banner,
+    syntheticCuboidPart(id, properties, `banner:crossbar:${poleTexture}`, [2.5, 14, 7.5], [13.5, 15, 8.5], poleTexture, rotation),
+    syntheticCuboidPart(id, properties, `banner:pole:${poleTexture}`, [7.25, 0, 7.25], [8.75, 15, 8.75], poleTexture, rotation),
+  ];
+}
+
+function syntheticConduitParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (id !== 'minecraft:conduit') return [];
+
+  return [
+    syntheticCuboidPart(id, properties, 'conduit:core', [3, 3, 3], [13, 13, 13], 'minecraft:block/conduit', variantRotation),
+  ];
+}
+
+function solidColorTexture(color: number): string {
+  return `${solidTexturePrefix}${color.toString(16).padStart(6, '0')}`;
+}
+
+function bannerColor(id: string): number {
+  const color = colorNameFromColoredBlock(id.replace(/^minecraft:/, '').replace(/_wall_banner$/, '_banner').replace(/_banner$/, ''));
+  return color ?? 0xbebebe;
+}
+
+function colorNameFromColoredBlock(color: string): number | null {
+  switch (color) {
+    case 'white':
+      return 0xf9fffe;
+    case 'orange':
+      return 0xf9801d;
+    case 'magenta':
+      return 0xc74ebd;
+    case 'light_blue':
+      return 0x3ab3da;
+    case 'yellow':
+      return 0xfed83d;
+    case 'lime':
+      return 0x80c71f;
+    case 'pink':
+      return 0xf38baa;
+    case 'gray':
+      return 0x474f52;
+    case 'light_gray':
+      return 0x9d9d97;
+    case 'cyan':
+      return 0x169c9c;
+    case 'purple':
+      return 0x8932b8;
+    case 'blue':
+      return 0x3c44aa;
+    case 'brown':
+      return 0x835432;
+    case 'green':
+      return 0x5e7c16;
+    case 'red':
+      return 0xb02e26;
+    case 'black':
+      return 0x1d1d21;
+    default:
+      return null;
+  }
 }
 
 function syntheticSignParts(
@@ -1530,6 +1787,9 @@ function specialBlockEntityParts(
 
   const bedParts = bedBlockEntityParts(id, properties, variantRotation);
   if (bedParts.length > 0) return bedParts;
+
+  const shulkerBoxParts = shulkerBoxBlockEntityParts(id, properties, variantRotation);
+  if (shulkerBoxParts.length > 0) return shulkerBoxParts;
 
   return [];
 }
@@ -1854,6 +2114,29 @@ function bedBlockEntityParts(
 function isChestBlock(id: string): boolean {
   const path = id.replace(/^minecraft:/, '');
   return /(^|_)chest$/.test(path);
+}
+
+function shulkerBoxBlockEntityParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (!isShulkerBoxBlock(id)) return [];
+
+  const texture = shulkerBoxTexture(id);
+  return [
+    syntheticCuboidPart(id, properties, `shulker:base:${texture}`, [1, 0, 1], [15, 8, 15], texture, variantRotation),
+    syntheticCuboidPart(id, properties, `shulker:lid:${texture}`, [0, 8, 0], [16, 16, 16], texture, variantRotation),
+  ];
+}
+
+function isShulkerBoxBlock(id: string): boolean {
+  return id.replace(/^minecraft:/, '') === 'shulker_box' || id.replace(/^minecraft:/, '').endsWith('_shulker_box');
+}
+
+function shulkerBoxTexture(id: string): string {
+  const path = id.replace(/^minecraft:/, '');
+  return `minecraft:block/${path}`;
 }
 
 type ChestType = 'single' | 'left' | 'right';
@@ -2189,10 +2472,14 @@ function syntheticFluidPart(
   properties: Record<string, string>,
   variantRotation: { x: number; y: number },
 ): ResolvedBlockPart | null {
-  if (id !== 'minecraft:water') return null;
+  if (id !== 'minecraft:water' && id !== 'minecraft:lava') return null;
 
   const level = Math.max(0, Math.min(8, Number.parseInt(properties.level ?? '0', 10) || 0));
   const surfaceHeight = level === 0 ? 16 : Math.max(2, 15 - level * 1.55);
+  const stillTexture = id === 'minecraft:lava' ? 'minecraft:block/lava_still' : 'minecraft:block/water_still';
+  const sideTexture = id === 'minecraft:lava' ? 'minecraft:block/lava_still' : 'minecraft:block/water_flow';
+  const tintIndex = id === 'minecraft:water' ? 0 : null;
+  const translucent = id === 'minecraft:water';
 
   return {
     key: `fluid::${id}::level:${level}::${variantRotation.x}::${variantRotation.y}`,
@@ -2205,20 +2492,20 @@ function syntheticFluidPart(
     uvLock: false,
     variantRotation,
     faceTextures: {
-      down: 'minecraft:block/water_still',
-      up: 'minecraft:block/water_still',
-      north: 'minecraft:block/water_flow',
-      south: 'minecraft:block/water_flow',
-      west: 'minecraft:block/water_flow',
-      east: 'minecraft:block/water_flow',
+      down: stillTexture,
+      up: stillTexture,
+      north: sideTexture,
+      south: sideTexture,
+      west: sideTexture,
+      east: sideTexture,
     },
     faceTints: {
-      down: 0,
-      up: 0,
-      north: 0,
-      south: 0,
-      west: 0,
-      east: 0,
+      down: tintIndex,
+      up: tintIndex,
+      north: tintIndex,
+      south: tintIndex,
+      west: tintIndex,
+      east: tintIndex,
     },
     faceUvs: {
       down: null,
@@ -2245,12 +2532,12 @@ function syntheticFluidPart(
       east: 'east',
     },
     faceTranslucencies: {
-      down: true,
-      up: true,
-      north: true,
-      south: true,
-      west: true,
-      east: true,
+      down: translucent,
+      up: translucent,
+      north: translucent,
+      south: translucent,
+      west: translucent,
+      east: translucent,
     },
   };
 }

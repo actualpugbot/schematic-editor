@@ -246,7 +246,11 @@ function fitCameraToGroup(group: THREE.Group, camera: THREE.OrthographicCamera) 
   const box = new THREE.Box3().setFromObject(group);
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
-  const viewSize = Math.max(size.x, size.y, size.z, 1) * 1.55;
+  const maxDimension = Math.max(size.x, size.y, size.z, 0.01);
+  const minDimension = Math.min(size.x, size.y, size.z);
+  const isFlatOrThin = minDimension <= maxDimension * 0.18;
+  const padding = isFlatOrThin || maxDimension < 0.9 ? 1.28 : 1.55;
+  const viewSize = Math.max(maxDimension * padding, 0.92);
   const direction = new THREE.Vector3(2.35, 1.65, 2.55).normalize();
 
   camera.left = -viewSize / 2;
@@ -584,6 +588,9 @@ function isAlphaCutoutTexture(textureId: string): boolean {
     || path.includes('grass')
     || path.includes('fern')
     || path.includes('bush')
+    || path.includes('lily_pad')
+    || path.includes('leaf_litter')
+    || path.includes('pale_moss')
     || path.includes('roots')
     || path.includes('vines')
     || path.includes('flower')
@@ -667,7 +674,8 @@ function tintColorForPart(textureId: string, tintIndex: number | null, part: Res
   if (path.startsWith('block/water_')) return waterTint;
   if (path.includes('spruce_leaves')) return spruceFoliageTint;
   if (path.includes('birch_leaves')) return birchFoliageTint;
-  if (path.includes('leaves') || path.includes('vine') || path.includes('grass') || path.includes('fern')) {
+  if (path.includes('leaves') || path.includes('vine') || path.includes('grass') || path.includes('fern')
+    || path.includes('bush') || path.includes('lily_pad')) {
     return defaultFoliageTint;
   }
 
