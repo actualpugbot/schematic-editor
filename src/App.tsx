@@ -13,8 +13,10 @@ import {
   EyeOff,
   FileUp,
   Focus,
+  Grid2X2,
   ImageIcon,
   Layers,
+  List,
   MousePointer2,
   Moon,
   Pencil,
@@ -72,6 +74,7 @@ type AppView = 'inspect' | 'edit' | 'texture' | 'shopping';
 type EditTool = 'select' | 'build';
 type Theme = 'light' | 'dark';
 type MaterialsScope = 'build' | 'cuboid';
+type ShoppingLayout = 'grid' | 'list';
 type ThumbnailLoadState = 'idle' | 'loading' | 'ready' | 'failed';
 type CuboidCornerId = 'a' | 'b';
 type Direction = 'up' | 'down' | 'north' | 'south' | 'west' | 'east';
@@ -422,6 +425,7 @@ function App() {
   const [materialSearch, setMaterialSearch] = useState('');
   const [hiddenMaterialIds, setHiddenMaterialIds] = useState<Set<string>>(() => new Set());
   const [shoppingSearch, setShoppingSearch] = useState('');
+  const [shoppingLayout, setShoppingLayout] = useState<ShoppingLayout>('grid');
   const [checkedShoppingItems, setCheckedShoppingItems] = useState<Set<string>>(() => new Set());
   const [playerHeadSelections, setPlayerHeadSelections] = useState<Record<string, string>>({});
   const [isDraggingFile, setIsDraggingFile] = useState(false);
@@ -1731,6 +1735,28 @@ function App() {
                     aria-label="Search shopping list"
                   />
                 </label>
+                <div className="segmented-control shopping-layout-toggle" role="group" aria-label="Shopping list layout">
+                  <button
+                    type="button"
+                    className={shoppingLayout === 'grid' ? 'is-active' : ''}
+                    onClick={() => setShoppingLayout('grid')}
+                    aria-pressed={shoppingLayout === 'grid'}
+                    title="Grid view"
+                  >
+                    <Grid2X2 size={16} aria-hidden="true" />
+                    <span>Grid</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={shoppingLayout === 'list' ? 'is-active' : ''}
+                    onClick={() => setShoppingLayout('list')}
+                    aria-pressed={shoppingLayout === 'list'}
+                    title="List view"
+                  >
+                    <List size={16} aria-hidden="true" />
+                    <span>List</span>
+                  </button>
+                </div>
               </div>
 
               <div
@@ -1756,7 +1782,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="shopping-list" aria-live="polite">
+              <div className={`shopping-list is-${shoppingLayout}`} aria-live="polite">
                 {shoppingGroups.map((group) => {
                   const checkedGroupItems = group.materials.filter((material) => (
                     checkedShoppingItems.has(shoppingItemKey(shoppingScope, material))
