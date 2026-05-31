@@ -1614,7 +1614,7 @@ function syntheticStandingOrWallSignParts(
     y: variantRotation.y + (wallMounted ? horizontalFacingRotation(properties.facing) : headRotationFromProperty(properties.rotation)),
   };
   const board: [number, number, number][] = wallMounted
-    ? [[2, 5, 0.5], [14, 13, 1.5]]
+    ? [[2, 5, 14], [14, 13, 16]]
     : [[2, 6, 7], [14, 14, 9]];
   const parts = [
     syntheticCuboidPart(id, properties, `sign:${wallMounted ? 'wall' : 'standing'}:board:${texture}`, board[0], board[1], texture, rotation),
