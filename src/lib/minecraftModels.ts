@@ -1889,7 +1889,17 @@ function decoratedPotBlockEntityParts(
       id,
       properties,
       'decorated-pot:neck',
-      { name: 'neck', from: [4.1, 17.1, 4.1], to: [11.9, 19.9, 11.9], textureOrigin: [0, 0] },
+      {
+        name: 'neck',
+        from: [4.1, 17.1, 4.1],
+        to: [11.9, 19.9, 11.9],
+        textureOrigin: [0, 0],
+        faceUvOffsets: {
+          up: { u: 0, v: 0 },
+          south: { u: -8, v: 0 },
+          west: { u: 9, v: 0 },
+        },
+      },
       baseTexture,
       rotation,
       [32, 32],
@@ -1898,7 +1908,18 @@ function decoratedPotBlockEntityParts(
       id,
       properties,
       'decorated-pot:rim',
-      { name: 'rim', from: [4.8, 15.8, 4.8], to: [11.2, 17.2, 11.2], textureOrigin: [0, 5] },
+      {
+        name: 'rim',
+        from: [4.8, 15.8, 4.8],
+        to: [11.2, 17.2, 11.2],
+        textureOrigin: [0, 5],
+        faceUvOffsets: {
+          north: { u: 0, v: -1 },
+          south: { u: -2, v: -1 },
+          west: { u: 0, v: -1 },
+          east: { u: 0, v: -1 },
+        },
+      },
       baseTexture,
       rotation,
       [32, 32],
@@ -2147,6 +2168,7 @@ interface BlockEntityCuboid {
   to: [number, number, number];
   textureOrigin: [number, number];
   faceUvs?: Partial<Record<ModelFaceName, ModelFaceUv>>;
+  faceUvOffsets?: Partial<Record<ModelFaceName, { u: number; v: number }>>;
   hiddenFaces?: ModelFaceName[];
   elementRotation?: ModelElementRotation;
 }
@@ -2231,6 +2253,15 @@ function blockEntityCuboidPart(
     faceTextures[face] = null;
   }
 
+  for (
+    const [face, offset] of Object.entries(cuboid.faceUvOffsets ?? {}) as Array<
+      [ModelFaceName, { u: number; v: number }]
+    >
+  ) {
+    const uv = faceUvs[face];
+    if (!hiddenFaces.has(face) && uv) faceUvs[face] = offsetUv(uv, offset.u, offset.v);
+  }
+
   for (const [face, uv] of Object.entries(cuboid.faceUvs ?? {}) as Array<[ModelFaceName, ModelFaceUv]>) {
     if (!hiddenFaces.has(face)) faceUvs[face] = uv;
   }
@@ -2281,6 +2312,10 @@ function blockEntityCuboidPart(
       east: false,
     },
   };
+}
+
+function offsetUv(uv: ModelFaceUv, offsetU: number, offsetV: number): ModelFaceUv {
+  return [uv[0] + offsetU, uv[1] + offsetV, uv[2] + offsetU, uv[3] + offsetV];
 }
 
 function blockEntityPlanePart(
