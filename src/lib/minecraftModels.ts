@@ -2146,7 +2146,7 @@ function shulkerBoxBlockEntityParts(
 
   const texture = shulkerBoxTexture(id);
   return [
-    syntheticCuboidPart(id, properties, `shulker:base:${texture}`, [1, 0, 1], [15, 8, 15], texture, variantRotation),
+    syntheticCuboidPart(id, properties, `shulker:base:${texture}`, [0, 0, 0], [16, 8, 16], texture, variantRotation),
     syntheticCuboidPart(id, properties, `shulker:lid:${texture}`, [0, 8, 0], [16, 16, 16], texture, variantRotation),
   ];
 }
