@@ -42,6 +42,7 @@ import {
   type Viewer3DHandle,
   textureAdjustmentKey,
 } from './components/Viewer3D';
+import { ShoppingCelebration } from './components/ShoppingCelebration';
 import {
   createBlockThumbnail,
   getCachedBlockThumbnail,
@@ -453,7 +454,10 @@ function App() {
   const materialPanelRef = useRef<HTMLElement | null>(null);
   const layerPanelRef = useRef<HTMLElement | null>(null);
   const schematicNameInputRef = useRef<HTMLInputElement | null>(null);
+  const [showCelebration, setShowCelebration] = useState(false);
   const skipNextShoppingPersistRef = useRef(false);
+  const prevShoppingProgressRef = useRef(0);
+  const prevShoppingStorageRef = useRef('');
   const dragDepthRef = useRef(0);
   const visibleWorldY = model ? model.origin.y + visibleLayer : visibleLayer;
   const selectedBlockWorldX = selectedBlock && model ? model.origin.x + selectedBlock.x : null;
@@ -705,6 +709,19 @@ function App() {
     const nextItems = Array.from(checkedShoppingItems).filter((item) => shoppingItemKeys.has(item));
     window.localStorage.setItem(shoppingStorage, JSON.stringify(nextItems));
   }, [checkedShoppingItems, shoppingItemKeys, shoppingStorage]);
+
+  useEffect(() => {
+    if (prevShoppingStorageRef.current !== shoppingStorage) {
+      prevShoppingStorageRef.current = shoppingStorage;
+      prevShoppingProgressRef.current = shoppingProgressPercent;
+      setShowCelebration(false);
+      return;
+    }
+    if (shoppingProgressPercent === 100 && totalShoppingItems > 0 && prevShoppingProgressRef.current < 100) {
+      setShowCelebration(true);
+    }
+    prevShoppingProgressRef.current = shoppingProgressPercent;
+  }, [shoppingProgressPercent, totalShoppingItems, shoppingStorage]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -2725,6 +2742,12 @@ function App() {
       </aside>
       )}
       </div>
+      {showCelebration && appView === 'shopping' && (
+        <ShoppingCelebration
+          materials={activeMaterials}
+          onDone={() => setShowCelebration(false)}
+        />
+      )}
     </main>
   );
 }
