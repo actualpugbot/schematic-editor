@@ -1344,6 +1344,22 @@ function App() {
     });
   };
 
+  const toggleShoppingGroup = (materials: MaterialSummary[]) => {
+    const keys = materials.map((material) => shoppingItemKey(shoppingScope, material));
+    setCheckedShoppingItems((current) => {
+      const allChecked = keys.every((key) => current.has(key));
+      const next = new Set(current);
+      for (const key of keys) {
+        if (allChecked) {
+          next.delete(key);
+        } else {
+          next.add(key);
+        }
+      }
+      return next;
+    });
+  };
+
   const resetShoppingList = () => {
     setCheckedShoppingItems(new Set());
   };
@@ -1742,45 +1758,65 @@ function App() {
               </div>
 
               <div className="shopping-list" aria-live="polite">
-                {shoppingGroups.map((group) => (
-                  <section className="shopping-group" key={group.id} aria-label={group.label}>
-                    <div className="shopping-group-heading">
-                      <span>{group.label}</span>
-                      <strong>{group.materials.length.toLocaleString()}</strong>
-                    </div>
-                    <div className="shopping-group-items">
-                      {group.materials.map((material) => {
-                        const itemKey = shoppingItemKey(shoppingScope, material);
-                        const isChecked = checkedShoppingItems.has(itemKey);
+                {shoppingGroups.map((group) => {
+                  const checkedGroupItems = group.materials.filter((material) => (
+                    checkedShoppingItems.has(shoppingItemKey(shoppingScope, material))
+                  )).length;
+                  const isGroupChecked = checkedGroupItems === group.materials.length;
 
-                        return (
+                  return (
+                    <section className="shopping-group" key={group.id} aria-label={group.label}>
+                      <div className="shopping-group-heading">
+                        <span>{group.label}</span>
+                        <div className="shopping-group-summary">
+                          <strong>{checkedGroupItems.toLocaleString()} / {group.materials.length.toLocaleString()}</strong>
                           <button
                             type="button"
-                            key={itemKey}
-                            className={`shopping-row${isChecked ? ' is-checked' : ''}`}
-                            onClick={() => toggleShoppingItem(material)}
-                            aria-pressed={isChecked}
+                            className="shopping-group-toggle"
+                            onClick={() => toggleShoppingGroup(group.materials)}
+                            aria-pressed={isGroupChecked}
                           >
                             <span className="shopping-check" aria-hidden="true">
-                              {isChecked && <Check size={16} strokeWidth={3} />}
+                              {isGroupChecked && <Check size={13} strokeWidth={3} />}
                             </span>
-                            <BlockPreview
-                              stateKey={material.stateKey}
-                              color={material.color}
-                              layers={material.thumbnailLayers}
-                            />
-                            <span className="shopping-row-label">
-                              <strong>{material.label}</strong>
-                              <span>{material.id}</span>
-                            </span>
-                            <span className="shopping-row-count">{material.count.toLocaleString()}</span>
-                            <MaterialBreakdown materialId={material.id} count={material.count} />
+                            {isGroupChecked ? 'Clear group' : 'Select all'}
                           </button>
-                        );
-                      })}
-                    </div>
-                  </section>
-                ))}
+                        </div>
+                      </div>
+                      <div className="shopping-group-items">
+                        {group.materials.map((material) => {
+                          const itemKey = shoppingItemKey(shoppingScope, material);
+                          const isChecked = checkedShoppingItems.has(itemKey);
+
+                          return (
+                            <button
+                              type="button"
+                              key={itemKey}
+                              className={`shopping-row${isChecked ? ' is-checked' : ''}`}
+                              onClick={() => toggleShoppingItem(material)}
+                              aria-pressed={isChecked}
+                            >
+                              <span className="shopping-check" aria-hidden="true">
+                                {isChecked && <Check size={16} strokeWidth={3} />}
+                              </span>
+                              <BlockPreview
+                                stateKey={material.stateKey}
+                                color={material.color}
+                                layers={material.thumbnailLayers}
+                              />
+                              <span className="shopping-row-label">
+                                <strong>{material.label}</strong>
+                                <span>{material.id}</span>
+                              </span>
+                              <span className="shopping-row-count">{material.count.toLocaleString()}</span>
+                              <MaterialBreakdown materialId={material.id} count={material.count} />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  );
+                })}
                 {shoppingGroups.length === 0 && (
                   <p className="material-empty">
                     {materialsScope === 'cuboid' && !cuboidBounds
