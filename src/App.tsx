@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import {
   BoxSelect,
   Brush,
-  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -1776,9 +1775,6 @@ function App() {
                             onClick={() => toggleShoppingGroup(group.materials)}
                             aria-pressed={isGroupChecked}
                           >
-                            <span className="shopping-check" aria-hidden="true">
-                              {isGroupChecked && <Check size={13} strokeWidth={3} />}
-                            </span>
                             {isGroupChecked ? 'Clear group' : 'Select all'}
                           </button>
                         </div>
@@ -1796,9 +1792,6 @@ function App() {
                               onClick={() => toggleShoppingItem(material)}
                               aria-pressed={isChecked}
                             >
-                              <span className="shopping-check" aria-hidden="true">
-                                {isChecked && <Check size={16} strokeWidth={3} />}
-                              </span>
                               <BlockPreview
                                 stateKey={material.stateKey}
                                 color={material.color}
@@ -1806,7 +1799,6 @@ function App() {
                               />
                               <span className="shopping-row-label">
                                 <strong>{material.label}</strong>
-                                <span>{material.id}</span>
                               </span>
                               <span className="shopping-row-count">{material.count.toLocaleString()}</span>
                               <MaterialBreakdown materialId={material.id} count={material.count} />
