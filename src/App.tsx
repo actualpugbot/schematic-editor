@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
+  Box,
   BoxSelect,
   Brush,
+  Check,
+  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -9,17 +12,25 @@ import {
   ClipboardList,
   Cuboid,
   Download,
+  Eraser,
+  ExternalLink,
   Eye,
   EyeOff,
+  FileText,
   FileUp,
   Focus,
   Grid2X2,
   Hammer,
+  Hand,
+  HelpCircle,
   ImageIcon,
   Layers,
   List,
+  Maximize2,
   MousePointer2,
   Moon,
+  Move3d,
+  Orbit,
   Pencil,
   Plus,
   Replace,
@@ -28,10 +39,13 @@ import {
   Rotate3D,
   ScanSearch,
   Search,
+  Settings,
+  ShoppingCart,
   SlidersHorizontal,
   Sun,
   Upload,
   X,
+  ZoomIn,
 } from 'lucide-react';
 import {
   Viewer3D,
@@ -59,6 +73,7 @@ import {
   normalizeRecipeItemId,
   recipeTypeLabel,
   type BreakdownNode,
+  type RecipeType,
 } from './lib/recipes';
 import {
   createSpongeSchematicDocument,
@@ -72,13 +87,13 @@ import {
   type VoxelBlock,
 } from './lib/schematic';
 import creativeInventoryData from './lib/data/creative_inventory.json';
-import defaultSchematicUrl from '../mossy_roof_house.litematic?url';
+import defaultSchematicUrl from '../Medieval House.litematic?url';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 type DraggedFileKind = 'none' | 'unsupported-file' | 'unknown-file' | 'schematic-file';
 type InspectorTab = 'selection' | 'materials' | 'layers';
 type EditPanelTab = 'tools' | 'rotate' | 'replace';
-type AppView = 'inspect' | 'edit' | 'texture' | 'shopping' | 'resource';
+type AppView = 'viewer' | 'inspect' | 'edit' | 'texture' | 'shopping' | 'resource';
 type EditTool = 'select' | 'build';
 type Theme = 'light' | 'dark';
 type MaterialsScope = 'build' | 'cuboid';
@@ -137,24 +152,6 @@ interface ShoppingMaterialGroup {
   materials: MaterialSummary[];
 }
 
-interface ResourceCalculatorStats {
-  totalOutputItems: number;
-  uniqueOutputItems: number;
-  rawMaterialItems: number;
-  uniqueRawMaterials: number;
-  craftingSteps: number;
-  chestsNeeded: number;
-  unresolvedItems: number;
-}
-
-interface ResourceGraphGroup {
-  id: string;
-  label: string;
-  tone: string;
-  paths: BreakdownNode[][];
-  maxColumns: number;
-}
-
 interface BlockLibraryItem {
   stateKey: string;
   label: string;
@@ -192,9 +189,7 @@ type ColorGroupId =
   | 'pink';
 
 const schematicFileExtensions = new Set(['.litematic', '.schem', '.schematic', '.nbt']);
-const defaultSchematicFileName = 'mossy_roof_house.litematic';
-const defaultSchematicDisplayName = 'Mossy Roof House';
-const defaultBuildTutorialUrl = 'https://www.youtube.com/watch?v=KO1yKa34Yl0';
+const defaultSchematicFileName = 'Medieval House.litematic';
 const themeStorageKey = 'schematic-editor-theme';
 const shoppingListStoragePrefix = 'schematic-editor-shopping-list';
 const emptyBuildBlock = 'minecraft:air';
@@ -431,6 +426,18 @@ const blockstateFiles = import.meta.glob('/public/minecraft-assets/assets/minecr
   import: 'default',
 });
 
+function formatRelativeTime(timestamp: number): string {
+  const diff = Date.now() - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'Yesterday';
+  return `${days} days ago`;
+}
+
 function App() {
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window === 'undefined') return 'light';
@@ -439,7 +446,7 @@ function App() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
   const [model, setModel] = useState<SchematicModel | null>(null);
-  const [appView, setAppView] = useState<AppView>('inspect');
+  const [appView, setAppView] = useState<AppView>('viewer');
   const [schematicName, setSchematicName] = useState('');
   const [isEditingSchematicName, setIsEditingSchematicName] = useState(false);
   const [schematicDocument, setSchematicDocument] = useState<NbtDocument | null>(null);
@@ -449,6 +456,7 @@ function App() {
   const [error, setError] = useState('');
   const [visibleLayer, setVisibleLayer] = useState(model?.dimensions.height ? model.dimensions.height - 1 : 0);
   const [singleLayer, setSingleLayer] = useState(false);
+  const [showGrid, setShowGrid] = useState(true);
   const [selectedBlock, setSelectedBlock] = useState<VoxelBlock | null>(null);
   const [expandedMaterialIds, setExpandedMaterialIds] = useState<Set<string>>(() => new Set());
   const [materialSearch, setMaterialSearch] = useState('');
@@ -457,6 +465,8 @@ function App() {
   const [integerCrafting, setIntegerCrafting] = useState(true);
   const [shoppingSearch, setShoppingSearch] = useState('');
   const [shoppingLayout, setShoppingLayout] = useState<ShoppingLayout>('grid');
+  const [shoppingPlanMode, setShoppingPlanMode] = useState(false);
+  const [checkedPlanSteps, setCheckedPlanSteps] = useState<Set<string>>(() => new Set());
   const [checkedShoppingItems, setCheckedShoppingItems] = useState<Set<string>>(() => new Set());
   const [playerHeadSelections, setPlayerHeadSelections] = useState<Record<string, string>>({});
   const [isDraggingFile, setIsDraggingFile] = useState(false);
@@ -469,6 +479,7 @@ function App() {
   const [editTool, setEditTool] = useState<EditTool>('select');
   const [selectedBuildBlock, setSelectedBuildBlock] = useState(emptyBuildBlock);
   const [recentBuildBlocks, setRecentBuildBlocks] = useState<string[]>([]);
+  const [recentFiles, setRecentFiles] = useState<{ name: string; at: number }[]>([]);
   const [blockSearch, setBlockSearch] = useState('');
   const [textureBlockSearch, setTextureBlockSearch] = useState('');
   const [selectedTextureBlock, setSelectedTextureBlock] = useState('minecraft:oak_planks');
@@ -560,6 +571,58 @@ function App() {
   const rawMaterials = useMemo<MaterialSummary[]>(() => (
     recipeBreakdown.raw.map((material) => materialSummaryForRecipeItem(material, activeMaterials))
   ), [activeMaterials, recipeBreakdown]);
+  const craftPlan = useMemo(() => {
+    const stepMap = new Map<string, { id: string; method: RecipeType; output: number; outputCount: number; inputs: Map<string, number> }>();
+    const depthCache = new Map<string, number>();
+
+    const visit = (node: BreakdownNode): number => {
+      if (node.isRaw || !node.recipeUsed || node.children.length === 0) return 0;
+      let maxChild = 0;
+      for (const child of node.children) maxChild = Math.max(maxChild, visit(child));
+      const depth = maxChild + 1;
+      const existing = stepMap.get(node.id);
+      if (existing) {
+        existing.outputCount += node.count;
+        for (const child of node.children) existing.inputs.set(child.id, (existing.inputs.get(child.id) ?? 0) + child.count);
+      } else {
+        const inputs = new Map<string, number>();
+        for (const child of node.children) inputs.set(child.id, (inputs.get(child.id) ?? 0) + child.count);
+        stepMap.set(node.id, { id: node.id, method: node.recipeUsed.type, output: node.recipeUsed.output, outputCount: node.count, inputs });
+      }
+      depthCache.set(node.id, Math.max(depthCache.get(node.id) ?? 0, depth));
+      return depth;
+    };
+
+    for (const tree of recipeBreakdown.trees) visit(tree);
+
+    const steps = [...stepMap.values()].map((step) => {
+      const summary = materialSummaryForRecipeItem({ id: step.id, count: step.outputCount }, activeMaterials);
+      const inputs = [...step.inputs.entries()].map(([id, count]) => {
+        const inputSummary = materialSummaryForRecipeItem({ id, count }, activeMaterials);
+        return { ...inputSummary, count };
+      });
+      return {
+        ...summary,
+        count: step.outputCount,
+        method: step.method,
+        crafts: Math.max(1, Math.ceil(step.outputCount / step.output)),
+        inputs,
+        depth: depthCache.get(step.id) ?? 1,
+        category: shoppingCategoryForMaterial(step.id),
+      };
+    });
+
+    steps.sort((a, b) => a.depth - b.depth || b.count - a.count);
+
+    const byCategory = new Map<string, { id: string; label: string; steps: typeof steps }>();
+    for (const step of steps) {
+      const group = byCategory.get(step.category.id) ?? { id: step.category.id, label: step.category.label, steps: [] };
+      group.steps.push(step);
+      byCategory.set(step.category.id, group);
+    }
+
+    return { steps, groups: [...byCategory.values()] };
+  }, [recipeBreakdown, activeMaterials]);
   const recipeTreeByMaterialId = useMemo(() => (
     new Map(recipeBreakdown.trees.map((tree) => [tree.id, tree]))
   ), [recipeBreakdown]);
@@ -570,12 +633,23 @@ function App() {
   ), [cuboidBoundsKey, materialsScope, model]);
   const shoppingModeScope = `${shoppingScope}:${materialsMode}:${integerCrafting ? 'integer' : 'fractional'}`;
   const shoppingStorage = useMemo(() => (
-    model ? shoppingStorageKey(model, shoppingModeScope, visibleMaterials) : ''
-  ), [model, shoppingModeScope, visibleMaterials]);
+    model ? shoppingStorageKey(model, shoppingScope, activeMaterials) : ''
+  ), [activeMaterials, model, shoppingScope]);
   const shoppingItemKeys = useMemo(() => (
-    new Set(visibleMaterials.map((material) => shoppingItemKey(shoppingModeScope, material)))
-  ), [shoppingModeScope, visibleMaterials]);
+    new Set(activeMaterials.map((material) => shoppingItemKey(shoppingScope, material)))
+  ), [activeMaterials, shoppingScope]);
   const shoppingMaterials = useMemo(() => {
+    const query = shoppingSearch.trim().toLocaleLowerCase();
+    if (!query) return activeMaterials;
+
+    return activeMaterials.filter((material) => {
+      const label = material.label.toLocaleLowerCase();
+      const id = material.id.toLocaleLowerCase();
+      return label.includes(query) || id.includes(query);
+    });
+  }, [activeMaterials, shoppingSearch]);
+  const shoppingGroups = useMemo(() => groupShoppingMaterials(shoppingMaterials), [shoppingMaterials]);
+  const resourceMaterials = useMemo(() => {
     const query = shoppingSearch.trim().toLocaleLowerCase();
     if (!query) return visibleMaterials;
 
@@ -585,33 +659,25 @@ function App() {
       return label.includes(query) || id.includes(query);
     });
   }, [shoppingSearch, visibleMaterials]);
-  const shoppingGroups = useMemo(() => groupShoppingMaterials(shoppingMaterials), [shoppingMaterials]);
-  const filteredRecipeTrees = useMemo(() => {
-    const query = shoppingSearch.trim().toLocaleLowerCase();
-    if (!query) return recipeBreakdown.trees;
-
-    return recipeBreakdown.trees.filter((tree) => resourceTreeMatchesSearch(tree, query));
-  }, [recipeBreakdown.trees, shoppingSearch]);
-  const resourceStats = useMemo<ResourceCalculatorStats>(() => ({
+  const resourceGroups = useMemo(() => groupShoppingMaterials(resourceMaterials), [resourceMaterials]);
+  const resourceStats = useMemo(() => ({
     totalOutputItems: activeMaterials.reduce((sum, material) => sum + material.count, 0),
-    uniqueOutputItems: activeMaterials.length,
     rawMaterialItems: rawMaterials.reduce((sum, material) => sum + material.count, 0),
     uniqueRawMaterials: rawMaterials.length,
-    craftingSteps: countCraftingSteps(recipeBreakdown.trees),
-    chestsNeeded: estimateChestCount(rawMaterials),
+    craftingSteps: craftPlan.steps.length,
     unresolvedItems: recipeBreakdown.unresolved.length,
-  }), [activeMaterials, rawMaterials, recipeBreakdown]);
+  }), [activeMaterials, craftPlan.steps.length, rawMaterials, recipeBreakdown.unresolved.length]);
   const checkedShoppingMaterialCount = useMemo(() => (
-    visibleMaterials.filter((material) => checkedShoppingItems.has(shoppingItemKey(shoppingModeScope, material))).length
-  ), [checkedShoppingItems, shoppingModeScope, visibleMaterials]);
+    activeMaterials.filter((material) => checkedShoppingItems.has(shoppingItemKey(shoppingScope, material))).length
+  ), [activeMaterials, checkedShoppingItems, shoppingScope]);
   const totalShoppingItems = useMemo(() => (
-    visibleMaterials.reduce((sum, material) => sum + material.count, 0)
-  ), [visibleMaterials]);
+    activeMaterials.reduce((sum, material) => sum + material.count, 0)
+  ), [activeMaterials]);
   const completedShoppingItems = useMemo(() => (
-    visibleMaterials.reduce((sum, material) => (
-      checkedShoppingItems.has(shoppingItemKey(shoppingModeScope, material)) ? sum + material.count : sum
+    activeMaterials.reduce((sum, material) => (
+      checkedShoppingItems.has(shoppingItemKey(shoppingScope, material)) ? sum + material.count : sum
     ), 0)
-  ), [checkedShoppingItems, shoppingModeScope, visibleMaterials]);
+  ), [activeMaterials, checkedShoppingItems, shoppingScope]);
   const remainingShoppingItems = Math.max(0, totalShoppingItems - completedShoppingItems);
   const shoppingProgressPercent = totalShoppingItems > 0
     ? Math.round((completedShoppingItems / totalShoppingItems) * 100)
@@ -626,12 +692,6 @@ function App() {
       return label.includes(query) || id.includes(query);
     });
   }, [materialSearch, visibleMaterials]);
-  const hideableMaterialIds = useMemo(() => (
-    materialsMode === 'placed' ? visibleMaterials.map((material) => material.id) : []
-  ), [materialsMode, visibleMaterials]);
-  const allVisibleMaterialsHidden = hideableMaterialIds.length > 0
-    && hideableMaterialIds.every((materialId) => hiddenMaterialIds.has(materialId));
-  const bulkMaterialVisibilityLabel = allVisibleMaterialsHidden ? 'Show All' : 'Hide All';
 
   const cuboidDimensions = cuboidBounds ? dimensionsForBounds(cuboidBounds) : null;
   const cuboidVolume = cuboidDimensions
@@ -809,7 +869,7 @@ function App() {
         const buffer = await response.arrayBuffer();
         const parsed = parseSchematicDocument(buffer, { fileName: defaultSchematicFileName });
         if (isCancelled) return;
-        applySchematic({ ...parsed.model, name: defaultSchematicDisplayName }, parsed.nbt, fileExtension(defaultSchematicFileName));
+        applySchematic(parsed.model, parsed.nbt, fileExtension(defaultSchematicFileName));
       } catch (caught) {
         if (isCancelled) return;
 
@@ -933,6 +993,10 @@ function App() {
       const buffer = await file.arrayBuffer();
       const parsed = parseSchematicDocument(buffer, { fileName: file.name });
       applySchematic(parsed.model, parsed.nbt, fileExtension(file.name));
+      setRecentFiles((current) => [
+        { name: file.name, at: Date.now() },
+        ...current.filter((entry) => entry.name !== file.name),
+      ].slice(0, 6));
     } catch (caught) {
       setLoadState('error');
       setError(caught instanceof Error ? caught.message : 'Could not read this schematic file.');
@@ -1026,23 +1090,6 @@ function App() {
         next.delete(id);
       } else {
         next.add(id);
-      }
-      return next;
-    });
-  };
-
-  const toggleAllMaterialVisibility = () => {
-    if (hideableMaterialIds.length === 0) return;
-
-    setHiddenMaterialIds((current) => {
-      const next = new Set(current);
-      const shouldShowAll = hideableMaterialIds.every((materialId) => next.has(materialId));
-      for (const materialId of hideableMaterialIds) {
-        if (shouldShowAll) {
-          next.delete(materialId);
-        } else {
-          next.add(materialId);
-        }
       }
       return next;
     });
@@ -1412,20 +1459,21 @@ function App() {
     void navigator.clipboard?.writeText(text).catch(() => undefined);
   };
 
-  const openResourceCalculator = () => {
-    if (!model) return;
-    setShoppingSearch('');
-    setAppView('resource');
-  };
-
   const openShoppingList = () => {
     if (!model) return;
     setShoppingSearch('');
     setAppView('shopping');
   };
 
+  const openResourceCalculator = () => {
+    if (!model) return;
+    setShoppingSearch('');
+    setShoppingPlanMode(false);
+    setAppView('resource');
+  };
+
   const toggleShoppingItem = (material: MaterialSummary) => {
-    const key = shoppingItemKey(shoppingModeScope, material);
+    const key = shoppingItemKey(shoppingScope, material);
     setCheckedShoppingItems((current) => {
       const next = new Set(current);
       if (next.has(key)) {
@@ -1438,7 +1486,7 @@ function App() {
   };
 
   const toggleShoppingGroup = (materials: MaterialSummary[]) => {
-    const keys = materials.map((material) => shoppingItemKey(shoppingModeScope, material));
+    const keys = materials.map((material) => shoppingItemKey(shoppingScope, material));
     setCheckedShoppingItems((current) => {
       const allChecked = keys.every((key) => current.has(key));
       const next = new Set(current);
@@ -1513,80 +1561,160 @@ function App() {
         <div className="topbar-left">
           <div className="brand-lockup">
             <div className="brand-mark" aria-hidden="true">
-              <Cuboid size={22} />
+              <Box size={20} strokeWidth={2.4} />
             </div>
-            <strong>schematic-editor</strong>
+            <strong>BlockBlueprint</strong>
+            <span className="brand-beta">Beta</span>
           </div>
+          <div className="topbar-divider" aria-hidden="true" />
           <div className="file-lockup">
+            {model && (
+              <div className="file-emblem" aria-hidden="true">
+                <Cuboid size={16} />
+              </div>
+            )}
             {model ? (
-              <div className="schematic-meta">
-                <div className={`schematic-title${isEditingSchematicName ? ' is-editing' : ''}`}>
-                  {isEditingSchematicName ? (
-                    <input
-                      ref={schematicNameInputRef}
-                      type="text"
-                      value={schematicName}
-                      onBlur={commitSchematicName}
-                      onChange={(event) => setSchematicName(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.currentTarget.blur();
-                        }
-                        if (event.key === 'Escape') {
-                          setSchematicName(model.name);
-                          setIsEditingSchematicName(false);
-                        }
-                      }}
-                      aria-label="Schematic name"
-                    />
-                  ) : (
-                    <h1>{schematicName}</h1>
-                  )}
-                  <button
-                    type="button"
-                    className="schematic-title-edit"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => setIsEditingSchematicName(true)}
-                    title="Edit schematic name"
-                    aria-label="Edit schematic name"
-                  >
-                    <Pencil size={14} />
-                  </button>
-                </div>
-                <a className="build-credit" href={defaultBuildTutorialUrl} target="_blank" rel="noreferrer">
-                  build by MildMadi
-                </a>
+              <div className={`schematic-title${isEditingSchematicName ? ' is-editing' : ''}`}>
+                {isEditingSchematicName ? (
+                  <input
+                    ref={schematicNameInputRef}
+                    type="text"
+                    value={schematicName}
+                    onBlur={commitSchematicName}
+                    onChange={(event) => setSchematicName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.currentTarget.blur();
+                      }
+                      if (event.key === 'Escape') {
+                        setSchematicName(model.name);
+                        setIsEditingSchematicName(false);
+                      }
+                    }}
+                    aria-label="Schematic name"
+                  />
+                ) : (
+                  <h1>{schematicName}</h1>
+                )}
+                <button
+                  type="button"
+                  className="schematic-title-edit"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => setIsEditingSchematicName(true)}
+                  title="Edit schematic name"
+                  aria-label="Edit schematic name"
+                >
+                  <Pencil size={14} />
+                </button>
               </div>
             ) : (
-              <h1>Minecraft schematic viewer</h1>
+              <h1>Open a schematic to begin</h1>
             )}
           </div>
+        </div>
+
+        <div className="topbar-right">
+          <button
+            type="button"
+            className="topbar-action"
+            onClick={() => inputRef.current?.click()}
+            title="Import a schematic file"
+          >
+            <Upload size={16} />
+            <span>Import</span>
+            <ChevronDown size={14} />
+          </button>
+          <button
+            type="button"
+            className="topbar-action"
+            onClick={exportRenamedSchematic}
+            disabled={!canSaveSchematic}
+            title={hasEditChanges ? 'Export edited build' : 'Export schematic'}
+          >
+            <Download size={16} />
+            <span>Export</span>
+            <ChevronDown size={14} />
+          </button>
+          <button
+            type="button"
+            className={`topbar-icon-btn${isDarkTheme ? ' is-on' : ''}`}
+            onClick={toggleTheme}
+            title={isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'}
+            aria-pressed={isDarkTheme}
+          >
+            {isDarkTheme ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+          <button
+            type="button"
+            className="topbar-save"
+            onClick={exportRenamedSchematic}
+            disabled={!canSaveSchematic}
+            title="Save schematic"
+          >
+            <Check size={16} strokeWidth={2.6} />
+            <span>Save</span>
+          </button>
         </div>
       </header>
 
       <div className={`workspace${appView === 'shopping' ? ' is-shopping' : ''}${appView === 'resource' ? ' is-resource' : ''}`}>
-        <aside className="left-rail" aria-label="Primary controls">
-          <div className="rail-cluster rail-mode-switch" role="tablist" aria-label="Schematic mode">
+        <aside className="left-rail" aria-label="Primary navigation">
+          <div className="rail-cluster" role="tablist" aria-label="Workspace mode">
             <button
               type="button"
               role="tab"
-              className={appView === 'inspect' ? 'is-active' : ''}
-              onClick={() => setAppView('inspect')}
-              aria-selected={appView === 'inspect'}
-              title="Inspect mode"
+              className={appView === 'viewer' ? 'is-active' : ''}
+              onClick={() => setAppView('viewer')}
+              aria-selected={appView === 'viewer'}
             >
-              <Eye size={19} />
-              <span>View</span>
+              <Box size={19} />
+              <span>Viewer</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              className={appView === 'inspect' && inspectorTab === 'materials' ? 'is-active' : ''}
+              onClick={() => openInspectorPanel('materials')}
+              aria-selected={appView === 'inspect' && inspectorTab === 'materials'}
+              disabled={!model}
+            >
+              <Search size={19} />
+              <span>Inspect</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              className={appView === 'inspect' && inspectorTab === 'layers' ? 'is-active' : ''}
+              onClick={() => openInspectorPanel('layers')}
+              aria-selected={appView === 'inspect' && inspectorTab === 'layers'}
+              disabled={!model}
+            >
+              <Layers size={19} />
+              <span>Layers</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              className={appView === 'inspect' && inspectorTab === 'selection' ? 'is-active' : ''}
+              onClick={() => {
+                openInspectorPanel('selection');
+                beginCuboidSelection();
+              }}
+              aria-selected={appView === 'inspect' && inspectorTab === 'selection'}
+              disabled={!model}
+            >
+              <BoxSelect size={19} />
+              <span>Select</span>
             </button>
             <button
               type="button"
               role="tab"
               className={appView === 'edit' ? 'is-active' : ''}
-              onClick={() => setAppView('edit')}
+              onClick={() => activateEditTool('select')}
               aria-selected={appView === 'edit'}
-              title="Edit mode"
+              disabled={!model}
             >
-              <Brush size={19} />
+              <Pencil size={19} />
               <span>Edit</span>
             </button>
             <button
@@ -1595,7 +1723,7 @@ function App() {
               className={appView === 'texture' ? 'is-active' : ''}
               onClick={() => setAppView('texture')}
               aria-selected={appView === 'texture'}
-              title="Texture mode"
+              disabled={!model}
             >
               <ImageIcon size={19} />
               <span>UV</span>
@@ -1607,197 +1735,81 @@ function App() {
               onClick={openResourceCalculator}
               aria-selected={appView === 'resource'}
               disabled={!model}
-              title="Resource Calculator"
             >
               <ClipboardList size={19} />
-              <span>Calc</span>
+              <span>Resource Calculator</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              className={appView === 'shopping' ? 'is-active' : ''}
+              onClick={openShoppingList}
+              aria-selected={appView === 'shopping'}
+              disabled={!model}
+            >
+              <ShoppingCart size={19} />
+              <span>Shopping List</span>
             </button>
           </div>
 
-          <div className="rail-divider" />
-
           <div
-            className="rail-cluster"
-            aria-label={
-              appView === 'edit'
-                ? 'Edit tools'
-                : appView === 'texture'
-                  ? 'Texture tools'
-                  : appView === 'resource'
-                    ? 'Resource Calculator tools'
-                    : appView === 'shopping'
-                      ? 'Shopping list tools'
-                      : 'Inspect panels'
-            }
+            className="rail-dropzone"
+            role="button"
+            tabIndex={0}
+            onClick={() => inputRef.current?.click()}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                inputRef.current?.click();
+              }
+            }}
           >
-            {appView === 'edit' ? (
-              <>
-                <button
-                  type="button"
-                  className={editPanelTab === 'tools' && editTool === 'select' ? 'is-active' : ''}
-                  onClick={() => activateEditTool('select')}
-                  aria-pressed={editPanelTab === 'tools' && editTool === 'select'}
-                  title="Select blocks"
-                >
-                  <MousePointer2 size={19} />
-                  <span>Select</span>
-                </button>
-                <button
-                  type="button"
-                  className={editPanelTab === 'tools' && editTool === 'build' ? 'is-active' : ''}
-                  onClick={() => activateEditTool('build')}
-                  aria-pressed={editPanelTab === 'tools' && editTool === 'build'}
-                  title="Build selected block"
-                >
-                  <Brush size={19} />
-                  <span>Build</span>
-                </button>
-                <button
-                  type="button"
-                  className={editPanelTab === 'replace' ? 'is-active' : ''}
-                  onClick={() => {
-                    setAppView('edit');
-                    setEditPanelTab('replace');
-                    setCuboidSelectionMode(false);
-                  }}
-                  aria-pressed={editPanelTab === 'replace'}
-                  title="Find and replace blocks"
-                >
-                  <Replace size={19} />
-                  <span>Replace</span>
-                </button>
-              </>
-            ) : appView === 'texture' ? (
-              <>
-                <button
-                  type="button"
-                  className="is-active"
-                  onClick={() => setAppView('texture')}
-                  aria-pressed
-                  title="Texture adjustment"
-                >
-                  <SlidersHorizontal size={19} />
-                  <span>Adjust</span>
-                </button>
-              </>
-            ) : appView === 'resource' ? (
-              <>
-                <button
-                  type="button"
-                  className="is-active"
-                  onClick={openResourceCalculator}
-                  aria-pressed
-                  disabled={!model}
-                  title="Resource Calculator"
-                >
-                  <ClipboardList size={19} />
-                  <span>Calc</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openInspectorPanel('materials')}
-                  disabled={!model}
-                  title="Back to materials"
-                >
-                  <Cuboid size={19} />
-                  <span>Blocks</span>
-                </button>
-              </>
-            ) : appView === 'shopping' ? (
-              <>
-                <button
-                  type="button"
-                  className="is-active"
-                  onClick={openShoppingList}
-                  aria-pressed
-                  disabled={!model}
-                  title="Shopping list"
-                >
-                  <ClipboardList size={19} />
-                  <span>List</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openInspectorPanel('materials')}
-                  disabled={!model}
-                  title="Back to materials"
-                >
-                  <Cuboid size={19} />
-                  <span>Blocks</span>
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className={inspectorTab === 'materials' ? 'is-active' : ''}
-                  onClick={() => openInspectorPanel('materials')}
-                  aria-pressed={inspectorTab === 'materials'}
-                  disabled={!model}
-                  title="Materials"
-                >
-                  <Cuboid size={19} />
-                  <span>Blocks</span>
-                </button>
-                <button
-                  type="button"
-                  className={inspectorTab === 'selection' ? 'is-active' : ''}
-                  onClick={() => openInspectorPanel('selection')}
-                  aria-pressed={inspectorTab === 'selection'}
-                  disabled={!model}
-                  title="Area selection"
-                >
-                  <BoxSelect size={19} />
-                  <span>Area</span>
-                </button>
-                <button
-                  type="button"
-                  className={inspectorTab === 'layers' ? 'is-active' : ''}
-                  onClick={() => openInspectorPanel('layers')}
-                  aria-pressed={inspectorTab === 'layers'}
-                  disabled={!model}
-                  title="Layer view"
-                >
-                  <Layers size={19} />
-                  <span>Layers</span>
-                </button>
-              </>
-            )}
+            <FileUp size={22} />
+            <p>Drag &amp; drop a schematic file here to get started</p>
+            <span className="or">or</span>
+            <button type="button" className="rail-browse" onClick={(event) => { event.stopPropagation(); inputRef.current?.click(); }}>
+              <span>Browse Files</span>
+            </button>
           </div>
+
+          {recentFiles.length > 0 && (
+            <div className="rail-recent">
+              <div className="rail-recent-head">
+                <span>Recent Files</span>
+              </div>
+              {recentFiles.map((entry, index) => (
+                <button
+                  type="button"
+                  key={`${entry.name}-${entry.at}`}
+                  className={`rail-recent-item${index === 0 ? ' is-active' : ''}`}
+                  onClick={() => inputRef.current?.click()}
+                  title={entry.name}
+                >
+                  <FileText size={16} />
+                  <span className="meta">
+                    <span className="name">{entry.name}</span>
+                    <span className="time">{formatRelativeTime(entry.at)}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="rail-spacer" />
 
-          <div className="rail-cluster rail-system-controls" aria-label="File and display controls">
+          <div className="rail-footer">
+            <button type="button" title="Help" aria-label="Help"><HelpCircle size={18} /></button>
             <button
               type="button"
-              onClick={() => inputRef.current?.click()}
-              title="Upload schematic"
-              aria-label="Upload schematic"
-            >
-              <Upload size={19} />
-              <span>Upload</span>
-            </button>
-            <button
-              type="button"
-              onClick={exportRenamedSchematic}
-              disabled={!canSaveSchematic}
-              title={hasEditChanges ? 'Export edited build as .schem' : 'Export schematic with current name'}
-              aria-label={hasEditChanges ? 'Export edited build as .schem' : 'Export schematic with current name'}
-            >
-              <Download size={19} />
-              <span>Export</span>
-            </button>
-            <button
-              type="button"
+              title={isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'}
+              aria-label="Toggle theme"
               onClick={toggleTheme}
-              title={isDarkTheme ? 'Use light theme' : 'Use dark theme'}
-              aria-label={isDarkTheme ? 'Use light theme' : 'Use dark theme'}
-              aria-pressed={isDarkTheme}
             >
-              {isDarkTheme ? <Sun size={19} /> : <Moon size={19} />}
-              <span>Theme</span>
+              {isDarkTheme ? <Sun size={18} /> : <Moon size={18} />}
             </button>
+            <button type="button" title="Settings" aria-label="Settings"><Settings size={18} /></button>
           </div>
+
           <input
             ref={inputRef}
             className="file-input"
@@ -1812,29 +1824,340 @@ function App() {
         </aside>
 
         <section
-          className={`viewport-panel${appView === 'shopping' ? ' shopping-viewport' : ''}${appView === 'resource' ? ' resource-viewport' : ''}${selectedBlock && appView !== 'texture' && appView !== 'shopping' && appView !== 'resource' ? ' has-selection-modal' : ''}`}
+          className={`viewport-panel${appView === 'shopping' || appView === 'resource' ? ' shopping-viewport' : ''}${appView === 'resource' ? ' resource-viewport' : ''}${selectedBlock && appView !== 'texture' && appView !== 'shopping' && appView !== 'resource' ? ' has-selection-modal' : ''}`}
           aria-label={appView === 'resource' ? 'Resource Calculator' : appView === 'shopping' ? 'Shopping list' : 'Schematic 3D viewport'}
         >
           {appView === 'resource' && model ? (
-            <ResourceCalculatorBoard
-              schematicName={schematicName}
-              activeMaterialsLabel={activeMaterialsLabel}
-              activeMaterials={activeMaterials}
-              rawMaterials={rawMaterials}
-              resourceStats={resourceStats}
-              filteredRecipeTrees={filteredRecipeTrees}
-              shoppingSearch={shoppingSearch}
-              setShoppingSearch={setShoppingSearch}
-              materialsScope={materialsScope}
-              setMaterialsScope={setMaterialsScope}
-              cuboidBounds={cuboidBounds}
-              beginCuboidSelection={beginCuboidSelection}
-              setAppView={setAppView}
-              setInspectorTab={setInspectorTab}
-              integerCrafting={integerCrafting}
-              setIntegerCrafting={setIntegerCrafting}
-              openInspectorPanel={openInspectorPanel}
-            />
+            <section className="shopping-board resource-board" aria-label="Resource Calculator">
+              <div className="shopping-header">
+                <div className="shopping-title-block">
+                  <p className="eyebrow">{shoppingPlanMode ? 'Crafting Plan' : 'Resource Calculator'}</p>
+                  <h2>{schematicName}</h2>
+                </div>
+                <div className="shopping-actions">
+                  <div className="segmented-control" role="group" aria-label="Calculator view">
+                    <button
+                      type="button"
+                      className={!shoppingPlanMode ? 'is-active' : ''}
+                      onClick={() => setShoppingPlanMode(false)}
+                    >
+                      <ClipboardList size={15} />
+                      Material Totals
+                    </button>
+                    <button
+                      type="button"
+                      className={shoppingPlanMode ? 'is-active' : ''}
+                      onClick={() => setShoppingPlanMode(true)}
+                    >
+                      <Hammer size={15} />
+                      Crafting Plan
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => openInspectorPanel('materials')}
+                  >
+                    <Cuboid size={16} />
+                    Materials
+                  </button>
+                </div>
+              </div>
+
+              {shoppingPlanMode ? (
+                <div className="craft-plan" aria-label="Crafting plan">
+                  <aside className="craft-plan-ingredients" aria-label="Base ingredients">
+                    <div className="craft-plan-ingredients-head">
+                      <h3>Base Ingredients</h3>
+                      <span>{rawMaterials.length} types</span>
+                    </div>
+                    <div
+                      className="craft-plan-progress"
+                      style={{ '--plan-progress': `${rawMaterials.length ? Math.round((rawMaterials.filter((m) => checkedPlanSteps.has(`raw:${m.id}`)).length / rawMaterials.length) * 100) : 0}%` } as CSSProperties}
+                    >
+                      <span>{rawMaterials.length ? Math.round((rawMaterials.filter((m) => checkedPlanSteps.has(`raw:${m.id}`)).length / rawMaterials.length) * 100) : 0}% gathered</span>
+                    </div>
+                    <div className="craft-plan-ingredient-list">
+                      {rawMaterials.map((material) => {
+                        const key = `raw:${material.id}`;
+                        const checked = checkedPlanSteps.has(key);
+                        return (
+                          <button
+                            type="button"
+                            key={material.id}
+                            className={`craft-plan-ingredient${checked ? ' is-checked' : ''}`}
+                            onClick={() => setCheckedPlanSteps((current) => {
+                              const next = new Set(current);
+                              if (next.has(key)) next.delete(key); else next.add(key);
+                              return next;
+                            })}
+                            aria-pressed={checked}
+                          >
+                            <span className={`plan-check${checked ? ' is-on' : ''}`}>{checked && <Check size={12} strokeWidth={3} />}</span>
+                            <BlockPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
+                            <span className="plan-ing-meta">
+                              <strong>{material.label}</strong>
+                              <span>{material.count.toLocaleString()} · {Math.ceil(material.count / 64)} stacks</span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                      {rawMaterials.length === 0 && <p className="material-empty">No base ingredients to gather.</p>}
+                    </div>
+                  </aside>
+
+                  <div className="craft-plan-flow" aria-label="Crafting flow">
+                    {craftPlan.groups.map((group) => (
+                      <section className="craft-plan-group" key={group.id}>
+                        <div className="craft-plan-group-head">
+                          <h3>{group.label}</h3>
+                          <span>{group.steps.length} {group.steps.length === 1 ? 'step' : 'steps'}</span>
+                        </div>
+                        <div className="craft-plan-steps">
+                          {group.steps.map((step) => {
+                            const checked = checkedPlanSteps.has(`step:${step.id}`);
+                            return (
+                              <div className={`craft-plan-step${checked ? ' is-checked' : ''}`} key={step.id}>
+                                <div className="craft-plan-inputs">
+                                  {step.inputs.map((input) => (
+                                    <div className="craft-plan-chip" key={input.id}>
+                                      <BlockPreview stateKey={input.stateKey} color={input.color} layers={input.thumbnailLayers} />
+                                      <span className="chip-label">{input.label}</span>
+                                      <span className="chip-count">{input.count.toLocaleString()}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="craft-plan-arrow" aria-hidden="true">
+                                  <span className="craft-plan-method">{recipeTypeLabel(step.method)}</span>
+                                  <ChevronRight size={18} />
+                                </div>
+                                <button
+                                  type="button"
+                                  className="craft-plan-output"
+                                  onClick={() => setCheckedPlanSteps((current) => {
+                                    const next = new Set(current);
+                                    const k = `step:${step.id}`;
+                                    if (next.has(k)) next.delete(k); else next.add(k);
+                                    return next;
+                                  })}
+                                  aria-pressed={checked}
+                                >
+                                  <span className={`plan-check${checked ? ' is-on' : ''}`}>{checked && <Check size={12} strokeWidth={3} />}</span>
+                                  <BlockPreview stateKey={step.stateKey} color={step.color} layers={step.thumbnailLayers} />
+                                  <span className="plan-out-meta">
+                                    <strong>{step.label}</strong>
+                                    <span>{step.count.toLocaleString()} · {step.crafts.toLocaleString()} {step.crafts === 1 ? 'craft' : 'crafts'}</span>
+                                  </span>
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    ))}
+                    {craftPlan.groups.length === 0 && (
+                      <p className="material-empty">No crafting steps — every material is gathered directly.</p>
+                    )}
+                  </div>
+
+                  <aside className="craft-plan-queue" aria-label="Do next">
+                    <div className="craft-plan-queue-head">
+                      <h3>Do Next</h3>
+                      <span className="queue-badge">{craftPlan.steps.filter((s) => !checkedPlanSteps.has(`step:${s.id}`)).length}</span>
+                    </div>
+                    <div className="craft-plan-queue-list">
+                      {craftPlan.steps.map((step, index) => {
+                        const checked = checkedPlanSteps.has(`step:${step.id}`);
+                        const fromLabel = step.inputs.map((input) => input.label).join(' + ');
+                        return (
+                          <button
+                            type="button"
+                            key={step.id}
+                            className={`craft-plan-queue-item${checked ? ' is-checked' : ''}`}
+                            onClick={() => setCheckedPlanSteps((current) => {
+                              const next = new Set(current);
+                              const k = `step:${step.id}`;
+                              if (next.has(k)) next.delete(k); else next.add(k);
+                              return next;
+                            })}
+                            aria-pressed={checked}
+                          >
+                            <span className="queue-index">{index + 1}</span>
+                            <BlockPreview stateKey={step.stateKey} color={step.color} layers={step.thumbnailLayers} />
+                            <span className="queue-meta">
+                              <strong>{recipeTypeLabel(step.method)} {step.label}</strong>
+                              <span className="queue-count">{step.count.toLocaleString()} ({step.crafts.toLocaleString()} {step.crafts === 1 ? 'craft' : 'crafts'})</span>
+                              <span className="queue-from">From {fromLabel}</span>
+                            </span>
+                            <span className={`plan-check${checked ? ' is-on' : ''}`}>{checked && <Check size={12} strokeWidth={3} />}</span>
+                          </button>
+                        );
+                      })}
+                      {craftPlan.steps.length === 0 && <p className="material-empty">Nothing to craft.</p>}
+                    </div>
+                  </aside>
+                </div>
+              ) : (
+              <>
+              <div className="shopping-toolbar">
+
+                <div className="segmented-control shopping-scope" role="group" aria-label="Resource Calculator scope">
+                  <button
+                    type="button"
+                    className={materialsScope === 'build' ? 'is-active' : ''}
+                    onClick={() => setMaterialsScope('build')}
+                  >
+                    Entire Build
+                  </button>
+                  <button
+                    type="button"
+                    className={materialsScope === 'cuboid' ? 'is-active' : ''}
+                    onClick={() => {
+                      if (cuboidBounds) {
+                        setMaterialsScope('cuboid');
+                      } else {
+                        beginCuboidSelection();
+                        setAppView('inspect');
+                        setInspectorTab('selection');
+                      }
+                    }}
+                  >
+                    Selected Area
+                  </button>
+                </div>
+                <div className="segmented-control shopping-mode" role="group" aria-label="Resource material mode">
+                  <button
+                    type="button"
+                    className={materialsMode === 'placed' ? 'is-active' : ''}
+                    onClick={() => setMaterialsMode('placed')}
+                  >
+                    Placed
+                  </button>
+                  <button
+                    type="button"
+                    className={materialsMode === 'raw' ? 'is-active' : ''}
+                    onClick={() => setMaterialsMode('raw')}
+                  >
+                    Raw
+                  </button>
+                </div>
+                <label className="toggle-row compact-toggle">
+                  <input
+                    type="checkbox"
+                    checked={integerCrafting}
+                    onChange={(event) => setIntegerCrafting(event.target.checked)}
+                  />
+                  <span>Whole crafts</span>
+                </label>
+                <label className="material-search shopping-search">
+                  <Search size={16} aria-hidden="true" />
+                  <input
+                    type="search"
+                    value={shoppingSearch}
+                    onChange={(event) => setShoppingSearch(event.target.value)}
+                    placeholder="Search resources"
+                    aria-label="Search resources"
+                  />
+                </label>
+                <div className="segmented-control shopping-layout-toggle" role="group" aria-label="Resource layout">
+                  <button
+                    type="button"
+                    className={shoppingLayout === 'grid' ? 'is-active' : ''}
+                    onClick={() => setShoppingLayout('grid')}
+                    aria-pressed={shoppingLayout === 'grid'}
+                    title="Grid view"
+                  >
+                    <Grid2X2 size={16} aria-hidden="true" />
+                    <span>Grid</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={shoppingLayout === 'list' ? 'is-active' : ''}
+                    onClick={() => setShoppingLayout('list')}
+                    aria-pressed={shoppingLayout === 'list'}
+                    title="List view"
+                  >
+                    <List size={16} aria-hidden="true" />
+                    <span>List</span>
+                  </button>
+                </div>
+              </div>
+
+              <div
+                className="shopping-progress resource-progress"
+                style={{ '--shopping-progress': '100%' } as CSSProperties}
+                aria-label="Resource totals"
+              >
+                <div>
+                  <span>Output</span>
+                  <strong>{resourceStats.totalOutputItems.toLocaleString()}</strong>
+                </div>
+                <div>
+                  <span>Raw Items</span>
+                  <strong>{resourceStats.rawMaterialItems.toLocaleString()}</strong>
+                </div>
+                <div>
+                  <span>Craft Steps</span>
+                  <strong>{resourceStats.craftingSteps.toLocaleString()}</strong>
+                </div>
+                <div>
+                  <span>Missing Recipes</span>
+                  <strong>{resourceStats.unresolvedItems.toLocaleString()}</strong>
+                </div>
+              </div>
+
+              <div className={`shopping-list is-${shoppingLayout}`} aria-live="polite">
+                {resourceGroups.map((group) => (
+                    <section className="shopping-group" key={group.id} aria-label={group.label}>
+                      <div className="shopping-group-heading">
+                        <span>{group.label}</span>
+                        <div className="shopping-group-summary">
+                          <strong>{group.materials.length.toLocaleString()} types</strong>
+                        </div>
+                      </div>
+                      <div className="shopping-group-items">
+                        {group.materials.map((material) => {
+                          const itemKey = shoppingItemKey(shoppingModeScope, material);
+
+                          return (
+                            <div
+                              key={itemKey}
+                              className="shopping-row resource-row"
+                            >
+                              <BlockPreview
+                                stateKey={material.stateKey}
+                                color={material.color}
+                                layers={material.thumbnailLayers}
+                              />
+                              <span className="shopping-row-label">
+                                <strong>{material.label}</strong>
+                              </span>
+                              <span className="shopping-row-count">{material.count.toLocaleString()}</span>
+                              <MaterialBreakdown materialId={material.id} count={material.count} />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+                ))}
+                {resourceGroups.length === 0 && (
+                  <p className="material-empty">
+                    {materialsScope === 'cuboid' && !cuboidBounds
+                      ? 'Select an area to calculate resources for that region.'
+                      : shoppingSearch.trim()
+                        ? `No resources match "${shoppingSearch.trim()}".`
+                        : 'No non-air blocks to calculate.'}
+                  </p>
+                )}
+                {materialsMode === 'raw' && recipeBreakdown.unresolved.length > 0 && (
+                  <p className="raw-material-notice">
+                    {recipeBreakdown.unresolved.length.toLocaleString()} item types had no recipe and were counted as raw.
+                  </p>
+                )}
+              </div>
+              </>
+              )}
+            </section>
           ) : appView === 'shopping' && model ? (
             <section className="shopping-board" aria-label="Required resources shopping list">
               <div className="shopping-header">
@@ -1888,30 +2211,6 @@ function App() {
                     Selected Area
                   </button>
                 </div>
-                <div className="segmented-control shopping-mode" role="group" aria-label="Shopping material mode">
-                  <button
-                    type="button"
-                    className={materialsMode === 'placed' ? 'is-active' : ''}
-                    onClick={() => setMaterialsMode('placed')}
-                  >
-                    Placed
-                  </button>
-                  <button
-                    type="button"
-                    className={materialsMode === 'raw' ? 'is-active' : ''}
-                    onClick={() => setMaterialsMode('raw')}
-                  >
-                    Raw
-                  </button>
-                </div>
-                <label className="toggle-row compact-toggle">
-                  <input
-                    type="checkbox"
-                    checked={integerCrafting}
-                    onChange={(event) => setIntegerCrafting(event.target.checked)}
-                  />
-                  <span>Whole crafts</span>
-                </label>
                 <label className="material-search shopping-search">
                   <Search size={16} aria-hidden="true" />
                   <input
@@ -1965,14 +2264,14 @@ function App() {
                 </div>
                 <div>
                   <span>Rows</span>
-                  <strong>{checkedShoppingMaterialCount.toLocaleString()} / {visibleMaterials.length.toLocaleString()}</strong>
+                  <strong>{checkedShoppingMaterialCount.toLocaleString()} / {activeMaterials.length.toLocaleString()}</strong>
                 </div>
               </div>
 
               <div className={`shopping-list is-${shoppingLayout}`} aria-live="polite">
                 {shoppingGroups.map((group) => {
                   const checkedGroupItems = group.materials.filter((material) => (
-                    checkedShoppingItems.has(shoppingItemKey(shoppingModeScope, material))
+                    checkedShoppingItems.has(shoppingItemKey(shoppingScope, material))
                   )).length;
                   const isGroupChecked = checkedGroupItems === group.materials.length;
 
@@ -1994,7 +2293,7 @@ function App() {
                       </div>
                       <div className="shopping-group-items">
                         {group.materials.map((material) => {
-                          const itemKey = shoppingItemKey(shoppingModeScope, material);
+                          const itemKey = shoppingItemKey(shoppingScope, material);
                           const isChecked = checkedShoppingItems.has(itemKey);
 
                           return (
@@ -2029,11 +2328,6 @@ function App() {
                       : shoppingSearch.trim()
                         ? `No shopping list items match "${shoppingSearch.trim()}".`
                         : 'No non-air blocks in this shopping list.'}
-                  </p>
-                )}
-                {materialsMode === 'raw' && recipeBreakdown.unresolved.length > 0 && (
-                  <p className="raw-material-notice">
-                    {recipeBreakdown.unresolved.length.toLocaleString()} item types had no recipe and were counted as raw.
                   </p>
                 )}
               </div>
@@ -2173,16 +2467,20 @@ function App() {
                 className={cameraMode === 'orbit' ? 'is-active' : ''}
                 onClick={() => setCameraMode('orbit')}
                 aria-pressed={cameraMode === 'orbit'}
+                title="Orbit camera"
+                aria-label="Orbit camera"
               >
-                Orbit
+                <Orbit size={19} />
               </button>
               <button
                 type="button"
                 className={cameraMode === 'spectator' ? 'is-active' : ''}
                 onClick={() => setCameraMode('spectator')}
                 aria-pressed={cameraMode === 'spectator'}
+                title="Fly camera"
+                aria-label="Fly camera"
               >
-                Fly
+                <Move3d size={19} />
               </button>
             </div>
             <div className="viewport-action-row">
@@ -2239,6 +2537,72 @@ function App() {
             <span className="axis-label axis-z">Z</span>
             <span className="axis-label axis-x">X</span>
           </div>
+
+          {appView !== 'texture' && model && (
+            <div className="viewport-statusbar" aria-label="Viewport display controls">
+              <label className="sb-chip" title="Toggle build grid">
+                <Grid2X2 size={16} aria-hidden="true" />
+                <span>Grid</span>
+                <span className="switch">
+                  <input
+                    type="checkbox"
+                    checked={showGrid}
+                    onChange={(event) => setShowGrid(event.target.checked)}
+                    aria-label="Toggle grid"
+                  />
+                  <span className="track" />
+                  <span className="thumb" />
+                </span>
+              </label>
+
+              <span className="sb-divider" aria-hidden="true" />
+
+              <div className="stepper" aria-label="Visible layer">
+                <button
+                  type="button"
+                  onClick={() => setVisibleLayer((current) => Math.max(0, current - 1))}
+                  disabled={visibleLayer <= 0}
+                  title="Lower layer"
+                  aria-label="Lower layer"
+                >
+                  <ChevronDown size={15} />
+                </button>
+                <button
+                  type="button"
+                  className={singleLayer ? 'is-active' : ''}
+                  onClick={() => setSingleLayer((current) => !current)}
+                  title={singleLayer ? 'Showing single layer' : 'Showing all layers up to current'}
+                  style={{ width: 'auto', padding: '0 12px', gap: 6, display: 'inline-flex', alignItems: 'center' }}
+                >
+                  <Layers size={15} />
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5, fontWeight: 600 }}>
+                    {visibleWorldY}{model.dimensions.height > 1 ? ` / ${model.origin.y + model.dimensions.height - 1}` : ''}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVisibleLayer((current) => Math.min(model.dimensions.height - 1, current + 1))}
+                  disabled={visibleLayer >= model.dimensions.height - 1}
+                  title="Raise layer"
+                  aria-label="Raise layer"
+                >
+                  <ChevronUp size={15} />
+                </button>
+              </div>
+
+              <span className="sb-divider" aria-hidden="true" />
+
+              <button
+                type="button"
+                className="sb-chip"
+                onClick={() => viewerRef.current?.resetCamera()}
+                title="Fit schematic to view"
+              >
+                <Maximize2 size={16} aria-hidden="true" />
+                <span>Fit</span>
+              </button>
+            </div>
+          )}
 
           {appView === 'texture' ? (
             <div className="texture-compare-canvases" aria-label="Texture comparison previews">
@@ -2299,7 +2663,7 @@ function App() {
               visibleLayer={visibleLayer}
               singleLayer={singleLayer}
               autoRotate={false}
-              showGrid
+              showGrid={showGrid}
               theme={theme}
               hiddenMaterialIds={hiddenMaterialIds}
               playerHeadSelections={playerHeadSelections}
@@ -2328,7 +2692,102 @@ function App() {
           </section>
         )}
 
-        {appView === 'texture' ? (
+        {appView === 'viewer' ? (
+          model ? (
+            <>
+              <section className="panel-card" aria-label="Schematic info">
+                <div className="section-heading">
+                  <h2>Schematic Info</h2>
+                </div>
+                <div className="info-list">
+                  <div className="info-row">
+                    <span className="k">Name</span>
+                    <span className="v">{schematicName || model.name}</span>
+                  </div>
+                  <div className="info-row">
+                    <span className="k">Dimensions</span>
+                    <span className="v mono">{model.dimensions.width} × {model.dimensions.height} × {model.dimensions.length}</span>
+                  </div>
+                  <div className="info-row">
+                    <span className="k">Volume</span>
+                    <span className="v mono">{(model.dimensions.width * model.dimensions.height * model.dimensions.length).toLocaleString()} blocks</span>
+                  </div>
+                  <div className="info-row">
+                    <span className="k">Placed Blocks</span>
+                    <span className="v mono">{model.blocks.length.toLocaleString()}</span>
+                  </div>
+                  <div className="info-row">
+                    <span className="k">Unique Types</span>
+                    <span className="v mono">{materials.length.toLocaleString()}</span>
+                  </div>
+                  <div className="info-row">
+                    <span className="k">Source</span>
+                    <span className="info-badge">{model.source}</span>
+                  </div>
+                </div>
+              </section>
+
+              <section className="panel-card" aria-label="Supported formats">
+                <div className="section-heading">
+                  <h2>Supported Formats</h2>
+                </div>
+                <div className="format-list">
+                  {([
+                    ['.schem', 'Schematic (Sponge)'],
+                    ['.schematic', 'Legacy (MCEdit)'],
+                    ['.litematic', 'Litematica'],
+                    ['.nbt', 'Structure Block'],
+                  ] as const).map(([fmt, desc]) => (
+                    <div className="format-row" key={fmt}>
+                      <span className="dot" aria-hidden="true" />
+                      <span><span className="fmt">{fmt}</span> <span className="fmt-desc">{desc}</span></span>
+                      <Check size={16} className="check" strokeWidth={2.6} />
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="panel-card" aria-label="Camera controls">
+                <div className="section-heading">
+                  <h2>Camera Controls</h2>
+                </div>
+                <div className="camera-ref">
+                  <div className="camera-ref-row">
+                    <Orbit size={17} />
+                    <span className="label">Orbit</span>
+                    <span className="hint">Drag to rotate</span>
+                  </div>
+                  <div className="camera-ref-row">
+                    <Hand size={17} />
+                    <span className="label">Pan</span>
+                    <span className="hint">Shift + drag</span>
+                  </div>
+                  <div className="camera-ref-row">
+                    <ZoomIn size={17} />
+                    <span className="label">Zoom</span>
+                    <span className="hint">Scroll</span>
+                  </div>
+                  <div className="camera-ref-row">
+                    <RotateCcw size={17} />
+                    <span className="label">Reset</span>
+                    <span className="key">R</span>
+                  </div>
+                </div>
+                <button type="button" className="fit-button" onClick={() => viewerRef.current?.resetCamera()}>
+                  Fit to Schematic
+                </button>
+              </section>
+            </>
+          ) : (
+            <section className="panel-card" aria-label="Get started">
+              <div className="section-heading"><h2>Get Started</h2></div>
+              <p className="panel-empty">Import a schematic file to inspect its blocks, materials, and layers in 3D.</p>
+              <button type="button" className="primary-button" style={{ width: '100%', marginTop: 8 }} onClick={() => inputRef.current?.click()}>
+                <Upload size={16} /> Import Schematic
+              </button>
+            </section>
+          )
+        ) : appView === 'texture' ? (
           <section className="texture-panel" aria-label="Texture adjustment editor">
             <div className="section-heading compact">
               <div>
@@ -2632,27 +3091,14 @@ function App() {
                   </h2>
                   <p className="eyebrow">{visibleMaterialsLabel}</p>
                 </div>
-                <div className="material-heading-actions">
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={toggleAllMaterialVisibility}
-                    disabled={hideableMaterialIds.length === 0}
-                    aria-label={`${bulkMaterialVisibilityLabel} placed materials`}
-                    title={bulkMaterialVisibilityLabel}
-                  >
-                    {allVisibleMaterialsHidden ? <Eye size={16} /> : <EyeOff size={16} />}
-                    {bulkMaterialVisibilityLabel}
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary-button material-shopping-link"
-                    onClick={openShoppingList}
-                  >
-                    <ClipboardList size={16} />
-                    Shopping List
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  className="secondary-button material-shopping-link"
+                  onClick={openShoppingList}
+                >
+                  <ClipboardList size={16} />
+                  Shopping List
+                </button>
               </div>
               <div className="segmented-control" role="group" aria-label="Materials scope">
                 <button
@@ -3105,8 +3551,6 @@ function BlockPreview({ stateKey, color, layers }: { stateKey: string; color: nu
     };
   }, [color, isVisible, layers, stateKey]);
 
-  const fallbackColor = `#${color.toString(16).padStart(6, '0')}`;
-
   return (
     <span
       ref={previewRef}
@@ -3115,7 +3559,6 @@ function BlockPreview({ stateKey, color, layers }: { stateKey: string; color: nu
       data-state={thumbnailState}
       aria-hidden="true"
       style={{
-        '--block-fallback': fallbackColor,
         '--block-thumbnail': thumbnailUrl ? `url("${thumbnailUrl}")` : 'none',
       } as CSSProperties}
     >
@@ -3718,7 +4161,6 @@ function materialSummaryForRecipeItem(material: { id: string; count: number }, p
     count: material.count,
     color: preview.color,
     stateKey,
-    thumbnailLayers: materialThumbnailLayers(stateKey),
   };
 }
 
@@ -3757,102 +4199,6 @@ function hashText(text: string): string {
     hash = ((hash << 5) + hash) ^ text.charCodeAt(index);
   }
   return (hash >>> 0).toString(36);
-}
-
-function countCraftingSteps(nodes: BreakdownNode[]): number {
-  return nodes.reduce((sum, node) => (
-    sum
-      + (node.isRaw ? 0 : 1)
-      + countCraftingSteps(node.children)
-  ), 0);
-}
-
-function estimateChestCount(materials: MaterialSummary[]): number {
-  const slots = materials.reduce((sum, material) => (
-    sum + Math.ceil(material.count / itemStackSize(material.id))
-  ), 0);
-
-  return Math.ceil(slots / 27);
-}
-
-function resourceTreeMatchesSearch(node: BreakdownNode, query: string): boolean {
-  const id = node.id.toLocaleLowerCase();
-  const label = formatBlockName(node.id).toLocaleLowerCase();
-
-  return id.includes(query)
-    || label.includes(query)
-    || node.children.some((child) => resourceTreeMatchesSearch(child, query));
-}
-
-function groupResourceDependencyTrees(trees: BreakdownNode[]): ResourceGraphGroup[] {
-  const groups = new Map<string, ResourceGraphGroup>();
-
-  for (const tree of trees) {
-    const groupMeta = resourceGroupForTree(tree);
-    const paths = collectResourceFlowPaths(tree);
-    const existing = groups.get(groupMeta.id) ?? {
-      ...groupMeta,
-      paths: [],
-      maxColumns: 1,
-    };
-
-    existing.paths.push(...paths);
-    existing.maxColumns = Math.max(existing.maxColumns, ...paths.map((path) => path.length));
-    groups.set(groupMeta.id, existing);
-  }
-
-  return Array.from(groups.values()).sort((a, b) => (
-    resourceGroupRank(a.id) - resourceGroupRank(b.id)
-      || a.label.localeCompare(b.label)
-  ));
-}
-
-function collectResourceFlowPaths(node: BreakdownNode): BreakdownNode[][] {
-  const children = node.children.filter((child) => child.count > 0);
-
-  if (children.length === 0) return [[node]];
-
-  return children.flatMap((child) => (
-    collectResourceFlowPaths(child).map((path) => [...path, node])
-  ));
-}
-
-function resourceGroupForTree(node: BreakdownNode): { id: string; label: string; tone: string } {
-  const ids = flattenResourceTreeIds(node);
-  const wood = woodTypeOrder.find((candidate) => (
-    ids.some((id) => {
-      const normalized = id.replace(/^minecraft:/, '');
-      return normalized === candidate
-        || normalized.startsWith(`${candidate}_`)
-        || normalized.includes(`_${candidate}_`);
-    })
-  ));
-
-  if (wood) {
-    return {
-      id: wood,
-      label: formatBlockName(wood).toLocaleUpperCase(),
-      tone: 'wood',
-    };
-  }
-
-  const category = shoppingCategoryForMaterial(node.id);
-  return {
-    id: category.id,
-    label: category.label.toLocaleUpperCase(),
-    tone: category.id,
-  };
-}
-
-function flattenResourceTreeIds(node: BreakdownNode): string[] {
-  return [node.id, ...node.children.flatMap(flattenResourceTreeIds)];
-}
-
-function resourceGroupRank(id: string): number {
-  const woodRank = woodTypeOrder.indexOf(id);
-  if (woodRank >= 0) return woodRank;
-
-  return woodTypeOrder.length + shoppingCategoryRank(id);
 }
 
 function groupShoppingMaterials(materials: MaterialSummary[]): ShoppingMaterialGroup[] {
@@ -3909,14 +4255,12 @@ function shoppingCategoryRank(id: string): number {
 function materialQuantityForBlock(block: VoxelBlock): number {
   if (isDoorStateKey(block.stateKey) && parseStateKey(block.stateKey)?.properties.half === 'upper') return 0;
   if (isBedStateKey(block.stateKey) && parseStateKey(block.stateKey)?.properties.part === 'head') return 0;
-  if (isPistonHeadStateKey(block.stateKey)) return 0;
   return isDoubleSlabStateKey(block.stateKey) ? 2 : 1;
 }
 
 function materialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] | undefined {
   if (isBedStateKey(stateKey)) return bedMaterialThumbnailLayers(stateKey);
   if (isDoorStateKey(stateKey)) return doorMaterialThumbnailLayers(stateKey);
-  if (isTallGrassStateKey(stateKey)) return tallGrassMaterialThumbnailLayers(stateKey);
   if (isPitcherCropStateKey(stateKey)) return pitcherCropMaterialThumbnailLayers(stateKey);
   return undefined;
 }
@@ -3965,25 +4309,8 @@ function pitcherCropMaterialThumbnailLayers(stateKey: string): BlockThumbnailLay
   ];
 }
 
-function tallGrassMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {
-  const baseState = stripBlockStateProperties(stateKey);
-
-  return [
-    { stateKey: withBlockStateProperties(baseState, { half: 'lower' }) },
-    { stateKey: withBlockStateProperties(baseState, { half: 'upper' }), offset: [0, 1, 0] },
-  ];
-}
-
 function isPitcherCropStateKey(stateKey: string): boolean {
   return stripBlockStateProperties(stateKey) === 'minecraft:pitcher_crop';
-}
-
-function isPistonHeadStateKey(stateKey: string): boolean {
-  return stripBlockStateProperties(stateKey) === 'minecraft:piston_head';
-}
-
-function isTallGrassStateKey(stateKey: string): boolean {
-  return stripBlockStateProperties(stateKey) === 'minecraft:tall_grass';
 }
 
 function bedHeadOffset(facing: string): [number, number, number] {
@@ -4453,347 +4780,6 @@ function RecipeTreeRow({ node, depth }: { node: BreakdownNode; depth: number }) 
         </div>
       )}
     </div>
-  );
-}
-
-function ResourceCalculatorBoard({
-  schematicName,
-  activeMaterialsLabel,
-  activeMaterials,
-  rawMaterials,
-  resourceStats,
-  filteredRecipeTrees,
-  shoppingSearch,
-  setShoppingSearch,
-  materialsScope,
-  setMaterialsScope,
-  cuboidBounds,
-  beginCuboidSelection,
-  setAppView,
-  setInspectorTab,
-  integerCrafting,
-  setIntegerCrafting,
-  openInspectorPanel,
-}: {
-  schematicName: string;
-  activeMaterialsLabel: string;
-  activeMaterials: MaterialSummary[];
-  rawMaterials: MaterialSummary[];
-  resourceStats: ResourceCalculatorStats;
-  filteredRecipeTrees: BreakdownNode[];
-  shoppingSearch: string;
-  setShoppingSearch: (value: string) => void;
-  materialsScope: MaterialsScope;
-  setMaterialsScope: (scope: MaterialsScope) => void;
-  cuboidBounds: CuboidBounds | null;
-  beginCuboidSelection: () => void;
-  setAppView: (view: AppView) => void;
-  setInspectorTab: (tab: InspectorTab) => void;
-  integerCrafting: boolean;
-  setIntegerCrafting: (value: boolean) => void;
-  openInspectorPanel: (tab: InspectorTab) => void;
-}) {
-  return (
-    <section className="resource-board" aria-label="Resource Calculator">
-      <aside className="resource-sidebar" aria-label="Resource summary">
-        <div className="resource-file-card">
-          <p className="eyebrow">Schematic</p>
-          <strong>{schematicName}</strong>
-          <span>{activeMaterialsLabel}</span>
-        </div>
-
-        <div className="resource-output-card">
-          <p className="eyebrow">Total Output</p>
-          <strong>{resourceStats.totalOutputItems.toLocaleString()}</strong>
-          <span>Total crafted items</span>
-        </div>
-
-        <dl className="resource-stat-list">
-          <div>
-            <dt>Total Items</dt>
-            <dd>{resourceStats.totalOutputItems.toLocaleString()}</dd>
-          </div>
-          <div>
-            <dt>Unique Items</dt>
-            <dd>{resourceStats.uniqueOutputItems.toLocaleString()}</dd>
-          </div>
-          <div>
-            <dt>Crafting Steps</dt>
-            <dd>{resourceStats.craftingSteps.toLocaleString()}</dd>
-          </div>
-          <div>
-            <dt>Chests Needed</dt>
-            <dd>{resourceStats.chestsNeeded.toLocaleString()}</dd>
-          </div>
-        </dl>
-
-        <ResourceMaterialSummary
-          title="Final Materials"
-          materials={activeMaterials}
-          emptyLabel="No final materials."
-        />
-
-        <ResourceMaterialSummary
-          title="Base Ingredients"
-          materials={rawMaterials}
-          emptyLabel="No base ingredients."
-        />
-      </aside>
-
-      <section className="resource-tree-panel" aria-label="Dependency tree">
-        <div className="resource-tree-header">
-          <div>
-            <p className="eyebrow">Dependency Tree</p>
-            <h2>Resource Calculator</h2>
-          </div>
-          <div className="resource-tree-actions">
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => openInspectorPanel('materials')}
-            >
-              <Cuboid size={16} />
-              Materials
-            </button>
-          </div>
-        </div>
-
-        <div className="resource-toolbar">
-          <div className="segmented-control shopping-scope" role="group" aria-label="Resource Calculator scope">
-            <button
-              type="button"
-              className={materialsScope === 'build' ? 'is-active' : ''}
-              onClick={() => setMaterialsScope('build')}
-            >
-              Entire Build
-            </button>
-            <button
-              type="button"
-              className={materialsScope === 'cuboid' ? 'is-active' : ''}
-              onClick={() => {
-                if (cuboidBounds) {
-                  setMaterialsScope('cuboid');
-                } else {
-                  beginCuboidSelection();
-                  setAppView('inspect');
-                  setInspectorTab('selection');
-                }
-              }}
-            >
-              Selected Area
-            </button>
-          </div>
-
-          <label className="toggle-row compact-toggle">
-            <input
-              type="checkbox"
-              checked={integerCrafting}
-              onChange={(event) => setIntegerCrafting(event.target.checked)}
-            />
-            <span>Whole crafts</span>
-          </label>
-
-          <label className="material-search shopping-search">
-            <Search size={16} aria-hidden="true" />
-            <input
-              type="search"
-              value={shoppingSearch}
-              onChange={(event) => setShoppingSearch(event.target.value)}
-              placeholder="Search dependencies"
-              aria-label="Search dependencies"
-            />
-          </label>
-        </div>
-
-        <div className="resource-metrics">
-          <div>
-            <span>Raw Items</span>
-            <strong>{resourceStats.rawMaterialItems.toLocaleString()}</strong>
-          </div>
-          <div>
-            <span>Base Ingredients</span>
-            <strong>{resourceStats.uniqueRawMaterials.toLocaleString()}</strong>
-          </div>
-          <div>
-            <span>Crafting Steps</span>
-            <strong>{resourceStats.craftingSteps.toLocaleString()}</strong>
-          </div>
-          <div>
-            <span>Missing Recipes</span>
-            <strong>{resourceStats.unresolvedItems.toLocaleString()}</strong>
-          </div>
-        </div>
-
-        <div className="resource-tree-scroll">
-          <ResourceDependencyGraph
-            trees={filteredRecipeTrees}
-            placedMaterials={activeMaterials}
-          />
-
-          {filteredRecipeTrees.length === 0 && (
-            <p className="material-empty">
-              {shoppingSearch.trim()
-                ? `No dependencies match "${shoppingSearch.trim()}".`
-                : 'No dependencies to show.'}
-            </p>
-          )}
-        </div>
-      </section>
-    </section>
-  );
-}
-
-function ResourceMaterialSummary({
-  title,
-  materials,
-  emptyLabel,
-}: {
-  title: string;
-  materials: MaterialSummary[];
-  emptyLabel: string;
-}) {
-  return (
-    <section className="resource-list-card" aria-label={title}>
-      <div className="resource-list-heading">
-        <span>{title}</span>
-        <strong>{materials.length.toLocaleString()}</strong>
-      </div>
-
-      <div className="resource-mini-list">
-        {materials.slice(0, 16).map((material) => (
-          <div className="resource-mini-row" key={`${title}:${material.id}`}>
-            <BlockPreview
-              stateKey={material.stateKey}
-              color={material.color}
-              layers={material.thumbnailLayers}
-            />
-            <span>{material.label}</span>
-            <strong>{formatQuantity(material.count)}</strong>
-          </div>
-        ))}
-
-        {materials.length === 0 && <p>{emptyLabel}</p>}
-        {materials.length > 16 && (
-          <p className="resource-mini-more">+{(materials.length - 16).toLocaleString()} more</p>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function ResourceDependencyGraph({
-  trees,
-  placedMaterials,
-}: {
-  trees: BreakdownNode[];
-  placedMaterials: MaterialSummary[];
-}) {
-  const groups = useMemo(() => groupResourceDependencyTrees(trees), [trees]);
-
-  return (
-    <div className="resource-graph" aria-label="Material dependency graph">
-      {groups.map((group) => (
-        <section
-          className={`resource-graph-group is-${group.tone}`}
-          key={group.id}
-          aria-label={`${group.label} dependencies`}
-          style={{ '--resource-flow-columns': group.maxColumns } as CSSProperties}
-        >
-          <div className="resource-group-label">{group.label}</div>
-
-          <div className="resource-flow-stack">
-            {group.paths.map((path, index) => (
-              <ResourceFlowRow
-                key={`${group.id}:${index}:${path.map((node) => `${node.id}-${node.count}`).join('>')}`}
-                path={path}
-                maxColumns={group.maxColumns}
-                placedMaterials={placedMaterials}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
-    </div>
-  );
-}
-
-function ResourceFlowRow({
-  path,
-  maxColumns,
-  placedMaterials,
-}: {
-  path: BreakdownNode[];
-  maxColumns: number;
-  placedMaterials: MaterialSummary[];
-}) {
-  return (
-    <div
-      className="resource-flow-row"
-      style={{ '--resource-flow-columns': maxColumns } as CSSProperties}
-    >
-      {path.map((node, index) => {
-        const column = index + 1;
-        const isTerminal = index === path.length - 1;
-
-        return (
-          <div
-            className={`resource-flow-node${isTerminal ? ' is-terminal' : ''}`}
-            key={`${node.id}:${node.count}:${index}`}
-            style={{ gridColumn: column } as CSSProperties}
-          >
-            <ResourceFlowCard
-              node={node}
-              placedMaterials={placedMaterials}
-              isTerminal={isTerminal}
-            />
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function ResourceFlowCard({
-  node,
-  placedMaterials,
-  isTerminal,
-}: {
-  node: BreakdownNode;
-  placedMaterials: MaterialSummary[];
-  isTerminal: boolean;
-}) {
-  const material = materialSummaryForRecipeItem({ id: node.id, count: node.count }, placedMaterials);
-  const crafts = node.recipeUsed
-    ? (node.count + (node.surplus ?? 0)) / node.recipeUsed.output
-    : 0;
-
-  return (
-    <article className={`resource-flow-card${node.isRaw ? ' is-raw' : ''}${isTerminal ? ' is-output' : ''}`}>
-      <BlockPreview
-        stateKey={material.stateKey}
-        color={material.color}
-        layers={material.thumbnailLayers}
-      />
-
-      <div className="resource-flow-copy">
-        <strong>{material.label}</strong>
-        <span>{formatQuantity(node.count)}</span>
-        {node.recipeUsed ? (
-          <small>
-            {recipeTypeLabel(node.recipeUsed.type)} {formatQuantity(crafts)}x
-            {node.surplus ? ` - +${formatQuantity(node.surplus)} surplus` : ''}
-          </small>
-        ) : (
-          <small>Base ingredient</small>
-        )}
-      </div>
-
-      {!node.isRaw && node.recipeUsed && (
-        <span className="resource-recipe-pill">
-          {node.recipeUsed.output}x
-        </span>
-      )}
-    </article>
   );
 }
 

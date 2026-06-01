@@ -456,7 +456,7 @@ function parseLegacySchematic(schematic: NbtCompound, fileName = 'Uploaded schem
     const x = index % dimensions.width;
     const z = Math.floor(index / dimensions.width) % dimensions.length;
     const y = Math.floor(index / (dimensions.width * dimensions.length));
-    const name = legacyBlockStateName(id, metadata, index, blocksArray, addBlocksArray, dataArray, dimensions);
+    const name = legacyBlockStateName(id, metadata);
     const appearance = name.startsWith('minecraft:legacy_block_') ? legacyBlockAppearance(id) : blockAppearance(name);
 
     blocks.push({
@@ -1088,15 +1088,7 @@ function decodePackedLongArray(longs: BigInt64Array, expectedLength: number, bit
   return values;
 }
 
-function legacyBlockStateName(
-  id: number,
-  metadata = 0,
-  index = -1,
-  blocksArray?: Uint8Array,
-  addBlocksArray?: Uint8Array | null,
-  dataArray?: Uint8Array | null,
-  dimensions?: SchematicDimensions,
-): string {
+function legacyBlockStateName(id: number, metadata = 0): string {
   const legacyStairs = legacyStairsName(id);
   if (legacyStairs) {
     return `minecraft:${legacyStairs}[facing=${legacyStairsFacing(metadata)},half=${legacyStairsHalf(metadata)},shape=straight]`;
@@ -1113,14 +1105,6 @@ function legacyBlockStateName(
     const facing = legacyPistonFacing(metadata);
     const type = (metadata & 0x8) !== 0 ? 'sticky' : 'normal';
     return `minecraft:piston_head[facing=${facing},short=false,type=${type}]`;
-  }
-
-  if (id === 31) {
-    return legacyTallGrassName(metadata);
-  }
-
-  if (id === 175) {
-    return legacyDoublePlantName(metadata, index, blocksArray, addBlocksArray, dataArray, dimensions);
   }
 
   const names = new Map<number, string>([
@@ -1158,66 +1142,6 @@ function legacyBlockStateName(
   ]);
 
   return names.get(id) ?? `minecraft:legacy_block_${id}`;
-}
-
-function legacyTallGrassName(metadata: number): string {
-  const variant = metadata & 0x7;
-  if (variant === 1) return 'minecraft:short_grass';
-  if (variant === 2) return 'minecraft:fern';
-  return 'minecraft:dead_bush';
-}
-
-function legacyDoublePlantName(
-  metadata: number,
-  index: number,
-  blocksArray?: Uint8Array,
-  addBlocksArray?: Uint8Array | null,
-  dataArray?: Uint8Array | null,
-  dimensions?: SchematicDimensions,
-): string {
-  const upper = (metadata & 0x8) !== 0;
-  const variant = upper
-    ? legacyDoublePlantLowerMetadata(index, blocksArray, addBlocksArray, dataArray, dimensions) & 0x7
-    : metadata & 0x7;
-  const plant = legacyDoublePlantVariantName(variant);
-  return `minecraft:${plant}[half=${upper ? 'upper' : 'lower'}]`;
-}
-
-function legacyDoublePlantLowerMetadata(
-  index: number,
-  blocksArray?: Uint8Array,
-  addBlocksArray?: Uint8Array | null,
-  dataArray?: Uint8Array | null,
-  dimensions?: SchematicDimensions,
-): number {
-  if (!blocksArray || !dimensions || index < dimensions.width * dimensions.length) return 2;
-
-  const lowerIndex = index - dimensions.width * dimensions.length;
-  const low = blocksArray[lowerIndex];
-  const high = addBlocksArray ? readLegacyHighBits(addBlocksArray, lowerIndex) : 0;
-  const id = ((high << 8) | low) >>> 0;
-  if (id !== 175) return 2;
-
-  return dataArray?.[lowerIndex] ?? 2;
-}
-
-function legacyDoublePlantVariantName(variant: number): string {
-  switch (variant) {
-    case 0:
-      return 'sunflower';
-    case 1:
-      return 'lilac';
-    case 2:
-      return 'tall_grass';
-    case 3:
-      return 'large_fern';
-    case 4:
-      return 'rose_bush';
-    case 5:
-      return 'peony';
-    default:
-      return 'tall_grass';
-  }
 }
 
 function legacyStairsName(id: number): string | null {
