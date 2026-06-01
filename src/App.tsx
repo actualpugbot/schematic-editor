@@ -78,7 +78,7 @@ type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 type DraggedFileKind = 'none' | 'unsupported-file' | 'unknown-file' | 'schematic-file';
 type InspectorTab = 'selection' | 'materials' | 'layers';
 type EditPanelTab = 'tools' | 'rotate' | 'replace';
-type AppView = 'inspect' | 'edit' | 'texture' | 'shopping';
+type AppView = 'inspect' | 'edit' | 'texture' | 'shopping' | 'resource';
 type EditTool = 'select' | 'build';
 type Theme = 'light' | 'dark';
 type MaterialsScope = 'build' | 'cuboid';
@@ -135,6 +135,24 @@ interface ShoppingMaterialGroup {
   id: string;
   label: string;
   materials: MaterialSummary[];
+}
+
+interface ResourceCalculatorStats {
+  totalOutputItems: number;
+  uniqueOutputItems: number;
+  rawMaterialItems: number;
+  uniqueRawMaterials: number;
+  craftingSteps: number;
+  chestsNeeded: number;
+  unresolvedItems: number;
+}
+
+interface ResourceGraphGroup {
+  id: string;
+  label: string;
+  tone: string;
+  paths: BreakdownNode[][];
+  maxColumns: number;
 }
 
 interface BlockLibraryItem {
@@ -566,6 +584,21 @@ function App() {
     });
   }, [shoppingSearch, visibleMaterials]);
   const shoppingGroups = useMemo(() => groupShoppingMaterials(shoppingMaterials), [shoppingMaterials]);
+  const filteredRecipeTrees = useMemo(() => {
+    const query = shoppingSearch.trim().toLocaleLowerCase();
+    if (!query) return recipeBreakdown.trees;
+
+    return recipeBreakdown.trees.filter((tree) => resourceTreeMatchesSearch(tree, query));
+  }, [recipeBreakdown.trees, shoppingSearch]);
+  const resourceStats = useMemo<ResourceCalculatorStats>(() => ({
+    totalOutputItems: activeMaterials.reduce((sum, material) => sum + material.count, 0),
+    uniqueOutputItems: activeMaterials.length,
+    rawMaterialItems: rawMaterials.reduce((sum, material) => sum + material.count, 0),
+    uniqueRawMaterials: rawMaterials.length,
+    craftingSteps: countCraftingSteps(recipeBreakdown.trees),
+    chestsNeeded: estimateChestCount(rawMaterials),
+    unresolvedItems: recipeBreakdown.unresolved.length,
+  }), [activeMaterials, rawMaterials, recipeBreakdown]);
   const checkedShoppingMaterialCount = useMemo(() => (
     visibleMaterials.filter((material) => checkedShoppingItems.has(shoppingItemKey(shoppingModeScope, material))).length
   ), [checkedShoppingItems, shoppingModeScope, visibleMaterials]);
@@ -1354,6 +1387,12 @@ function App() {
     void navigator.clipboard?.writeText(text).catch(() => undefined);
   };
 
+  const openResourceCalculator = () => {
+    if (!model) return;
+    setShoppingSearch('');
+    setAppView('resource');
+  };
+
   const openShoppingList = () => {
     if (!model) return;
     setShoppingSearch('');
@@ -1495,7 +1534,7 @@ function App() {
         </div>
       </header>
 
-      <div className={`workspace${appView === 'shopping' ? ' is-shopping' : ''}`}>
+      <div className={`workspace${appView === 'shopping' ? ' is-shopping' : ''}${appView === 'resource' ? ' is-resource' : ''}`}>
         <aside className="left-rail" aria-label="Primary controls">
           <div className="rail-cluster rail-mode-switch" role="tablist" aria-label="Schematic mode">
             <button
@@ -1531,11 +1570,36 @@ function App() {
               <ImageIcon size={19} />
               <span>UV</span>
             </button>
+            <button
+              type="button"
+              role="tab"
+              className={appView === 'resource' ? 'is-active' : ''}
+              onClick={openResourceCalculator}
+              aria-selected={appView === 'resource'}
+              disabled={!model}
+              title="Resource Calculator"
+            >
+              <ClipboardList size={19} />
+              <span>Calc</span>
+            </button>
           </div>
 
           <div className="rail-divider" />
 
-          <div className="rail-cluster" aria-label={appView === 'edit' ? 'Edit tools' : appView === 'texture' ? 'Texture tools' : appView === 'shopping' ? 'Shopping list tools' : 'Inspect panels'}>
+          <div
+            className="rail-cluster"
+            aria-label={
+              appView === 'edit'
+                ? 'Edit tools'
+                : appView === 'texture'
+                  ? 'Texture tools'
+                  : appView === 'resource'
+                    ? 'Resource Calculator tools'
+                    : appView === 'shopping'
+                      ? 'Shopping list tools'
+                      : 'Inspect panels'
+            }
+          >
             {appView === 'edit' ? (
               <>
                 <button
@@ -1584,6 +1648,29 @@ function App() {
                 >
                   <SlidersHorizontal size={19} />
                   <span>Adjust</span>
+                </button>
+              </>
+            ) : appView === 'resource' ? (
+              <>
+                <button
+                  type="button"
+                  className="is-active"
+                  onClick={openResourceCalculator}
+                  aria-pressed
+                  disabled={!model}
+                  title="Resource Calculator"
+                >
+                  <ClipboardList size={19} />
+                  <span>Calc</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openInspectorPanel('materials')}
+                  disabled={!model}
+                  title="Back to materials"
+                >
+                  <Cuboid size={19} />
+                  <span>Blocks</span>
                 </button>
               </>
             ) : appView === 'shopping' ? (
@@ -1695,10 +1782,30 @@ function App() {
         </aside>
 
         <section
-          className={`viewport-panel${appView === 'shopping' ? ' shopping-viewport' : ''}${selectedBlock && appView !== 'texture' && appView !== 'shopping' ? ' has-selection-modal' : ''}`}
-          aria-label={appView === 'shopping' ? 'Shopping list' : 'Schematic 3D viewport'}
+          className={`viewport-panel${appView === 'shopping' ? ' shopping-viewport' : ''}${appView === 'resource' ? ' resource-viewport' : ''}${selectedBlock && appView !== 'texture' && appView !== 'shopping' && appView !== 'resource' ? ' has-selection-modal' : ''}`}
+          aria-label={appView === 'resource' ? 'Resource Calculator' : appView === 'shopping' ? 'Shopping list' : 'Schematic 3D viewport'}
         >
-          {appView === 'shopping' && model ? (
+          {appView === 'resource' && model ? (
+            <ResourceCalculatorBoard
+              schematicName={schematicName}
+              activeMaterialsLabel={activeMaterialsLabel}
+              activeMaterials={activeMaterials}
+              rawMaterials={rawMaterials}
+              resourceStats={resourceStats}
+              filteredRecipeTrees={filteredRecipeTrees}
+              shoppingSearch={shoppingSearch}
+              setShoppingSearch={setShoppingSearch}
+              materialsScope={materialsScope}
+              setMaterialsScope={setMaterialsScope}
+              cuboidBounds={cuboidBounds}
+              beginCuboidSelection={beginCuboidSelection}
+              setAppView={setAppView}
+              setInspectorTab={setInspectorTab}
+              integerCrafting={integerCrafting}
+              setIntegerCrafting={setIntegerCrafting}
+              openInspectorPanel={openInspectorPanel}
+            />
+          ) : appView === 'shopping' && model ? (
             <section className="shopping-board" aria-label="Required resources shopping list">
               <div className="shopping-header">
                 <div className="shopping-title-block">
@@ -2182,7 +2289,7 @@ function App() {
           )}
         </section>
 
-      {appView !== 'shopping' && (
+      {appView !== 'shopping' && appView !== 'resource' && (
       <aside className="control-rail" aria-label="Schematic controls">
         {error && (
           <section className="notice error" role="alert">
@@ -3608,6 +3715,102 @@ function hashText(text: string): string {
   return (hash >>> 0).toString(36);
 }
 
+function countCraftingSteps(nodes: BreakdownNode[]): number {
+  return nodes.reduce((sum, node) => (
+    sum
+      + (node.isRaw ? 0 : 1)
+      + countCraftingSteps(node.children)
+  ), 0);
+}
+
+function estimateChestCount(materials: MaterialSummary[]): number {
+  const slots = materials.reduce((sum, material) => (
+    sum + Math.ceil(material.count / itemStackSize(material.id))
+  ), 0);
+
+  return Math.ceil(slots / 27);
+}
+
+function resourceTreeMatchesSearch(node: BreakdownNode, query: string): boolean {
+  const id = node.id.toLocaleLowerCase();
+  const label = formatBlockName(node.id).toLocaleLowerCase();
+
+  return id.includes(query)
+    || label.includes(query)
+    || node.children.some((child) => resourceTreeMatchesSearch(child, query));
+}
+
+function groupResourceDependencyTrees(trees: BreakdownNode[]): ResourceGraphGroup[] {
+  const groups = new Map<string, ResourceGraphGroup>();
+
+  for (const tree of trees) {
+    const groupMeta = resourceGroupForTree(tree);
+    const paths = collectResourceFlowPaths(tree);
+    const existing = groups.get(groupMeta.id) ?? {
+      ...groupMeta,
+      paths: [],
+      maxColumns: 1,
+    };
+
+    existing.paths.push(...paths);
+    existing.maxColumns = Math.max(existing.maxColumns, ...paths.map((path) => path.length));
+    groups.set(groupMeta.id, existing);
+  }
+
+  return Array.from(groups.values()).sort((a, b) => (
+    resourceGroupRank(a.id) - resourceGroupRank(b.id)
+      || a.label.localeCompare(b.label)
+  ));
+}
+
+function collectResourceFlowPaths(node: BreakdownNode): BreakdownNode[][] {
+  const children = node.children.filter((child) => child.count > 0);
+
+  if (children.length === 0) return [[node]];
+
+  return children.flatMap((child) => (
+    collectResourceFlowPaths(child).map((path) => [...path, node])
+  ));
+}
+
+function resourceGroupForTree(node: BreakdownNode): { id: string; label: string; tone: string } {
+  const ids = flattenResourceTreeIds(node);
+  const wood = woodTypeOrder.find((candidate) => (
+    ids.some((id) => {
+      const normalized = id.replace(/^minecraft:/, '');
+      return normalized === candidate
+        || normalized.startsWith(`${candidate}_`)
+        || normalized.includes(`_${candidate}_`);
+    })
+  ));
+
+  if (wood) {
+    return {
+      id: wood,
+      label: formatBlockName(wood).toLocaleUpperCase(),
+      tone: 'wood',
+    };
+  }
+
+  const category = shoppingCategoryForMaterial(node.id);
+  return {
+    id: category.id,
+    label: category.label.toLocaleUpperCase(),
+    tone: category.id,
+  };
+}
+
+function flattenResourceTreeIds(node: BreakdownNode): string[] {
+  return [node.id, ...node.children.flatMap(flattenResourceTreeIds)];
+}
+
+function resourceGroupRank(id: string): number {
+  const woodRank = woodTypeOrder.indexOf(id);
+  if (woodRank >= 0) return woodRank;
+
+  return woodTypeOrder.length + shoppingCategoryRank(id);
+}
+
 function groupShoppingMaterials(materials: MaterialSummary[]): ShoppingMaterialGroup[] {
   const groups = new Map<string, ShoppingMaterialGroup>();
   for (const material of materials) {
@@ -4187,6 +4390,347 @@ function RecipeTreeRow({ node, depth }: { node: BreakdownNode; depth: number }) 
         </div>
       )}
     </div>
+  );
+}
+
+function ResourceCalculatorBoard({
+  schematicName,
+  activeMaterialsLabel,
+  activeMaterials,
+  rawMaterials,
+  resourceStats,
+  filteredRecipeTrees,
+  shoppingSearch,
+  setShoppingSearch,
+  materialsScope,
+  setMaterialsScope,
+  cuboidBounds,
+  beginCuboidSelection,
+  setAppView,
+  setInspectorTab,
+  integerCrafting,
+  setIntegerCrafting,
+  openInspectorPanel,
+}: {
+  schematicName: string;
+  activeMaterialsLabel: string;
+  activeMaterials: MaterialSummary[];
+  rawMaterials: MaterialSummary[];
+  resourceStats: ResourceCalculatorStats;
+  filteredRecipeTrees: BreakdownNode[];
+  shoppingSearch: string;
+  setShoppingSearch: (value: string) => void;
+  materialsScope: MaterialsScope;
+  setMaterialsScope: (scope: MaterialsScope) => void;
+  cuboidBounds: CuboidBounds | null;
+  beginCuboidSelection: () => void;
+  setAppView: (view: AppView) => void;
+  setInspectorTab: (tab: InspectorTab) => void;
+  integerCrafting: boolean;
+  setIntegerCrafting: (value: boolean) => void;
+  openInspectorPanel: (tab: InspectorTab) => void;
+}) {
+  return (
+    <section className="resource-board" aria-label="Resource Calculator">
+      <aside className="resource-sidebar" aria-label="Resource summary">
+        <div className="resource-file-card">
+          <p className="eyebrow">Schematic</p>
+          <strong>{schematicName}</strong>
+          <span>{activeMaterialsLabel}</span>
+        </div>
+
+        <div className="resource-output-card">
+          <p className="eyebrow">Total Output</p>
+          <strong>{resourceStats.totalOutputItems.toLocaleString()}</strong>
+          <span>Total crafted items</span>
+        </div>
+
+        <dl className="resource-stat-list">
+          <div>
+            <dt>Total Items</dt>
+            <dd>{resourceStats.totalOutputItems.toLocaleString()}</dd>
+          </div>
+          <div>
+            <dt>Unique Items</dt>
+            <dd>{resourceStats.uniqueOutputItems.toLocaleString()}</dd>
+          </div>
+          <div>
+            <dt>Crafting Steps</dt>
+            <dd>{resourceStats.craftingSteps.toLocaleString()}</dd>
+          </div>
+          <div>
+            <dt>Chests Needed</dt>
+            <dd>{resourceStats.chestsNeeded.toLocaleString()}</dd>
+          </div>
+        </dl>
+
+        <ResourceMaterialSummary
+          title="Final Materials"
+          materials={activeMaterials}
+          emptyLabel="No final materials."
+        />
+
+        <ResourceMaterialSummary
+          title="Base Ingredients"
+          materials={rawMaterials}
+          emptyLabel="No base ingredients."
+        />
+      </aside>
+
+      <section className="resource-tree-panel" aria-label="Dependency tree">
+        <div className="resource-tree-header">
+          <div>
+            <p className="eyebrow">Dependency Tree</p>
+            <h2>Resource Calculator</h2>
+          </div>
+          <div className="resource-tree-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => openInspectorPanel('materials')}
+            >
+              <Cuboid size={16} />
+              Materials
+            </button>
+          </div>
+        </div>
+
+        <div className="resource-toolbar">
+          <div className="segmented-control shopping-scope" role="group" aria-label="Resource Calculator scope">
+            <button
+              type="button"
+              className={materialsScope === 'build' ? 'is-active' : ''}
+              onClick={() => setMaterialsScope('build')}
+            >
+              Entire Build
+            </button>
+            <button
+              type="button"
+              className={materialsScope === 'cuboid' ? 'is-active' : ''}
+              onClick={() => {
+                if (cuboidBounds) {
+                  setMaterialsScope('cuboid');
+                } else {
+                  beginCuboidSelection();
+                  setAppView('inspect');
+                  setInspectorTab('selection');
+                }
+              }}
+            >
+              Selected Area
+            </button>
+          </div>
+
+          <label className="toggle-row compact-toggle">
+            <input
+              type="checkbox"
+              checked={integerCrafting}
+              onChange={(event) => setIntegerCrafting(event.target.checked)}
+            />
+            <span>Whole crafts</span>
+          </label>
+
+          <label className="material-search shopping-search">
+            <Search size={16} aria-hidden="true" />
+            <input
+              type="search"
+              value={shoppingSearch}
+              onChange={(event) => setShoppingSearch(event.target.value)}
+              placeholder="Search dependencies"
+              aria-label="Search dependencies"
+            />
+          </label>
+        </div>
+
+        <div className="resource-metrics">
+          <div>
+            <span>Raw Items</span>
+            <strong>{resourceStats.rawMaterialItems.toLocaleString()}</strong>
+          </div>
+          <div>
+            <span>Base Ingredients</span>
+            <strong>{resourceStats.uniqueRawMaterials.toLocaleString()}</strong>
+          </div>
+          <div>
+            <span>Crafting Steps</span>
+            <strong>{resourceStats.craftingSteps.toLocaleString()}</strong>
+          </div>
+          <div>
+            <span>Missing Recipes</span>
+            <strong>{resourceStats.unresolvedItems.toLocaleString()}</strong>
+          </div>
+        </div>
+
+        <div className="resource-tree-scroll">
+          <ResourceDependencyGraph
+            trees={filteredRecipeTrees}
+            placedMaterials={activeMaterials}
+          />
+
+          {filteredRecipeTrees.length === 0 && (
+            <p className="material-empty">
+              {shoppingSearch.trim()
+                ? `No dependencies match "${shoppingSearch.trim()}".`
+                : 'No dependencies to show.'}
+            </p>
+          )}
+        </div>
+      </section>
+    </section>
+  );
+}
+
+function ResourceMaterialSummary({
+  title,
+  materials,
+  emptyLabel,
+}: {
+  title: string;
+  materials: MaterialSummary[];
+  emptyLabel: string;
+}) {
+  return (
+    <section className="resource-list-card" aria-label={title}>
+      <div className="resource-list-heading">
+        <span>{title}</span>
+        <strong>{materials.length.toLocaleString()}</strong>
+      </div>
+
+      <div className="resource-mini-list">
+        {materials.slice(0, 16).map((material) => (
+          <div className="resource-mini-row" key={`${title}:${material.id}`}>
+            <BlockPreview
+              stateKey={material.stateKey}
+              color={material.color}
+              layers={material.thumbnailLayers}
+            />
+            <span>{material.label}</span>
+            <strong>{formatQuantity(material.count)}</strong>
+          </div>
+        ))}
+
+        {materials.length === 0 && <p>{emptyLabel}</p>}
+        {materials.length > 16 && (
+          <p className="resource-mini-more">+{(materials.length - 16).toLocaleString()} more</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ResourceDependencyGraph({
+  trees,
+  placedMaterials,
+}: {
+  trees: BreakdownNode[];
+  placedMaterials: MaterialSummary[];
+}) {
+  const groups = useMemo(() => groupResourceDependencyTrees(trees), [trees]);
+
+  return (
+    <div className="resource-graph" aria-label="Material dependency graph">
+      {groups.map((group) => (
+        <section
+          className={`resource-graph-group is-${group.tone}`}
+          key={group.id}
+          aria-label={`${group.label} dependencies`}
+          style={{ '--resource-flow-columns': group.maxColumns } as CSSProperties}
+        >
+          <div className="resource-group-label">{group.label}</div>
+
+          <div className="resource-flow-stack">
+            {group.paths.map((path, index) => (
+              <ResourceFlowRow
+                key={`${group.id}:${index}:${path.map((node) => `${node.id}-${node.count}`).join('>')}`}
+                path={path}
+                maxColumns={group.maxColumns}
+                placedMaterials={placedMaterials}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function ResourceFlowRow({
+  path,
+  maxColumns,
+  placedMaterials,
+}: {
+  path: BreakdownNode[];
+  maxColumns: number;
+  placedMaterials: MaterialSummary[];
+}) {
+  return (
+    <div
+      className="resource-flow-row"
+      style={{ '--resource-flow-columns': maxColumns } as CSSProperties}
+    >
+      {path.map((node, index) => {
+        const column = index + 1;
+        const isTerminal = index === path.length - 1;
+
+        return (
+          <div
+            className={`resource-flow-node${isTerminal ? ' is-terminal' : ''}`}
+            key={`${node.id}:${node.count}:${index}`}
+            style={{ gridColumn: column } as CSSProperties}
+          >
+            <ResourceFlowCard
+              node={node}
+              placedMaterials={placedMaterials}
+              isTerminal={isTerminal}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ResourceFlowCard({
+  node,
+  placedMaterials,
+  isTerminal,
+}: {
+  node: BreakdownNode;
+  placedMaterials: MaterialSummary[];
+  isTerminal: boolean;
+}) {
+  const material = materialSummaryForRecipeItem({ id: node.id, count: node.count }, placedMaterials);
+  const crafts = node.recipeUsed
+    ? (node.count + (node.surplus ?? 0)) / node.recipeUsed.output
+    : 0;
+
+  return (
+    <article className={`resource-flow-card${node.isRaw ? ' is-raw' : ''}${isTerminal ? ' is-output' : ''}`}>
+      <BlockPreview
+        stateKey={material.stateKey}
+        color={material.color}
+        layers={material.thumbnailLayers}
+      />
+
+      <div className="resource-flow-copy">
+        <strong>{material.label}</strong>
+        <span>{formatQuantity(node.count)}</span>
+        {node.recipeUsed ? (
+          <small>
+            {recipeTypeLabel(node.recipeUsed.type)} {formatQuantity(crafts)}x
+            {node.surplus ? ` - +${formatQuantity(node.surplus)} surplus` : ''}
+          </small>
+        ) : (
+          <small>Base ingredient</small>
+        )}
+      </div>
+
+      {!node.isRaw && node.recipeUsed && (
+        <span className="resource-recipe-pill">
+          {node.recipeUsed.output}x
+        </span>
+      )}
+    </article>
   );
 }
 
