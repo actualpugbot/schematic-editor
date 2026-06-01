@@ -3679,23 +3679,130 @@ function colorNameFromBlock(id: string): ColorGroupId | null {
 function summarizeMaterials(blocks: VoxelBlock[]): MaterialSummary[] {
   const counts = new Map<string, MaterialSummary>();
   for (const block of blocks) {
-    const id = materialIdForBlock(block);
-    const quantity = materialQuantityForBlock(block);
-    if (quantity === 0) continue;
+    for (const material of materialEntriesForBlock(block)) {
+      if (material.quantity === 0) continue;
 
-    const current = counts.get(id) ?? {
-      id,
-      label: formatBlockName(id),
-      count: 0,
-      color: block.color,
-      stateKey: id,
-      thumbnailLayers: materialThumbnailLayers(block.stateKey),
-    };
-    current.count += quantity;
-    counts.set(id, current);
+      const preview = material.stateKey === block.stateKey ? block : createVoxelBlock(block.x, block.y, block.z, material.stateKey);
+      const current = counts.get(material.id) ?? {
+        id: material.id,
+        label: formatBlockName(material.id),
+        count: 0,
+        color: preview.color,
+        stateKey: material.stateKey,
+        thumbnailLayers: materialThumbnailLayers(material.stateKey),
+      };
+      current.count += material.quantity;
+      counts.set(material.id, current);
+    }
   }
 
   return Array.from(counts.values()).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+
+function materialEntriesForBlock(block: VoxelBlock): Array<{ id: string; quantity: number; stateKey: string }> {
+  const quantity = materialQuantityForBlock(block);
+  if (quantity === 0) return [];
+
+  if (isWaterSourceStateKey(block.stateKey)) {
+    return [{ id: 'water_bucket', quantity, stateKey: 'minecraft:water_bucket' }];
+  }
+
+  if (isWaterCauldronStateKey(block.stateKey)) {
+    return [
+      { id: 'cauldron', quantity, stateKey: 'minecraft:cauldron' },
+      { id: 'water_bucket', quantity, stateKey: 'minecraft:water_bucket' },
+    ];
+  }
+
+  const pottedPlantId = pottedPlantMaterialId(block.stateKey);
+  if (pottedPlantId) {
+    return [
+      { id: 'flower_pot', quantity, stateKey: 'minecraft:flower_pot' },
+      { id: pottedPlantId, quantity, stateKey: recipeItemStateKey(pottedPlantId) },
+    ];
+  }
+
+  const id = materialIdForBlock(block);
+  return [{ id, quantity: quantity * materialItemCountForBlock(block.stateKey), stateKey: materialStateKeyForBlock(block) }];
+}
+
+function materialItemCountForBlock(stateKey: string): number {
+  if (isSeaPickleStateKey(stateKey)) return blockStateCountProperty(stateKey, 'pickles', 1);
+  if (isCandleStateKey(stateKey)) return blockStateCountProperty(stateKey, 'candles', 1);
+  return 1;
+}
+
+function blockStateCountProperty(stateKey: string, property: string, fallback: number): number {
+  const value = parseStateKey(stateKey)?.properties[property];
+  if (!value || !/^\d+$/.test(value)) return fallback;
+  return Math.max(1, Number(value));
+}
+
+function pottedPlantMaterialId(stateKey: string): string | null {
+  const id = baseBlockId(stateKey);
+  if (!id.startsWith('potted_')) return null;
+
+  const plantId = id.slice('potted_'.length);
+  if (plantId === 'azalea_bush') return 'azalea';
+  if (plantId === 'flowering_azalea_bush') return 'flowering_azalea';
+  return plantId;
+}
+
+function materialStateKeyForBlock(block: VoxelBlock): string {
+  if (isFenceStateKey(block.stateKey)) return fenceMaterialStateKey(block.stateKey);
+  if (isStairsStateKey(block.stateKey)) return stairMaterialStateKey(block.stateKey);
+  if (isWallStateKey(block.stateKey)) return wallMaterialStateKey(block.stateKey);
+  if (isPistonBaseStateKey(block.stateKey)) return pistonMaterialStateKey(block.stateKey);
+  return block.stateKey;
+}
+
+function fenceMaterialStateKey(stateKey: string): string {
+  const parsed = parseStateKey(stateKey);
+  if (!parsed) return stateKey;
+
+  return formatStateKey(parsed.id, {
+    ...parsed.properties,
+    east: 'true',
+    north: 'false',
+    south: 'false',
+    west: 'true',
+  }, parsed.order);
+}
+
+function stairMaterialStateKey(stateKey: string): string {
+  const parsed = parseStateKey(stateKey);
+  if (!parsed) return stateKey;
+
+  return formatStateKey(parsed.id, {
+    ...parsed.properties,
+    facing: 'west',
+    half: 'bottom',
+    shape: 'straight',
+  }, parsed.order);
+}
+
+function pistonMaterialStateKey(stateKey: string): string {
+  const parsed = parseStateKey(stateKey);
+  if (!parsed) return stateKey;
+
+  return formatStateKey(parsed.id, {
+    ...parsed.properties,
+    extended: 'false',
+  }, parsed.order);
+}
+
+function wallMaterialStateKey(stateKey: string): string {
+  const parsed = parseStateKey(stateKey);
+  if (!parsed) return stateKey;
+
+  return formatStateKey(parsed.id, {
+    ...parsed.properties,
+    east: 'low',
+    north: 'none',
+    south: 'none',
+    up: 'true',
+    west: 'low',
+  }, parsed.order);
 }
 
 function materialSummaryForRecipeItem(material: { id: string; count: number }, placedMaterials: MaterialSummary[]): MaterialSummary {
@@ -3914,11 +4021,26 @@ function materialQuantityForBlock(block: VoxelBlock): number {
 }
 
 function materialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] | undefined {
+  if (isFenceStateKey(stateKey)) return fenceMaterialThumbnailLayers(stateKey);
+  if (isStairsStateKey(stateKey)) return stairMaterialThumbnailLayers(stateKey);
+  if (isWallStateKey(stateKey)) return wallMaterialThumbnailLayers(stateKey);
   if (isBedStateKey(stateKey)) return bedMaterialThumbnailLayers(stateKey);
   if (isDoorStateKey(stateKey)) return doorMaterialThumbnailLayers(stateKey);
   if (isTallGrassStateKey(stateKey)) return tallGrassMaterialThumbnailLayers(stateKey);
   if (isPitcherCropStateKey(stateKey)) return pitcherCropMaterialThumbnailLayers(stateKey);
   return undefined;
+}
+
+function fenceMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {
+  return [{ stateKey: fenceMaterialStateKey(stateKey) }];
+}
+
+function stairMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {
+  return [{ stateKey: stairMaterialStateKey(stateKey) }];
+}
+
+function wallMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {
+  return [{ stateKey: wallMaterialStateKey(stateKey) }];
 }
 
 function doorMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {
@@ -3982,8 +4104,44 @@ function isPistonHeadStateKey(stateKey: string): boolean {
   return stripBlockStateProperties(stateKey) === 'minecraft:piston_head';
 }
 
+function isPistonBaseStateKey(stateKey: string): boolean {
+  const id = stripBlockStateProperties(stateKey).replace(/^minecraft:/, '');
+  return id === 'piston' || id === 'sticky_piston';
+}
+
+function isFenceStateKey(stateKey: string): boolean {
+  const id = stripBlockStateProperties(stateKey).replace(/^minecraft:/, '');
+  return id.endsWith('_fence') && !id.endsWith('_fence_gate');
+}
+
+function isCandleStateKey(stateKey: string): boolean {
+  const id = stripBlockStateProperties(stateKey).replace(/^minecraft:/, '');
+  return id === 'candle' || (id.endsWith('_candle') && !id.endsWith('_candle_cake'));
+}
+
+function isSeaPickleStateKey(stateKey: string): boolean {
+  return stripBlockStateProperties(stateKey) === 'minecraft:sea_pickle';
+}
+
+function isStairsStateKey(stateKey: string): boolean {
+  return stripBlockStateProperties(stateKey).replace(/^minecraft:/, '').endsWith('_stairs');
+}
+
 function isTallGrassStateKey(stateKey: string): boolean {
   return stripBlockStateProperties(stateKey) === 'minecraft:tall_grass';
+}
+
+function isWaterCauldronStateKey(stateKey: string): boolean {
+  return stripBlockStateProperties(stateKey) === 'minecraft:water_cauldron';
+}
+
+function isWaterSourceStateKey(stateKey: string): boolean {
+  const parsed = parseStateKey(stateKey);
+  return parsed?.id === 'minecraft:water' && (parsed.properties.level === undefined || parsed.properties.level === '0');
+}
+
+function isWallStateKey(stateKey: string): boolean {
+  return stripBlockStateProperties(stateKey).replace(/^minecraft:/, '').endsWith('_wall');
 }
 
 function bedHeadOffset(facing: string): [number, number, number] {
@@ -4847,6 +5005,7 @@ function formatShulkerBoxes(value: number): string {
 
 function itemStackSize(materialId: string): number {
   const id = stripBlockStateProperties(materialId).replace(/^minecraft:/, '');
+  if (id === 'water_bucket') return 1;
   if (id.endsWith('_bed') || id.endsWith('shulker_box') || id === 'cake') return 1;
   if (id.endsWith('_sign') || id.endsWith('_wall_sign') || id.endsWith('_hanging_sign') || id.endsWith('_wall_hanging_sign')) return 16;
   if (id.endsWith('_banner') || id.endsWith('_wall_banner')) return 16;
