@@ -1354,6 +1354,22 @@ dd {
   accent-color: var(--teal);
 }
 
+.compact-toggle {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper-soft);
+  color: var(--muted);
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
+.compact-toggle input {
+  width: 16px;
+  height: 16px;
+}
+
 .cuboid-corner-editor {
   display: grid;
   gap: 10px;
@@ -2139,6 +2155,7 @@ dd {
 
 .shopping-toolbar {
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .shopping-scope {
@@ -2146,8 +2163,13 @@ dd {
   margin: 0;
 }
 
+.shopping-mode {
+  width: min(230px, 24%);
+  margin: 0;
+}
+
 .shopping-search {
-  flex: 1 1 auto;
+  flex: 1 1 260px;
   margin: 0;
 }
 
@@ -2697,6 +2719,11 @@ dd {
   border-color: var(--line);
 }
 
+.material-visibility:disabled {
+  cursor: default;
+  opacity: 0.36;
+}
+
 .material-breakdown {
   width: calc(100% - 16px);
   margin: -1px 8px 9px;
@@ -2707,6 +2734,22 @@ dd {
   border-top: 0;
   border-radius: 0 0 8px 8px;
   color: inherit;
+}
+
+.material-crafting-toggle {
+  margin: -2px 0 10px;
+}
+
+.raw-material-notice {
+  margin: 0 0 10px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in oklch, var(--copper), var(--line) 54%);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--copper), var(--paper-strong) 88%);
+  color: color-mix(in oklch, var(--copper), var(--ink) 34%);
+  font-size: 0.78rem;
+  font-weight: 760;
+  line-height: 1.35;
 }
 
 .material-breakdown-count {
@@ -2797,6 +2840,87 @@ dd {
   stroke-width: 1.9;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.recipe-tree {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in oklch, var(--line), var(--teal) 16%);
+}
+
+.recipe-tree.is-leaf {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 760;
+}
+
+.recipe-tree-heading,
+.recipe-tree-row {
+  display: flex;
+  align-items: center;
+}
+
+.recipe-tree-heading {
+  gap: 7px;
+  color: var(--teal-strong);
+  font-size: 0.76rem;
+  font-weight: 880;
+  text-transform: uppercase;
+}
+
+.recipe-tree-heading strong {
+  margin-left: auto;
+  color: var(--copper);
+  font-size: 0.74rem;
+}
+
+.recipe-tree-children,
+.recipe-tree-branch,
+.recipe-tree-row-wrap {
+  display: grid;
+  gap: 6px;
+}
+
+.recipe-tree-row {
+  min-height: 36px;
+  gap: 8px;
+  padding: 5px 8px 5px calc(8px + (var(--recipe-depth, 0) * 16px));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--paper-strong), var(--breakdown-bg) 34%);
+  color: var(--ink);
+}
+
+.recipe-tree-row .block-preview {
+  --block-preview-size: 28px;
+  flex: 0 0 auto;
+}
+
+.recipe-tree-row span {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 820;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recipe-tree-row strong {
+  flex: 0 0 auto;
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.recipe-tree-row small {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 820;
 }
 
 .material-empty {
@@ -2962,6 +3086,10 @@ dd {
   }
 
   .shopping-scope {
+    width: 100%;
+  }
+
+  .shopping-mode {
     width: 100%;
   }
 

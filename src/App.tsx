@@ -14,6 +14,7 @@ import {
   FileUp,
   Focus,
   Grid2X2,
+  Hammer,
   ImageIcon,
   Layers,
   List,
@@ -53,6 +54,13 @@ import {
 import { textureUrl, type ModelFaceName } from './lib/minecraftModels';
 import { writeNbt, type NbtDocument } from './lib/nbt';
 import {
+  defaultRecipeTypePreference,
+  explodeMaterials,
+  normalizeRecipeItemId,
+  recipeTypeLabel,
+  type BreakdownNode,
+} from './lib/recipes';
+import {
   createSpongeSchematicDocument,
   createVoxelBlock,
   createSampleModel,
@@ -74,6 +82,7 @@ type AppView = 'inspect' | 'edit' | 'texture' | 'shopping';
 type EditTool = 'select' | 'build';
 type Theme = 'light' | 'dark';
 type MaterialsScope = 'build' | 'cuboid';
+type MaterialsMode = 'placed' | 'raw';
 type ShoppingLayout = 'grid' | 'list';
 type ThumbnailLoadState = 'idle' | 'loading' | 'ready' | 'failed';
 type CuboidCornerId = 'a' | 'b';
@@ -424,6 +433,8 @@ function App() {
   const [expandedMaterialIds, setExpandedMaterialIds] = useState<Set<string>>(() => new Set());
   const [materialSearch, setMaterialSearch] = useState('');
   const [hiddenMaterialIds, setHiddenMaterialIds] = useState<Set<string>>(() => new Set());
+  const [materialsMode, setMaterialsMode] = useState<MaterialsMode>('placed');
+  const [integerCrafting, setIntegerCrafting] = useState(true);
   const [shoppingSearch, setShoppingSearch] = useState('');
   const [shoppingLayout, setShoppingLayout] = useState<ShoppingLayout>('grid');
   const [checkedShoppingItems, setCheckedShoppingItems] = useState<Set<string>>(() => new Set());
@@ -520,51 +531,66 @@ function App() {
 
   const activeMaterials = materialsScope === 'cuboid' ? cuboidMaterials : materials;
   const activeMaterialsLabel = materialsScope === 'cuboid' ? 'Selected Area' : 'Entire Build';
+  const recipeBreakdown = useMemo(() => explodeMaterials(activeMaterials, {
+    rawOverrides: new Set(),
+    recipeChoice: new Map(),
+    recipeTypePreference: defaultRecipeTypePreference,
+    integerCrafting,
+  }), [activeMaterials, integerCrafting]);
+  const rawMaterials = useMemo<MaterialSummary[]>(() => (
+    recipeBreakdown.raw.map((material) => materialSummaryForRecipeItem(material, activeMaterials))
+  ), [activeMaterials, recipeBreakdown]);
+  const recipeTreeByMaterialId = useMemo(() => (
+    new Map(recipeBreakdown.trees.map((tree) => [tree.id, tree]))
+  ), [recipeBreakdown]);
+  const visibleMaterials = materialsMode === 'raw' ? rawMaterials : activeMaterials;
+  const visibleMaterialsLabel = materialsMode === 'raw' ? 'Raw Materials' : activeMaterialsLabel;
   const shoppingScope = useMemo(() => (
     model ? shoppingScopeKey(model, materialsScope, cuboidBounds) : 'none'
   ), [cuboidBoundsKey, materialsScope, model]);
+  const shoppingModeScope = `${shoppingScope}:${materialsMode}:${integerCrafting ? 'integer' : 'fractional'}`;
   const shoppingStorage = useMemo(() => (
-    model ? shoppingStorageKey(model, shoppingScope, activeMaterials) : ''
-  ), [activeMaterials, model, shoppingScope]);
+    model ? shoppingStorageKey(model, shoppingModeScope, visibleMaterials) : ''
+  ), [model, shoppingModeScope, visibleMaterials]);
   const shoppingItemKeys = useMemo(() => (
-    new Set(activeMaterials.map((material) => shoppingItemKey(shoppingScope, material)))
-  ), [activeMaterials, shoppingScope]);
+    new Set(visibleMaterials.map((material) => shoppingItemKey(shoppingModeScope, material)))
+  ), [shoppingModeScope, visibleMaterials]);
   const shoppingMaterials = useMemo(() => {
     const query = shoppingSearch.trim().toLocaleLowerCase();
-    if (!query) return activeMaterials;
+    if (!query) return visibleMaterials;
 
-    return activeMaterials.filter((material) => {
+    return visibleMaterials.filter((material) => {
       const label = material.label.toLocaleLowerCase();
       const id = material.id.toLocaleLowerCase();
       return label.includes(query) || id.includes(query);
     });
-  }, [activeMaterials, shoppingSearch]);
+  }, [shoppingSearch, visibleMaterials]);
   const shoppingGroups = useMemo(() => groupShoppingMaterials(shoppingMaterials), [shoppingMaterials]);
   const checkedShoppingMaterialCount = useMemo(() => (
-    activeMaterials.filter((material) => checkedShoppingItems.has(shoppingItemKey(shoppingScope, material))).length
-  ), [activeMaterials, checkedShoppingItems, shoppingScope]);
+    visibleMaterials.filter((material) => checkedShoppingItems.has(shoppingItemKey(shoppingModeScope, material))).length
+  ), [checkedShoppingItems, shoppingModeScope, visibleMaterials]);
   const totalShoppingItems = useMemo(() => (
-    activeMaterials.reduce((sum, material) => sum + material.count, 0)
-  ), [activeMaterials]);
+    visibleMaterials.reduce((sum, material) => sum + material.count, 0)
+  ), [visibleMaterials]);
   const completedShoppingItems = useMemo(() => (
-    activeMaterials.reduce((sum, material) => (
-      checkedShoppingItems.has(shoppingItemKey(shoppingScope, material)) ? sum + material.count : sum
+    visibleMaterials.reduce((sum, material) => (
+      checkedShoppingItems.has(shoppingItemKey(shoppingModeScope, material)) ? sum + material.count : sum
     ), 0)
-  ), [activeMaterials, checkedShoppingItems, shoppingScope]);
+  ), [checkedShoppingItems, shoppingModeScope, visibleMaterials]);
   const remainingShoppingItems = Math.max(0, totalShoppingItems - completedShoppingItems);
   const shoppingProgressPercent = totalShoppingItems > 0
     ? Math.round((completedShoppingItems / totalShoppingItems) * 100)
     : 0;
   const filteredMaterials = useMemo(() => {
     const query = materialSearch.trim().toLocaleLowerCase();
-    if (!query) return activeMaterials;
+    if (!query) return visibleMaterials;
 
-    return activeMaterials.filter((material) => {
+    return visibleMaterials.filter((material) => {
       const label = material.label.toLocaleLowerCase();
       const id = material.id.toLocaleLowerCase();
       return label.includes(query) || id.includes(query);
     });
-  }, [activeMaterials, materialSearch]);
+  }, [materialSearch, visibleMaterials]);
 
   const cuboidDimensions = cuboidBounds ? dimensionsForBounds(cuboidBounds) : null;
   const cuboidVolume = cuboidDimensions
@@ -1335,7 +1361,7 @@ function App() {
   };
 
   const toggleShoppingItem = (material: MaterialSummary) => {
-    const key = shoppingItemKey(shoppingScope, material);
+    const key = shoppingItemKey(shoppingModeScope, material);
     setCheckedShoppingItems((current) => {
       const next = new Set(current);
       if (next.has(key)) {
@@ -1348,7 +1374,7 @@ function App() {
   };
 
   const toggleShoppingGroup = (materials: MaterialSummary[]) => {
-    const keys = materials.map((material) => shoppingItemKey(shoppingScope, material));
+    const keys = materials.map((material) => shoppingItemKey(shoppingModeScope, material));
     setCheckedShoppingItems((current) => {
       const allChecked = keys.every((key) => current.has(key));
       const next = new Set(current);
@@ -1725,6 +1751,30 @@ function App() {
                     Selected Area
                   </button>
                 </div>
+                <div className="segmented-control shopping-mode" role="group" aria-label="Shopping material mode">
+                  <button
+                    type="button"
+                    className={materialsMode === 'placed' ? 'is-active' : ''}
+                    onClick={() => setMaterialsMode('placed')}
+                  >
+                    Placed
+                  </button>
+                  <button
+                    type="button"
+                    className={materialsMode === 'raw' ? 'is-active' : ''}
+                    onClick={() => setMaterialsMode('raw')}
+                  >
+                    Raw
+                  </button>
+                </div>
+                <label className="toggle-row compact-toggle">
+                  <input
+                    type="checkbox"
+                    checked={integerCrafting}
+                    onChange={(event) => setIntegerCrafting(event.target.checked)}
+                  />
+                  <span>Whole crafts</span>
+                </label>
                 <label className="material-search shopping-search">
                   <Search size={16} aria-hidden="true" />
                   <input
@@ -1778,14 +1828,14 @@ function App() {
                 </div>
                 <div>
                   <span>Rows</span>
-                  <strong>{checkedShoppingMaterialCount.toLocaleString()} / {activeMaterials.length.toLocaleString()}</strong>
+                  <strong>{checkedShoppingMaterialCount.toLocaleString()} / {visibleMaterials.length.toLocaleString()}</strong>
                 </div>
               </div>
 
               <div className={`shopping-list is-${shoppingLayout}`} aria-live="polite">
                 {shoppingGroups.map((group) => {
                   const checkedGroupItems = group.materials.filter((material) => (
-                    checkedShoppingItems.has(shoppingItemKey(shoppingScope, material))
+                    checkedShoppingItems.has(shoppingItemKey(shoppingModeScope, material))
                   )).length;
                   const isGroupChecked = checkedGroupItems === group.materials.length;
 
@@ -1807,7 +1857,7 @@ function App() {
                       </div>
                       <div className="shopping-group-items">
                         {group.materials.map((material) => {
-                          const itemKey = shoppingItemKey(shoppingScope, material);
+                          const itemKey = shoppingItemKey(shoppingModeScope, material);
                           const isChecked = checkedShoppingItems.has(itemKey);
 
                           return (
@@ -1842,6 +1892,11 @@ function App() {
                       : shoppingSearch.trim()
                         ? `No shopping list items match "${shoppingSearch.trim()}".`
                         : 'No non-air blocks in this shopping list.'}
+                  </p>
+                )}
+                {materialsMode === 'raw' && recipeBreakdown.unresolved.length > 0 && (
+                  <p className="raw-material-notice">
+                    {recipeBreakdown.unresolved.length.toLocaleString()} item types had no recipe and were counted as raw.
                   </p>
                 )}
               </div>
@@ -2435,10 +2490,10 @@ function App() {
                 <div>
                   <h2>
                     {materialSearch.trim()
-                      ? `${filteredMaterials.length.toLocaleString()} of ${activeMaterials.length.toLocaleString()} materials`
-                      : `${activeMaterials.length.toLocaleString()} materials`}
+                      ? `${filteredMaterials.length.toLocaleString()} of ${visibleMaterials.length.toLocaleString()} materials`
+                      : `${visibleMaterials.length.toLocaleString()} materials`}
                   </h2>
-                  <p className="eyebrow">{activeMaterialsLabel}</p>
+                  <p className="eyebrow">{visibleMaterialsLabel}</p>
                 </div>
                 <button
                   type="button"
@@ -2471,6 +2526,35 @@ function App() {
                   Selected Area
                 </button>
               </div>
+              <div className="segmented-control" role="group" aria-label="Material list mode">
+                <button
+                  type="button"
+                  className={materialsMode === 'placed' ? 'is-active' : ''}
+                  onClick={() => setMaterialsMode('placed')}
+                >
+                  Placed Blocks
+                </button>
+                <button
+                  type="button"
+                  className={materialsMode === 'raw' ? 'is-active' : ''}
+                  onClick={() => setMaterialsMode('raw')}
+                >
+                  Raw Materials
+                </button>
+              </div>
+              <label className="toggle-row compact-toggle material-crafting-toggle">
+                <input
+                  type="checkbox"
+                  checked={integerCrafting}
+                  onChange={(event) => setIntegerCrafting(event.target.checked)}
+                />
+                <span>Whole crafts</span>
+              </label>
+              {materialsMode === 'raw' && recipeBreakdown.unresolved.length > 0 && (
+                <p className="raw-material-notice">
+                  {recipeBreakdown.unresolved.length.toLocaleString()} item types had no recipe and were counted as raw.
+                </p>
+              )}
               <label className="material-search">
                 <Search size={16} aria-hidden="true" />
                 <input
@@ -2484,8 +2568,9 @@ function App() {
               <div className="material-stack">
                 {filteredMaterials.map((material) => {
                   const isExpanded = expandedMaterialIds.has(material.id);
-                  const isSelected = material.id === selectedMaterialId;
+                  const isSelected = materialsMode === 'placed' && material.id === selectedMaterialId;
                   const breakdownId = `material-breakdown-${material.id}`;
+                  const recipeTree = recipeTreeByMaterialId.get(normalizeRecipeItemId(material.id));
 
                   return (
                     <div
@@ -2522,6 +2607,7 @@ function App() {
                           aria-label={hiddenMaterialIds.has(material.id) ? `Show ${material.label}` : `Hide ${material.label}`}
                           title={hiddenMaterialIds.has(material.id) ? 'Show block' : 'Hide block'}
                           onClick={() => toggleMaterialVisibility(material.id)}
+                          disabled={materialsMode === 'raw'}
                         >
                           {hiddenMaterialIds.has(material.id) ? <EyeOff size={16} /> : <Eye size={16} />}
                         </button>
@@ -2532,6 +2618,9 @@ function App() {
                           className="material-breakdown"
                         >
                           <MaterialBreakdown materialId={material.id} count={material.count} />
+                          {materialsMode === 'placed' && recipeTree && (
+                            <RecipeTree node={recipeTree} />
+                          )}
                         </div>
                       )}
                     </div>
@@ -2798,7 +2887,7 @@ function App() {
       </div>
       {showCelebration && appView === 'shopping' && (
         <ShoppingCelebration
-          materials={activeMaterials}
+          materials={visibleMaterials}
           onDone={() => setShowCelebration(false)}
         />
       )}
@@ -3459,6 +3548,33 @@ function summarizeMaterials(blocks: VoxelBlock[]): MaterialSummary[] {
   return Array.from(counts.values()).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 }
 
+function materialSummaryForRecipeItem(material: { id: string; count: number }, placedMaterials: MaterialSummary[]): MaterialSummary {
+  const id = normalizeRecipeItemId(material.id);
+  const placedMatch = placedMaterials.find((candidate) => normalizeRecipeItemId(candidate.id) === id);
+  if (placedMatch) {
+    return {
+      ...placedMatch,
+      id,
+      label: formatBlockName(id),
+      count: material.count,
+    };
+  }
+
+  const stateKey = recipeItemStateKey(id);
+  const preview = createVoxelBlock(0, 0, 0, stateKey);
+  return {
+    id,
+    label: formatBlockName(id),
+    count: material.count,
+    color: preview.color,
+    stateKey,
+  };
+}
+
+function recipeItemStateKey(id: string): string {
+  return id.startsWith('minecraft:') ? id : `minecraft:${id}`;
+}
+
 function shoppingItemKey(scopeKey: string, material: MaterialSummary): string {
   return `${scopeKey}:${material.id}:${material.count}`;
 }
@@ -4026,6 +4142,54 @@ function MaterialBreakdown({ materialId, count }: { materialId: string; count: n
   );
 }
 
+function RecipeTree({ node }: { node: BreakdownNode }) {
+  if (node.isRaw || node.children.length === 0) {
+    return (
+      <div className="recipe-tree is-leaf">
+        <span>Counted as raw</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="recipe-tree" aria-label={`${formatBlockName(node.id)} recipe tree`}>
+      <div className="recipe-tree-heading">
+        <Hammer size={14} aria-hidden="true" />
+        <span>{node.recipeUsed ? recipeTypeLabel(node.recipeUsed.type) : 'Recipe'}</span>
+        {node.surplus ? <strong>+{formatQuantity(node.surplus)} surplus</strong> : null}
+      </div>
+      <div className="recipe-tree-children">
+        {node.children.map((child) => (
+          <RecipeTreeRow node={child} key={`${child.id}:${child.count}`} depth={0} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RecipeTreeRow({ node, depth }: { node: BreakdownNode; depth: number }) {
+  const stateKey = recipeItemStateKey(node.id);
+  const preview = createVoxelBlock(0, 0, 0, stateKey);
+
+  return (
+    <div className="recipe-tree-row-wrap">
+      <div className="recipe-tree-row" style={{ '--recipe-depth': depth } as CSSProperties}>
+        <BlockPreview stateKey={stateKey} color={preview.color} />
+        <span>{formatBlockName(node.id)}</span>
+        <strong>{formatQuantity(node.count)}</strong>
+        <small>{node.isRaw ? 'Raw' : node.recipeUsed ? recipeTypeLabel(node.recipeUsed.type) : 'Recipe'}</small>
+      </div>
+      {!node.isRaw && node.children.length > 0 && (
+        <div className="recipe-tree-branch">
+          {node.children.map((child) => (
+            <RecipeTreeRow node={child} key={`${child.id}:${child.count}:${depth}`} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ShulkerIcon() {
   return (
     <svg className="shulker-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -4039,6 +4203,12 @@ function ShulkerIcon() {
       <path d="M16.6 14.8v1.5" />
     </svg>
   );
+}
+
+function formatQuantity(value: number): string {
+  return value.toLocaleString(undefined, {
+    maximumFractionDigits: Number.isInteger(value) ? 0 : 2,
+  });
 }
 
 function storageBreakdown(materialId: string, count: number): {
