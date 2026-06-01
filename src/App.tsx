@@ -72,7 +72,7 @@ import {
   type VoxelBlock,
 } from './lib/schematic';
 import creativeInventoryData from './lib/data/creative_inventory.json';
-import defaultSchematicUrl from '../Medieval House.litematic?url';
+import defaultSchematicUrl from '../mossy_roof_house.litematic?url';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 type DraggedFileKind = 'none' | 'unsupported-file' | 'unknown-file' | 'schematic-file';
@@ -192,7 +192,9 @@ type ColorGroupId =
   | 'pink';
 
 const schematicFileExtensions = new Set(['.litematic', '.schem', '.schematic', '.nbt']);
-const defaultSchematicFileName = 'Medieval House.litematic';
+const defaultSchematicFileName = 'mossy_roof_house.litematic';
+const defaultSchematicDisplayName = 'Mossy Roof House';
+const defaultBuildTutorialUrl = 'https://www.youtube.com/watch?v=KO1yKa34Yl0';
 const themeStorageKey = 'schematic-editor-theme';
 const shoppingListStoragePrefix = 'schematic-editor-shopping-list';
 const emptyBuildBlock = 'minecraft:air';
@@ -624,6 +626,12 @@ function App() {
       return label.includes(query) || id.includes(query);
     });
   }, [materialSearch, visibleMaterials]);
+  const hideableMaterialIds = useMemo(() => (
+    materialsMode === 'placed' ? visibleMaterials.map((material) => material.id) : []
+  ), [materialsMode, visibleMaterials]);
+  const allVisibleMaterialsHidden = hideableMaterialIds.length > 0
+    && hideableMaterialIds.every((materialId) => hiddenMaterialIds.has(materialId));
+  const bulkMaterialVisibilityLabel = allVisibleMaterialsHidden ? 'Show All' : 'Hide All';
 
   const cuboidDimensions = cuboidBounds ? dimensionsForBounds(cuboidBounds) : null;
   const cuboidVolume = cuboidDimensions
@@ -801,7 +809,7 @@ function App() {
         const buffer = await response.arrayBuffer();
         const parsed = parseSchematicDocument(buffer, { fileName: defaultSchematicFileName });
         if (isCancelled) return;
-        applySchematic(parsed.model, parsed.nbt, fileExtension(defaultSchematicFileName));
+        applySchematic({ ...parsed.model, name: defaultSchematicDisplayName }, parsed.nbt, fileExtension(defaultSchematicFileName));
       } catch (caught) {
         if (isCancelled) return;
 
@@ -1018,6 +1026,23 @@ function App() {
         next.delete(id);
       } else {
         next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllMaterialVisibility = () => {
+    if (hideableMaterialIds.length === 0) return;
+
+    setHiddenMaterialIds((current) => {
+      const next = new Set(current);
+      const shouldShowAll = hideableMaterialIds.every((materialId) => next.has(materialId));
+      for (const materialId of hideableMaterialIds) {
+        if (shouldShowAll) {
+          next.delete(materialId);
+        } else {
+          next.add(materialId);
+        }
       }
       return next;
     });
@@ -1494,38 +1519,43 @@ function App() {
           </div>
           <div className="file-lockup">
             {model ? (
-              <div className={`schematic-title${isEditingSchematicName ? ' is-editing' : ''}`}>
-                {isEditingSchematicName ? (
-                  <input
-                    ref={schematicNameInputRef}
-                    type="text"
-                    value={schematicName}
-                    onBlur={commitSchematicName}
-                    onChange={(event) => setSchematicName(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        event.currentTarget.blur();
-                      }
-                      if (event.key === 'Escape') {
-                        setSchematicName(model.name);
-                        setIsEditingSchematicName(false);
-                      }
-                    }}
-                    aria-label="Schematic name"
-                  />
-                ) : (
-                  <h1>{schematicName}</h1>
-                )}
-                <button
-                  type="button"
-                  className="schematic-title-edit"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => setIsEditingSchematicName(true)}
-                  title="Edit schematic name"
-                  aria-label="Edit schematic name"
-                >
-                  <Pencil size={14} />
-                </button>
+              <div className="schematic-meta">
+                <div className={`schematic-title${isEditingSchematicName ? ' is-editing' : ''}`}>
+                  {isEditingSchematicName ? (
+                    <input
+                      ref={schematicNameInputRef}
+                      type="text"
+                      value={schematicName}
+                      onBlur={commitSchematicName}
+                      onChange={(event) => setSchematicName(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.currentTarget.blur();
+                        }
+                        if (event.key === 'Escape') {
+                          setSchematicName(model.name);
+                          setIsEditingSchematicName(false);
+                        }
+                      }}
+                      aria-label="Schematic name"
+                    />
+                  ) : (
+                    <h1>{schematicName}</h1>
+                  )}
+                  <button
+                    type="button"
+                    className="schematic-title-edit"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => setIsEditingSchematicName(true)}
+                    title="Edit schematic name"
+                    aria-label="Edit schematic name"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                </div>
+                <a className="build-credit" href={defaultBuildTutorialUrl} target="_blank" rel="noreferrer">
+                  build by MildMadi
+                </a>
               </div>
             ) : (
               <h1>Minecraft schematic viewer</h1>
@@ -2602,14 +2632,27 @@ function App() {
                   </h2>
                   <p className="eyebrow">{visibleMaterialsLabel}</p>
                 </div>
-                <button
-                  type="button"
-                  className="secondary-button material-shopping-link"
-                  onClick={openShoppingList}
-                >
-                  <ClipboardList size={16} />
-                  Shopping List
-                </button>
+                <div className="material-heading-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={toggleAllMaterialVisibility}
+                    disabled={hideableMaterialIds.length === 0}
+                    aria-label={`${bulkMaterialVisibilityLabel} placed materials`}
+                    title={bulkMaterialVisibilityLabel}
+                  >
+                    {allVisibleMaterialsHidden ? <Eye size={16} /> : <EyeOff size={16} />}
+                    {bulkMaterialVisibilityLabel}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button material-shopping-link"
+                    onClick={openShoppingList}
+                  >
+                    <ClipboardList size={16} />
+                    Shopping List
+                  </button>
+                </div>
               </div>
               <div className="segmented-control" role="group" aria-label="Materials scope">
                 <button
@@ -3675,6 +3718,7 @@ function materialSummaryForRecipeItem(material: { id: string; count: number }, p
     count: material.count,
     color: preview.color,
     stateKey,
+    thumbnailLayers: materialThumbnailLayers(stateKey),
   };
 }
 
@@ -3865,12 +3909,14 @@ function shoppingCategoryRank(id: string): number {
 function materialQuantityForBlock(block: VoxelBlock): number {
   if (isDoorStateKey(block.stateKey) && parseStateKey(block.stateKey)?.properties.half === 'upper') return 0;
   if (isBedStateKey(block.stateKey) && parseStateKey(block.stateKey)?.properties.part === 'head') return 0;
+  if (isPistonHeadStateKey(block.stateKey)) return 0;
   return isDoubleSlabStateKey(block.stateKey) ? 2 : 1;
 }
 
 function materialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] | undefined {
   if (isBedStateKey(stateKey)) return bedMaterialThumbnailLayers(stateKey);
   if (isDoorStateKey(stateKey)) return doorMaterialThumbnailLayers(stateKey);
+  if (isTallGrassStateKey(stateKey)) return tallGrassMaterialThumbnailLayers(stateKey);
   if (isPitcherCropStateKey(stateKey)) return pitcherCropMaterialThumbnailLayers(stateKey);
   return undefined;
 }
@@ -3919,8 +3965,25 @@ function pitcherCropMaterialThumbnailLayers(stateKey: string): BlockThumbnailLay
   ];
 }
 
+function tallGrassMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {
+  const baseState = stripBlockStateProperties(stateKey);
+
+  return [
+    { stateKey: withBlockStateProperties(baseState, { half: 'lower' }) },
+    { stateKey: withBlockStateProperties(baseState, { half: 'upper' }), offset: [0, 1, 0] },
+  ];
+}
+
 function isPitcherCropStateKey(stateKey: string): boolean {
   return stripBlockStateProperties(stateKey) === 'minecraft:pitcher_crop';
+}
+
+function isPistonHeadStateKey(stateKey: string): boolean {
+  return stripBlockStateProperties(stateKey) === 'minecraft:piston_head';
+}
+
+function isTallGrassStateKey(stateKey: string): boolean {
+  return stripBlockStateProperties(stateKey) === 'minecraft:tall_grass';
 }
 
 function bedHeadOffset(facing: string): [number, number, number] {

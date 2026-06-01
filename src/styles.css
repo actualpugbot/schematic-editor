@@ -202,6 +202,12 @@ h2 {
   gap: 10px;
 }
 
+.schematic-meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
 .schematic-title {
   display: grid;
   grid-template-columns: minmax(0, auto) 30px;
@@ -262,6 +268,21 @@ h2 {
   border-color: var(--line);
   background: var(--paper-strong);
   color: var(--teal-strong);
+}
+
+.build-credit {
+  width: fit-content;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+  line-height: 1.1;
+  text-decoration: none;
+}
+
+.build-credit:hover {
+  color: var(--teal-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .topbar-actions {
@@ -2152,6 +2173,14 @@ dd {
 
 .material-shopping-link {
   flex: 0 0 auto;
+}
+
+.material-heading-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .shopping-toolbar {

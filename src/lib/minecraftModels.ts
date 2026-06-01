@@ -2680,6 +2680,7 @@ function normalizeResourceId(id: string, defaultFolder?: 'block'): string {
 
 function legacyResourcePathAlias(namespace: string, path: string): string {
   if (namespace === 'minecraft' && path === 'chain') return 'iron_chain';
+  if (namespace === 'minecraft' && path === 'grass') return 'short_grass';
   return path;
 }
 
