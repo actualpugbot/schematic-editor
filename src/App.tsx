@@ -40,7 +40,6 @@ import {
   ShoppingCart,
   SlidersHorizontal,
   Sun,
-  Upload,
   X,
 } from 'lucide-react';
 import {
@@ -201,7 +200,9 @@ type ColorGroupId =
 
 const schematicFileExtensions = new Set(['.litematic', '.schem', '.schematic', '.nbt']);
 const defaultSchematicFileName = 'mossy_roof_house.litematic';
+const defaultSchematicName = 'Mossy Roof House';
 const themeStorageKey = 'schematic-editor-theme';
+const leftRailCollapsedStorageKey = 'schematic-editor-left-rail-collapsed';
 const shoppingListStoragePrefix = 'schematic-editor-shopping-list';
 const selectionStoragePrefix = 'schematic-editor-selections';
 const cameraStoragePrefix = 'schematic-editor-cameras';
@@ -457,6 +458,10 @@ function App() {
     const savedTheme = window.localStorage.getItem(themeStorageKey);
     if (savedTheme === 'light' || savedTheme === 'dark') return savedTheme;
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
+  const [leftRailCollapsed, setLeftRailCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem(leftRailCollapsedStorageKey) === 'true';
   });
   const [model, setModel] = useState<SchematicModel | null>(null);
   const [appView, setAppView] = useState<AppView>('inspect');
@@ -912,8 +917,10 @@ function App() {
 
         const buffer = await response.arrayBuffer();
         const parsed = parseSchematicDocument(buffer, { fileName: defaultSchematicFileName });
+        const defaultModel = { ...parsed.model, name: defaultSchematicName };
+        const defaultDocument = renameSchematicDocument(parsed.nbt, parsed.model.source, defaultSchematicName);
         if (isCancelled) return;
-        applySchematic(parsed.model, parsed.nbt, fileExtension(defaultSchematicFileName));
+        applySchematic(defaultModel, defaultDocument, fileExtension(defaultSchematicFileName));
       } catch (caught) {
         if (isCancelled) return;
 
@@ -993,6 +1000,10 @@ function App() {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem(themeStorageKey, theme);
   }, [theme]);
+
+  useEffect(() => {
+    window.localStorage.setItem(leftRailCollapsedStorageKey, String(leftRailCollapsed));
+  }, [leftRailCollapsed]);
 
   useEffect(() => {
     if (!isEditingSchematicName) return;
@@ -1775,16 +1786,11 @@ function App() {
             <div className="brand-mark" aria-hidden="true">
               <Box size={20} strokeWidth={2.4} />
             </div>
-            <strong>BlockBlueprint</strong>
+            <strong>Schematic Editor</strong>
             <span className="brand-beta">Beta</span>
           </div>
           <div className="topbar-divider" aria-hidden="true" />
           <div className="file-lockup">
-            {model && (
-              <div className="file-emblem" aria-hidden="true">
-                <Cuboid size={16} />
-              </div>
-            )}
             {model ? (
               <div className={`schematic-title${isEditingSchematicName ? ' is-editing' : ''}`}>
                 {isEditingSchematicName ? (
@@ -1828,27 +1834,6 @@ function App() {
         <div className="topbar-right">
           <button
             type="button"
-            className="topbar-action"
-            onClick={() => inputRef.current?.click()}
-            title="Import a schematic file"
-          >
-            <Upload size={16} />
-            <span>Import</span>
-            <ChevronDown size={14} />
-          </button>
-          <button
-            type="button"
-            className="topbar-action"
-            onClick={exportRenamedSchematic}
-            disabled={!canSaveSchematic}
-            title={hasEditChanges ? 'Export edited build' : 'Export schematic'}
-          >
-            <Download size={16} />
-            <span>Export</span>
-            <ChevronDown size={14} />
-          </button>
-          <button
-            type="button"
             className={`topbar-icon-btn${isDarkTheme ? ' is-on' : ''}`}
             onClick={toggleTheme}
             title={isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'}
@@ -1861,15 +1846,25 @@ function App() {
             className="topbar-save"
             onClick={exportRenamedSchematic}
             disabled={!canSaveSchematic}
-            title="Save schematic"
+            title={hasEditChanges ? 'Export edited build' : 'Export schematic'}
           >
-            <Check size={16} strokeWidth={2.6} />
-            <span>Save</span>
+            <Download size={16} />
+            <span>Export</span>
           </button>
         </div>
       </header>
 
-      <div className={`workspace${appView === 'shopping' ? ' is-shopping' : ''}${appView === 'resource' ? ' is-resource' : ''}`}>
+      <div className={`workspace${leftRailCollapsed ? ' is-left-rail-collapsed' : ''}${appView === 'shopping' ? ' is-shopping' : ''}${appView === 'resource' ? ' is-resource' : ''}`}>
+        <button
+          type="button"
+          className="rail-toggle"
+          onClick={() => setLeftRailCollapsed((value) => !value)}
+          aria-label={leftRailCollapsed ? 'Expand navigation rail' : 'Collapse navigation rail'}
+          aria-expanded={!leftRailCollapsed}
+          title={leftRailCollapsed ? 'Expand rail' : 'Collapse rail'}
+        >
+          {leftRailCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
+        </button>
         <aside className="left-rail" aria-label="Primary navigation">
           <div className="rail-cluster" role="tablist" aria-label="Workspace mode">
             <button
@@ -1878,6 +1873,8 @@ function App() {
               className={appView === 'inspect' && inspectorTab === 'materials' ? 'is-active' : ''}
               onClick={() => openInspectorPanel('materials')}
               aria-selected={appView === 'inspect' && inspectorTab === 'materials'}
+              aria-label="Inspect"
+              title="Inspect"
               disabled={!model}
             >
               <Search size={19} />
@@ -1886,34 +1883,11 @@ function App() {
             <button
               type="button"
               role="tab"
-              className={appView === 'inspect' && inspectorTab === 'layers' ? 'is-active' : ''}
-              onClick={() => openInspectorPanel('layers')}
-              aria-selected={appView === 'inspect' && inspectorTab === 'layers'}
-              disabled={!model}
-            >
-              <Layers size={19} />
-              <span>Layers</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              className={appView === 'inspect' && inspectorTab === 'selection' ? 'is-active' : ''}
-              onClick={() => {
-                openInspectorPanel('selection');
-                beginCuboidSelection();
-              }}
-              aria-selected={appView === 'inspect' && inspectorTab === 'selection'}
-              disabled={!model}
-            >
-              <BoxSelect size={19} />
-              <span>Select</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
               className={appView === 'edit' ? 'is-active' : ''}
               onClick={() => activateEditTool('select')}
               aria-selected={appView === 'edit'}
+              aria-label="Edit"
+              title="Edit"
               disabled={!model}
             >
               <Pencil size={19} />
@@ -1925,6 +1899,8 @@ function App() {
               className={appView === 'texture' ? 'is-active' : ''}
               onClick={() => setAppView('texture')}
               aria-selected={appView === 'texture'}
+              aria-label="UV"
+              title="UV"
               disabled={!model}
             >
               <ImageIcon size={19} />
@@ -1936,6 +1912,8 @@ function App() {
               className={appView === 'resource' ? 'is-active' : ''}
               onClick={openResourceCalculator}
               aria-selected={appView === 'resource'}
+              aria-label="Resource Calculator"
+              title="Resource Calculator"
               disabled={!model}
             >
               <ClipboardList size={19} />
@@ -1947,6 +1925,8 @@ function App() {
               className={appView === 'shopping' ? 'is-active' : ''}
               onClick={openShoppingList}
               aria-selected={appView === 'shopping'}
+              aria-label="Shopping List"
+              title="Shopping List"
               disabled={!model}
             >
               <ShoppingCart size={19} />

@@ -494,7 +494,7 @@ export function Viewer3D(props: InternalViewerProps) {
       if (controlsRef.current && cameraModeRef.current !== 'spectator') {
         const latestModel = latestModelRef.current;
         if (spinRef.current && latestModel) {
-          updateSpin(time, latestModel.dimensions, controlsRef.current, camera, spinRef);
+          updateSpin(time, cameraFitDimensions(latestModel), controlsRef.current, camera, spinRef);
         }
         controlsRef.current.update();
       }
@@ -535,7 +535,7 @@ export function Viewer3D(props: InternalViewerProps) {
       resetCamera: () => {
         const model = latestModelRef.current;
         if (!model) return;
-        fitCameraToModel(model.dimensions, camera, controls);
+        fitCameraToModel(cameraFitDimensions(model), camera, controls);
         syncSpectatorStateFromCamera(camera, spectatorStateRef.current);
       },
       getCameraPosition: () => ({
@@ -734,7 +734,7 @@ export function Viewer3D(props: InternalViewerProps) {
 
     if (!model || !camera || !controls) return;
 
-    fitCameraToModel(model.dimensions, camera, controls);
+    fitCameraToModel(cameraFitDimensions(model), camera, controls);
     syncSpectatorStateFromCamera(camera, spectatorStateRef.current);
   }, [cameraFitKey]);
 
@@ -2325,7 +2325,21 @@ function fitCameraToModel(
 
 function modelCameraFitKey(model: SchematicModel): string {
   const { width, height, length } = model.dimensions;
-  return `${width}x${height}x${length}`;
+  return `${width}x${height}x${length}:${cameraFitDimensions(model).height}`;
+}
+
+function cameraFitDimensions(model: SchematicModel): SchematicDimensions {
+  let occupiedTopLayer = -1;
+
+  for (const block of model.blocks) {
+    occupiedTopLayer = Math.max(occupiedTopLayer, block.y);
+  }
+
+  return {
+    width: model.dimensions.width,
+    height: occupiedTopLayer >= 0 ? occupiedTopLayer + 1 : model.dimensions.height,
+    length: model.dimensions.length,
+  };
 }
 
 function updateSpin(

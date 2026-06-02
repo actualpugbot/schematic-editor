@@ -1,5 +1,5 @@
 /* ============================================================================
-   BlockBlueprint — Schematic Studio
+   Schematic Editor
    A calm, modern design system. Soft neutral canvas, white floating cards,
    a single confident blue accent, and a builder-grotesque type voice.
    ========================================================================== */
@@ -239,13 +239,6 @@ input, select, textarea { font-family: inherit; }
 .topbar-divider { width: 1px; height: 26px; background: var(--line); flex: none; }
 
 .file-lockup { min-width: 0; display: flex; align-items: center; gap: 10px; }
-.file-lockup .file-emblem {
-  width: 30px; height: 30px; border-radius: 8px; flex: none;
-  display: grid; place-items: center;
-  background: var(--surface-sunken);
-  border: 1px solid var(--line);
-  color: var(--accent);
-}
 .schematic-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .schematic-title h1 {
   font-size: 16px; font-weight: 600; color: var(--ink);
@@ -268,24 +261,6 @@ input, select, textarea { font-family: inherit; }
 .schematic-title-edit:hover { background: var(--surface-sunken); color: var(--accent); }
 
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-
-/* segmented import/export menu buttons */
-.topbar-action {
-  display: inline-flex; align-items: center; gap: 7px;
-  height: 38px; padding: 0 14px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--line-strong);
-  background: var(--surface);
-  color: var(--ink-soft);
-  font-size: 13.5px; font-weight: 600;
-  box-shadow: var(--shadow-xs);
-  transition: border-color 0.15s, background 0.15s, transform 0.1s;
-}
-.topbar-action:hover { border-color: var(--accent); color: var(--accent); }
-.topbar-action:active { transform: translateY(1px); }
-.topbar-action:disabled { opacity: 0.45; cursor: not-allowed; }
-.topbar-action svg { color: var(--muted); }
-.topbar-action:hover svg { color: var(--accent); }
 
 .topbar-icon-btn {
   display: grid; place-items: center;
@@ -321,7 +296,9 @@ input, select, textarea { font-family: inherit; }
   grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--control-w);
   min-height: 0;
   overflow: hidden;
+  position: relative;
 }
+.workspace.is-left-rail-collapsed { --rail-w: 80px; }
 .workspace.is-shopping,
 .workspace.is-resource { grid-template-columns: var(--rail-w) minmax(0, 1fr); }
 .workspace.is-shopping .control-rail,
@@ -338,7 +315,54 @@ input, select, textarea { font-family: inherit; }
   padding: 14px 12px;
   gap: 6px;
   overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
+}
+
+.rail-toggle {
+  position: absolute;
+  inset-block: 0;
+  left: calc(var(--rail-w) - 5px);
+  z-index: 20;
+  display: flex; align-items: center; justify-content: center;
+  width: 10px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--faint);
+}
+.rail-toggle::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  left: 4px;
+  width: 1px;
+  background: var(--line);
+  transition: background 0.14s, width 0.14s;
+}
+.rail-toggle svg {
+  position: relative;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  padding: 2px;
+  border-radius: var(--r-pill);
+  background: var(--rail);
+  box-shadow: 0 0 0 1px var(--line);
+  opacity: 0;
+  transition: opacity 0.14s, color 0.14s, box-shadow 0.14s;
+}
+.rail-toggle:hover::before,
+.rail-toggle:focus-visible::before {
+  width: 2px;
+  background: var(--accent);
+}
+.rail-toggle:hover svg,
+.rail-toggle:focus-visible svg {
+  color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-ring);
+  opacity: 1;
 }
 
 .rail-section-label {
@@ -431,6 +455,37 @@ input, select, textarea { font-family: inherit; }
 
 .file-input { display: none; }
 
+.workspace.is-left-rail-collapsed .left-rail { padding: 14px 10px; }
+.workspace.is-left-rail-collapsed .left-rail .rail-cluster button span,
+.workspace.is-left-rail-collapsed .rail-section-label,
+.workspace.is-left-rail-collapsed .rail-dropzone p,
+.workspace.is-left-rail-collapsed .rail-dropzone .or,
+.workspace.is-left-rail-collapsed .rail-browse,
+.workspace.is-left-rail-collapsed .rail-recent-head,
+.workspace.is-left-rail-collapsed .rail-recent-item .meta {
+  display: none;
+}
+.workspace.is-left-rail-collapsed .left-rail .rail-cluster button {
+  justify-content: center;
+  padding: 0;
+}
+.workspace.is-left-rail-collapsed .rail-dropzone {
+  margin: 10px 0 6px;
+  min-height: 42px;
+  padding: 10px;
+  justify-content: center;
+}
+.workspace.is-left-rail-collapsed .rail-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.workspace.is-left-rail-collapsed .rail-recent-item {
+  justify-content: center;
+  height: 38px;
+  padding: 0;
+}
+
 /* ============================================================================
    VIEWPORT
    ========================================================================== */
@@ -453,7 +508,12 @@ input, select, textarea { font-family: inherit; }
   min-height: 0;
   overflow: hidden;
 }
-.viewport-panel canvas { display: block; width: 100% !important; height: 100% !important; }
+.viewport-panel canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  outline: none;
+}
 
 /* floating canvas toolbar (top-left) */
 .viewport-tools {
@@ -1423,7 +1483,7 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
 @media (max-width: 1180px) {
   :root { --rail-w: 80px; --control-w: 340px; }
   .left-rail .rail-cluster button span,
-  .rail-section-label, .rail-recent, .rail-dropzone p, .rail-dropzone .or, .rail-browse span { display: none; }
+  .rail-section-label, .rail-recent, .rail-dropzone p, .rail-dropzone .or, .rail-browse { display: none; }
   .left-rail .rail-cluster button { justify-content: center; padding: 0; }
   .rail-dropzone { padding: 12px; }
   .brand-lockup strong, .brand-beta { display: none; }
