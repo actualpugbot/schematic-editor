@@ -129,7 +129,8 @@ export function renameSchematicDocument(document: NbtDocument, source: Schematic
 }
 
 export function createVoxelBlock(x: number, y: number, z: number, stateKey: string): VoxelBlock {
-  const name = stateKey.split('[', 1)[0];
+  const normalizedStateKey = normalizeImportedBlockStateKey(stateKey);
+  const name = normalizedStateKey.split('[', 1)[0];
   const appearance = blockAppearance(name);
 
   return {
@@ -137,7 +138,7 @@ export function createVoxelBlock(x: number, y: number, z: number, stateKey: stri
     y,
     z,
     name,
-    stateKey,
+    stateKey: normalizedStateKey,
     color: appearance.color,
     material: appearance.label,
   };
@@ -377,7 +378,7 @@ function parseSpongeSchematic(schematic: NbtCompound, fileName = 'Uploaded schem
 
   for (let index = 0; index < blockIds.length; index += 1) {
     const paletteIndex = blockIds[index];
-    const stateKey = paletteEntries[paletteIndex] ?? `unknown_palette_${paletteIndex}`;
+    const stateKey = normalizeImportedBlockStateKey(paletteEntries[paletteIndex] ?? `unknown_palette_${paletteIndex}`);
     if (isAirBlock(stateKey)) continue;
 
     const x = index % dimensions.width;
@@ -456,7 +457,7 @@ function parseLegacySchematic(schematic: NbtCompound, fileName = 'Uploaded schem
     const x = index % dimensions.width;
     const z = Math.floor(index / dimensions.width) % dimensions.length;
     const y = Math.floor(index / (dimensions.width * dimensions.length));
-    const name = legacyBlockStateName(id, metadata);
+    const name = normalizeImportedBlockStateKey(legacyBlockStateName(id, metadata));
     const appearance = name.startsWith('minecraft:legacy_block_') ? legacyBlockAppearance(id) : blockAppearance(name);
 
     blocks.push({
@@ -692,7 +693,7 @@ function parseLitematic(root: NbtCompound, fileName = 'Uploaded litematic'): Sch
 
     for (let index = 0; index < blockIds.length; index += 1) {
       const paletteIndex = blockIds[index];
-      const stateKey = paletteEntries[paletteIndex] ?? `unknown_palette_${paletteIndex}`;
+      const stateKey = normalizeImportedBlockStateKey(paletteEntries[paletteIndex] ?? `unknown_palette_${paletteIndex}`);
       paletteNames.add(stateKey);
       if (isAirBlock(stateKey)) continue;
 
@@ -800,7 +801,7 @@ function buildPaletteEntries(palette: NbtCompound): string[] {
   for (const [blockName, rawIndex] of Object.entries(palette)) {
     const index = asNumber(rawIndex, -1);
     if (index >= 0) {
-      entries[index] = asString(blockName, blockName);
+      entries[index] = normalizeImportedBlockStateKey(asString(blockName, blockName));
     }
   }
 
@@ -876,7 +877,7 @@ function readLegacyHighBits(addBlocks: Uint8Array, index: number): number {
 function readLitematicPaletteEntry(value: unknown): string {
   if (!isCompound(value)) return 'minecraft:air';
 
-  const name = asString(value.Name, 'minecraft:air');
+  const name = normalizeImportedBlockId(asString(value.Name, 'minecraft:air'));
   const properties = isCompound(value.Properties) ? value.Properties : null;
   if (!properties || Object.keys(properties).length === 0) return name;
 
@@ -1107,6 +1108,19 @@ function legacyBlockStateName(id: number, metadata = 0): string {
     return `minecraft:piston_head[facing=${facing},short=false,type=${type}]`;
   }
 
+  if (id === 31) {
+    if (metadata === 1) return 'minecraft:short_grass';
+    if (metadata === 2) return 'minecraft:fern';
+    return 'minecraft:dead_bush';
+  }
+
+  if (id === 175) {
+    const half = (metadata & 0x8) !== 0 ? 'upper' : 'lower';
+    const variant = metadata & 0x7;
+    if (variant === 2) return `minecraft:tall_grass[half=${half}]`;
+    if (variant === 3) return `minecraft:large_fern[half=${half}]`;
+  }
+
   const names = new Map<number, string>([
     [1, 'minecraft:stone'],
     [2, 'minecraft:grass_block'],
@@ -1142,6 +1156,21 @@ function legacyBlockStateName(id: number, metadata = 0): string {
   ]);
 
   return names.get(id) ?? `minecraft:legacy_block_${id}`;
+}
+
+function normalizeImportedBlockStateKey(stateKey: string): string {
+  const [rawId, rawProperties] = stateKey.split('[', 2);
+  const id = normalizeImportedBlockId(rawId);
+  return rawProperties ? `${id}[${rawProperties}` : id;
+}
+
+function normalizeImportedBlockId(id: string): string {
+  const [rawNamespace, rawPath] = id.includes(':') ? id.split(':', 2) : ['minecraft', id];
+  const namespace = rawNamespace.toLowerCase();
+  const path = namespace === 'minecraft' ? (rawPath || rawNamespace).toLowerCase() : (rawPath || rawNamespace);
+  const normalized = `${namespace}:${path}`;
+  if (normalized === 'minecraft:grass' || normalized === 'minecraft:tallgrass') return 'minecraft:short_grass';
+  return normalized;
 }
 
 function legacyStairsName(id: number): string | null {

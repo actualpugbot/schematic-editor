@@ -21,8 +21,6 @@ import {
   Focus,
   Grid2X2,
   Hammer,
-  Hand,
-  HelpCircle,
   ImageIcon,
   Layers,
   List,
@@ -39,19 +37,18 @@ import {
   Rotate3D,
   ScanSearch,
   Search,
-  Settings,
   ShoppingCart,
   SlidersHorizontal,
   Sun,
   Upload,
   X,
-  ZoomIn,
 } from 'lucide-react';
 import {
   Viewer3D,
   type AxisGizmoOrientation,
   type CameraMode,
   type PlacementPoint,
+  type SavedCameraPosition,
   type SelectionButton,
   type TextureAdjustmentMap,
   type TextureFaceHit,
@@ -87,17 +84,16 @@ import {
   type VoxelBlock,
 } from './lib/schematic';
 import creativeInventoryData from './lib/data/creative_inventory.json';
-import defaultSchematicUrl from '../Medieval House.litematic?url';
+import defaultSchematicUrl from '../mossy_roof_house.litematic?url';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 type DraggedFileKind = 'none' | 'unsupported-file' | 'unknown-file' | 'schematic-file';
 type InspectorTab = 'selection' | 'materials' | 'layers';
 type EditPanelTab = 'tools' | 'rotate' | 'replace';
-type AppView = 'viewer' | 'inspect' | 'edit' | 'texture' | 'shopping' | 'resource';
+type AppView = 'inspect' | 'edit' | 'texture' | 'shopping' | 'resource';
 type EditTool = 'select' | 'build';
 type Theme = 'light' | 'dark';
 type MaterialsScope = 'build' | 'cuboid';
-type MaterialsMode = 'placed' | 'raw';
 type ShoppingLayout = 'grid' | 'list';
 type ThumbnailLoadState = 'idle' | 'loading' | 'ready' | 'failed';
 type CuboidCornerId = 'a' | 'b';
@@ -120,6 +116,21 @@ interface PendingCuboidCorner {
 interface CuboidCorners {
   a: CuboidPoint | null;
   b: CuboidPoint | null;
+}
+
+interface SelectionArea {
+  id: string;
+  name: string;
+  corners: CuboidCorners;
+  updatedAt: number;
+}
+
+interface SavedCameraView {
+  id: string;
+  name: string;
+  position: SavedCameraPosition;
+  isDefault: boolean;
+  updatedAt: number;
 }
 
 interface CuboidPoint {
@@ -189,9 +200,11 @@ type ColorGroupId =
   | 'pink';
 
 const schematicFileExtensions = new Set(['.litematic', '.schem', '.schematic', '.nbt']);
-const defaultSchematicFileName = 'Medieval House.litematic';
+const defaultSchematicFileName = 'mossy_roof_house.litematic';
 const themeStorageKey = 'schematic-editor-theme';
 const shoppingListStoragePrefix = 'schematic-editor-shopping-list';
+const selectionStoragePrefix = 'schematic-editor-selections';
+const cameraStoragePrefix = 'schematic-editor-cameras';
 const emptyBuildBlock = 'minecraft:air';
 const defaultHotbarBlocks = [
   'minecraft:stone',
@@ -446,7 +459,7 @@ function App() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
   const [model, setModel] = useState<SchematicModel | null>(null);
-  const [appView, setAppView] = useState<AppView>('viewer');
+  const [appView, setAppView] = useState<AppView>('inspect');
   const [schematicName, setSchematicName] = useState('');
   const [isEditingSchematicName, setIsEditingSchematicName] = useState(false);
   const [schematicDocument, setSchematicDocument] = useState<NbtDocument | null>(null);
@@ -454,15 +467,14 @@ function App() {
   const [hasEditChanges, setHasEditChanges] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [error, setError] = useState('');
-  const [visibleLayer, setVisibleLayer] = useState(model?.dimensions.height ? model.dimensions.height - 1 : 0);
-  const [singleLayer, setSingleLayer] = useState(false);
+  const [visibleBottomLayer, setVisibleBottomLayer] = useState(0);
+  const [visibleTopLayer, setVisibleTopLayer] = useState(model?.dimensions.height ? model.dimensions.height - 1 : 0);
   const [showGrid, setShowGrid] = useState(true);
   const [selectedBlock, setSelectedBlock] = useState<VoxelBlock | null>(null);
   const [expandedMaterialIds, setExpandedMaterialIds] = useState<Set<string>>(() => new Set());
   const [materialSearch, setMaterialSearch] = useState('');
   const [hiddenMaterialIds, setHiddenMaterialIds] = useState<Set<string>>(() => new Set());
-  const [materialsMode, setMaterialsMode] = useState<MaterialsMode>('placed');
-  const [integerCrafting, setIntegerCrafting] = useState(true);
+  const integerCrafting = true;
   const [shoppingSearch, setShoppingSearch] = useState('');
   const [shoppingLayout, setShoppingLayout] = useState<ShoppingLayout>('grid');
   const [shoppingPlanMode, setShoppingPlanMode] = useState(false);
@@ -474,6 +486,10 @@ function App() {
   const [editPanelTab, setEditPanelTab] = useState<EditPanelTab>('tools');
   const [cuboidSelectionMode, setCuboidSelectionMode] = useState(false);
   const [cuboidCorners, setCuboidCorners] = useState<CuboidCorners>(() => emptyCuboidCorners());
+  const [selectionAreas, setSelectionAreas] = useState<SelectionArea[]>([]);
+  const [activeSelectionId, setActiveSelectionId] = useState<string | null>(null);
+  const [selectionUndoStack, setSelectionUndoStack] = useState<CuboidCorners[]>([]);
+  const [savedCameraViews, setSavedCameraViews] = useState<SavedCameraView[]>([]);
   const [materialsScope, setMaterialsScope] = useState<MaterialsScope>('build');
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit');
   const [editTool, setEditTool] = useState<EditTool>('select');
@@ -501,10 +517,14 @@ function App() {
   const schematicNameInputRef = useRef<HTMLInputElement | null>(null);
   const [showCelebration, setShowCelebration] = useState(false);
   const skipNextShoppingPersistRef = useRef(false);
+  const skipNextSelectionPersistRef = useRef(false);
+  const skipNextCameraPersistRef = useRef(false);
+  const pendingCameraPositionRef = useRef<SavedCameraPosition | null>(null);
   const prevShoppingProgressRef = useRef(0);
   const prevShoppingStorageRef = useRef('');
   const dragDepthRef = useRef(0);
-  const visibleWorldY = model ? model.origin.y + visibleLayer : visibleLayer;
+  const visibleBottomWorldY = model ? model.origin.y + visibleBottomLayer : visibleBottomLayer;
+  const visibleTopWorldY = model ? model.origin.y + visibleTopLayer : visibleTopLayer;
   const selectedBlockWorldX = selectedBlock && model ? model.origin.x + selectedBlock.x : null;
   const selectedBlockWorldY = selectedBlock && model ? model.origin.y + selectedBlock.y : null;
   const selectedBlockWorldZ = selectedBlock && model ? model.origin.z + selectedBlock.z : null;
@@ -532,8 +552,12 @@ function App() {
 
   const currentLayerBlockCount = useMemo(() => {
     if (!model) return 0;
-    return model.blocks.filter((block) => block.y === visibleLayer && !hiddenMaterialIds.has(materialIdForBlock(block))).length;
-  }, [hiddenMaterialIds, model, visibleLayer]);
+    return model.blocks.filter((block) =>
+      block.y >= visibleBottomLayer
+      && block.y <= visibleTopLayer
+      && !hiddenMaterialIds.has(materialIdForBlock(block))
+    ).length;
+  }, [hiddenMaterialIds, model, visibleBottomLayer, visibleTopLayer]);
 
   const materials = useMemo<MaterialSummary[]>(() => {
     if (!model) return [];
@@ -560,8 +584,25 @@ function App() {
     return summarizeMaterials(model.blocks.filter((block) => blockInBounds(block, cuboidBounds)));
   }, [cuboidBoundsKey, model]);
 
-  const activeMaterials = materialsScope === 'cuboid' ? cuboidMaterials : materials;
-  const activeMaterialsLabel = materialsScope === 'cuboid' ? 'Selected Area' : 'Entire Build';
+  const layerMaterials = useMemo<MaterialSummary[]>(() => {
+    if (!model) return [];
+    return summarizeMaterials(model.blocks.filter((block) =>
+      block.y >= visibleBottomLayer
+      && block.y <= visibleTopLayer
+      && !hiddenMaterialIds.has(materialIdForBlock(block))
+    ));
+  }, [hiddenMaterialIds, model, visibleBottomLayer, visibleTopLayer]);
+
+  const activeMaterials = materialsScope === 'cuboid'
+    ? cuboidMaterials
+    : inspectorTab === 'layers'
+      ? layerMaterials
+      : materials;
+  const activeMaterialsLabel = materialsScope === 'cuboid'
+    ? 'Selected Area'
+    : inspectorTab === 'layers'
+      ? 'Visible Layers'
+      : 'Entire Build';
   const recipeBreakdown = useMemo(() => explodeMaterials(activeMaterials, {
     rawOverrides: new Set(),
     recipeChoice: new Map(),
@@ -626,12 +667,12 @@ function App() {
   const recipeTreeByMaterialId = useMemo(() => (
     new Map(recipeBreakdown.trees.map((tree) => [tree.id, tree]))
   ), [recipeBreakdown]);
-  const visibleMaterials = materialsMode === 'raw' ? rawMaterials : activeMaterials;
-  const visibleMaterialsLabel = materialsMode === 'raw' ? 'Raw Materials' : activeMaterialsLabel;
+  const visibleMaterials = activeMaterials;
+  const visibleMaterialsLabel = activeMaterialsLabel;
   const shoppingScope = useMemo(() => (
     model ? shoppingScopeKey(model, materialsScope, cuboidBounds) : 'none'
   ), [cuboidBoundsKey, materialsScope, model]);
-  const shoppingModeScope = `${shoppingScope}:${materialsMode}:${integerCrafting ? 'integer' : 'fractional'}`;
+  const shoppingModeScope = `${shoppingScope}:placed:integer`;
   const shoppingStorage = useMemo(() => (
     model ? shoppingStorageKey(model, shoppingScope, activeMaterials) : ''
   ), [activeMaterials, model, shoppingScope]);
@@ -757,6 +798,9 @@ function App() {
   const texturePreviewModel = useMemo<SchematicModel>(() => createTexturePreviewModel(selectedTextureBlock), [selectedTextureBlock]);
   const displayedModel = appView === 'texture' ? texturePreviewModel : model;
   const displayedHiddenMaterialIds = useMemo(() => new Set<string>(), []);
+  const modelStorageIdentity = useMemo(() => (
+    model ? schematicStorageIdentity(model) : ''
+  ), [model]);
   const selectedTextureAdjustmentKey = selectedTextureFace
     ? textureAdjustmentKey(
       selectedTextureFace.blockId,
@@ -878,7 +922,8 @@ function App() {
         setSchematicName(fallback.name);
         setSchematicDocument(null);
         setSchematicExtension('.schem');
-        setVisibleLayer(fallback.dimensions.height - 1);
+        setVisibleBottomLayer(0);
+        setVisibleTopLayer(fallback.dimensions.height - 1);
         setLoadState('ready');
         setError(caught instanceof Error ? caught.message : 'Could not load the default schematic.');
       }
@@ -901,6 +946,48 @@ function App() {
       return cuboidCornersKey(next) === cuboidCornersKey(current) ? current : next;
     });
   }, [model]);
+
+  useEffect(() => {
+    if (!model || !modelStorageIdentity) return;
+
+    const storedSelections = parseSelectionAreas(window.localStorage.getItem(selectionStorageKey(modelStorageIdentity)));
+    const nextSelections = storedSelections
+      .map((area) => ({ ...area, corners: clampCuboidCornersToModel(area.corners, model) }))
+      .filter((area) => area.corners.a || area.corners.b);
+    setSelectionAreas(nextSelections);
+    skipNextSelectionPersistRef.current = true;
+    const firstComplete = nextSelections.find((area) => area.corners.a && area.corners.b) ?? nextSelections[0] ?? null;
+    setActiveSelectionId(firstComplete?.id ?? null);
+    setCuboidCorners(firstComplete?.corners ?? emptyCuboidCorners());
+    setSelectionUndoStack([]);
+
+    const storedCameras = parseSavedCameraViews(window.localStorage.getItem(cameraStorageKey(modelStorageIdentity)));
+    skipNextCameraPersistRef.current = true;
+    setSavedCameraViews(storedCameras);
+    const defaultView = storedCameras.find((view) => view.isDefault);
+    if (defaultView) {
+      pendingCameraPositionRef.current = defaultView.position;
+      window.requestAnimationFrame(() => viewerRef.current?.applyCameraPosition(defaultView.position));
+    }
+  }, [model, modelStorageIdentity]);
+
+  useEffect(() => {
+    if (!modelStorageIdentity) return;
+    if (skipNextSelectionPersistRef.current) {
+      skipNextSelectionPersistRef.current = false;
+      return;
+    }
+    window.localStorage.setItem(selectionStorageKey(modelStorageIdentity), JSON.stringify(selectionAreas));
+  }, [modelStorageIdentity, selectionAreas]);
+
+  useEffect(() => {
+    if (!modelStorageIdentity) return;
+    if (skipNextCameraPersistRef.current) {
+      skipNextCameraPersistRef.current = false;
+      return;
+    }
+    window.localStorage.setItem(cameraStorageKey(modelStorageIdentity), JSON.stringify(savedCameraViews));
+  }, [modelStorageIdentity, savedCameraViews]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -926,11 +1013,12 @@ function App() {
     const isFromCurrentModel = model.blocks.includes(selectedBlock);
     const isVisible =
       !hiddenMaterialIds.has(materialIdForBlock(selectedBlock))
-      && (singleLayer ? selectedBlock.y === visibleLayer : selectedBlock.y <= visibleLayer);
+      && selectedBlock.y >= visibleBottomLayer
+      && selectedBlock.y <= visibleTopLayer;
     if (!isFromCurrentModel || !isVisible) {
       setSelectedBlock(null);
     }
-  }, [hiddenMaterialIds, model, selectedBlock, singleLayer, visibleLayer]);
+  }, [hiddenMaterialIds, model, selectedBlock, visibleBottomLayer, visibleTopLayer]);
 
   useEffect(() => {
     const validMaterialIds = new Set(materials.map((material) => material.id));
@@ -966,14 +1054,18 @@ function App() {
     setSchematicDocument(nextDocument);
     setSchematicExtension(nextExtension);
     setHasEditChanges(false);
-    setVisibleLayer(nextModel.dimensions.height - 1);
-    setSingleLayer(false);
+    setVisibleBottomLayer(0);
+    setVisibleTopLayer(nextModel.dimensions.height - 1);
     setSelectedBlock(null);
     setExpandedMaterialIds(new Set());
     setMaterialSearch('');
     setPlayerHeadSelections({});
     setHiddenMaterialIds(new Set());
     setCuboidCorners(emptyCuboidCorners());
+    setSelectionAreas([]);
+    setActiveSelectionId(null);
+    setSelectionUndoStack([]);
+    setSavedCameraViews([]);
     setMaterialsScope('build');
     setEditTool('select');
     setSelectedBuildBlock(emptyBuildBlock);
@@ -1078,10 +1170,11 @@ function App() {
 
   const stepLayer = (delta: number) => {
     if (!model) return;
-    setVisibleLayer((current) => clamp(current + delta, 0, model.dimensions.height - 1));
+    setVisibleTopLayer((current) => clamp(current + delta, visibleBottomLayer, model.dimensions.height - 1));
   };
 
-  const layerPercent = model && model.dimensions.height > 1 ? (visibleLayer / (model.dimensions.height - 1)) * 100 : 100;
+  const topLayerPercent = model && model.dimensions.height > 1 ? (visibleTopLayer / (model.dimensions.height - 1)) * 100 : 100;
+  const bottomLayerPercent = model && model.dimensions.height > 1 ? (visibleBottomLayer / (model.dimensions.height - 1)) * 100 : 0;
 
   const toggleMaterialVisibility = (id: string) => {
     setHiddenMaterialIds((current) => {
@@ -1128,11 +1221,93 @@ function App() {
 
   const beginCuboidSelection = (resetSelection = false, revealViewPanel = appView === 'inspect') => {
     if (resetSelection) {
+      pushSelectionUndo(cuboidCorners);
       setCuboidCorners(emptyCuboidCorners());
+      setActiveSelectionId(null);
       setMaterialsScope('build');
     }
     setCuboidSelectionMode(true);
     if (revealViewPanel) showPanel('selection');
+  };
+
+  const pushSelectionUndo = (corners: CuboidCorners) => {
+    setSelectionUndoStack((current) => [cloneCuboidCorners(corners), ...current].slice(0, 24));
+  };
+
+  const commitCuboidCorners = (nextCorners: CuboidCorners, options: { saveArea?: boolean } = {}) => {
+    if (cuboidCornersKey(nextCorners) === cuboidCornersKey(cuboidCorners)) return;
+    pushSelectionUndo(cuboidCorners);
+    setCuboidCorners(nextCorners);
+
+    if (activeSelectionId) {
+      setSelectionAreas((current) => current.map((area) => (
+        area.id === activeSelectionId
+          ? { ...area, corners: nextCorners, updatedAt: Date.now() }
+          : area
+      )));
+    } else if (options.saveArea && nextCorners.a && nextCorners.b) {
+      const nextArea = createSelectionArea(nextCorners, selectionAreas.length + 1);
+      setSelectionAreas((current) => [nextArea, ...current]);
+      setActiveSelectionId(nextArea.id);
+    }
+  };
+
+  const undoCuboidSelection = () => {
+    setSelectionUndoStack((current) => {
+      const [previous, ...rest] = current;
+      if (!previous) return current;
+      setCuboidCorners(previous);
+      if (activeSelectionId) {
+        setSelectionAreas((areas) => areas.map((area) => (
+          area.id === activeSelectionId
+            ? { ...area, corners: previous, updatedAt: Date.now() }
+            : area
+        )));
+      }
+      return rest;
+    });
+  };
+
+  const saveCurrentSelection = () => {
+    if (!cuboidCorners.a || !cuboidCorners.b) return;
+    if (activeSelectionId) return;
+    const nextArea = createSelectionArea(cuboidCorners, selectionAreas.length + 1);
+    setSelectionAreas((current) => [nextArea, ...current]);
+    setActiveSelectionId(nextArea.id);
+    setMaterialsScope('cuboid');
+  };
+
+  const activateSelectionArea = (id: string) => {
+    const area = selectionAreas.find((candidate) => candidate.id === id);
+    if (!area) return;
+    pushSelectionUndo(cuboidCorners);
+    setActiveSelectionId(id);
+    setCuboidCorners(area.corners);
+    if (area.corners.a && area.corners.b) setMaterialsScope('cuboid');
+  };
+
+  const removeSelectionArea = (id: string) => {
+    setSelectionAreas((current) => current.filter((area) => area.id !== id));
+    if (activeSelectionId === id) {
+      setActiveSelectionId(null);
+      setCuboidCorners(emptyCuboidCorners());
+      setMaterialsScope('build');
+    }
+  };
+
+  const selectVisibleLayers = () => {
+    if (!model) return;
+    const nextCorners = {
+      a: { x: 0, y: visibleBottomLayer, z: 0 },
+      b: {
+        x: Math.max(0, model.dimensions.width - 1),
+        y: visibleTopLayer,
+        z: Math.max(0, model.dimensions.length - 1),
+      },
+    };
+    commitCuboidCorners(nextCorners, { saveArea: true });
+    setCuboidSelectionMode(false);
+    setMaterialsScope('cuboid');
   };
 
   const openInspectorPanel = (tab: InspectorTab) => {
@@ -1157,10 +1332,10 @@ function App() {
       setSelectedBlock(block);
       const corner = button === 'secondary' ? 'b' : 'a';
       const otherCorner = corner === 'a' ? cuboidCorners.b : cuboidCorners.a;
-      setCuboidCorners((current) => ({
-        ...current,
+      commitCuboidCorners({
+        ...cuboidCorners,
         [corner]: pointFromBlock(block),
-      }));
+      }, { saveArea: Boolean(otherCorner) });
       if (otherCorner) setMaterialsScope('cuboid');
       return;
     }
@@ -1197,7 +1372,8 @@ function App() {
   };
 
   const clearCuboidSelection = () => {
-    setCuboidCorners(emptyCuboidCorners());
+    commitCuboidCorners(emptyCuboidCorners());
+    setActiveSelectionId(null);
     setMaterialsScope('build');
   };
 
@@ -1318,7 +1494,7 @@ function App() {
         ...blocks.filter((block) => !sourceKeys.has(blockPositionKey(block)) && !targetKeys.has(blockPositionKey(block))),
         ...rotatedBlocks,
       ]);
-      setCuboidCorners({ a: boundsMinPoint(rotatedBounds), b: boundsMaxPoint(rotatedBounds) });
+      commitCuboidCorners({ a: boundsMinPoint(rotatedBounds), b: boundsMaxPoint(rotatedBounds) });
       setSelectedBlock((current) => {
         if (!current || !sourceKeys.has(blockPositionKey(current))) return null;
         const nextPoint = rotatePointInBounds(current, cuboidBounds, direction);
@@ -1472,6 +1648,44 @@ function App() {
     setAppView('resource');
   };
 
+  const saveCameraView = () => {
+    const position = viewerRef.current?.getCameraPosition();
+    if (!position) return;
+    const nextView: SavedCameraView = {
+      id: createStableId('camera'),
+      name: `Camera ${savedCameraViews.length + 1}`,
+      position,
+      isDefault: savedCameraViews.length === 0,
+      updatedAt: Date.now(),
+    };
+    setSavedCameraViews((current) => [nextView, ...current]);
+  };
+
+  const applyCameraView = (id: string) => {
+    const view = savedCameraViews.find((candidate) => candidate.id === id);
+    if (!view) return;
+    viewerRef.current?.applyCameraPosition(view.position);
+  };
+
+  const setDefaultCameraView = (id: string) => {
+    setSavedCameraViews((current) => current.map((view) => ({
+      ...view,
+      isDefault: view.id === id,
+      updatedAt: view.id === id ? Date.now() : view.updatedAt,
+    })));
+  };
+
+  const removeCameraView = (id: string) => {
+    setSavedCameraViews((current) => current.filter((view) => view.id !== id));
+  };
+
+  const handleViewerReady = () => {
+    const pending = pendingCameraPositionRef.current;
+    if (!pending) return;
+    viewerRef.current?.applyCameraPosition(pending);
+    pendingCameraPositionRef.current = null;
+  };
+
   const toggleShoppingItem = (material: MaterialSummary) => {
     const key = shoppingItemKey(shoppingScope, material);
     setCheckedShoppingItems((current) => {
@@ -1507,16 +1721,14 @@ function App() {
 
   const stepCuboidCorner = (corner: CuboidCornerId, axis: 'x' | 'y' | 'z', delta: number) => {
     if (!model) return;
-    setCuboidCorners((current) => {
-      const point = current[corner];
-      if (!point) return current;
-      return {
-        ...current,
-        [corner]: {
-          ...point,
-          [axis]: clamp(point[axis] + delta, 0, maxCoordinateForAxis(model, axis)),
-        },
-      };
+    const point = cuboidCorners[corner];
+    if (!point) return;
+    commitCuboidCorners({
+      ...cuboidCorners,
+      [corner]: {
+        ...point,
+        [axis]: clamp(point[axis] + delta, 0, maxCoordinateForAxis(model, axis)),
+      },
     });
   };
 
@@ -1663,16 +1875,6 @@ function App() {
             <button
               type="button"
               role="tab"
-              className={appView === 'viewer' ? 'is-active' : ''}
-              onClick={() => setAppView('viewer')}
-              aria-selected={appView === 'viewer'}
-            >
-              <Box size={19} />
-              <span>Viewer</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
               className={appView === 'inspect' && inspectorTab === 'materials' ? 'is-active' : ''}
               onClick={() => openInspectorPanel('materials')}
               aria-selected={appView === 'inspect' && inspectorTab === 'materials'}
@@ -1796,19 +1998,6 @@ function App() {
           )}
 
           <div className="rail-spacer" />
-
-          <div className="rail-footer">
-            <button type="button" title="Help" aria-label="Help"><HelpCircle size={18} /></button>
-            <button
-              type="button"
-              title={isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'}
-              aria-label="Toggle theme"
-              onClick={toggleTheme}
-            >
-              {isDarkTheme ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
-            <button type="button" title="Settings" aria-label="Settings"><Settings size={18} /></button>
-          </div>
 
           <input
             ref={inputRef}
@@ -2025,30 +2214,6 @@ function App() {
                     Selected Area
                   </button>
                 </div>
-                <div className="segmented-control shopping-mode" role="group" aria-label="Resource material mode">
-                  <button
-                    type="button"
-                    className={materialsMode === 'placed' ? 'is-active' : ''}
-                    onClick={() => setMaterialsMode('placed')}
-                  >
-                    Placed
-                  </button>
-                  <button
-                    type="button"
-                    className={materialsMode === 'raw' ? 'is-active' : ''}
-                    onClick={() => setMaterialsMode('raw')}
-                  >
-                    Raw
-                  </button>
-                </div>
-                <label className="toggle-row compact-toggle">
-                  <input
-                    type="checkbox"
-                    checked={integerCrafting}
-                    onChange={(event) => setIntegerCrafting(event.target.checked)}
-                  />
-                  <span>Whole crafts</span>
-                </label>
                 <label className="material-search shopping-search">
                   <Search size={16} aria-hidden="true" />
                   <input
@@ -2147,11 +2312,6 @@ function App() {
                       : shoppingSearch.trim()
                         ? `No resources match "${shoppingSearch.trim()}".`
                         : 'No non-air blocks to calculate.'}
-                  </p>
-                )}
-                {materialsMode === 'raw' && recipeBreakdown.unresolved.length > 0 && (
-                  <p className="raw-material-notice">
-                    {recipeBreakdown.unresolved.length.toLocaleString()} item types had no recipe and were counted as raw.
                   </p>
                 )}
               </div>
@@ -2503,21 +2663,44 @@ function App() {
               </button>
               <button
                 type="button"
-                className={cuboidSelectionMode ? 'is-active' : ''}
-                onClick={() => {
-                  setCuboidSelectionMode((current) => !current);
-                  if (appView === 'inspect') showPanel('selection');
-                }}
-                title={cuboidSelectionMode ? 'Area selection is active' : 'Select area'}
-                aria-pressed={cuboidSelectionMode}
+                onClick={saveCameraView}
+                title="Save camera position"
+                aria-label="Save camera position"
+                disabled={cameraMode === 'spectator'}
               >
-                <BoxSelect size={19} />
-              </button>
-              <button type="button" onClick={() => appView === 'texture' ? setAppView('texture') : showPanel('materials')} title={appView === 'texture' ? 'Texture adjustments' : 'Materials'}>
-                <Cuboid size={19} />
+                <Plus size={19} />
               </button>
             </div>
           </div>
+
+          {savedCameraViews.length > 0 && appView !== 'texture' && (
+            <div className="camera-saves" aria-label="Saved camera positions">
+              {savedCameraViews.map((view) => (
+                <div className="camera-save-row" key={view.id}>
+                  <button type="button" onClick={() => applyCameraView(view.id)}>
+                    {view.name}
+                  </button>
+                  <button
+                    type="button"
+                    className={view.isDefault ? 'is-active' : ''}
+                    onClick={() => setDefaultCameraView(view.id)}
+                    title={view.isDefault ? 'Default camera' : 'Set as default camera'}
+                    aria-label={view.isDefault ? `${view.name} is the default camera` : `Set ${view.name} as default camera`}
+                  >
+                    <Focus size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeCameraView(view.id)}
+                    title={`Remove ${view.name}`}
+                    aria-label={`Remove ${view.name}`}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
 
           {cameraMode === 'spectator' && (
             <>
@@ -2560,31 +2743,33 @@ function App() {
               <div className="stepper" aria-label="Visible layer">
                 <button
                   type="button"
-                  onClick={() => setVisibleLayer((current) => Math.max(0, current - 1))}
-                  disabled={visibleLayer <= 0}
-                  title="Lower layer"
-                  aria-label="Lower layer"
+                  onClick={() => setVisibleBottomLayer((current) => Math.max(0, current - 1))}
+                  disabled={visibleBottomLayer <= 0}
+                  title="Lower bottom layer"
+                  aria-label="Lower bottom layer"
                 >
                   <ChevronDown size={15} />
                 </button>
                 <button
                   type="button"
-                  className={singleLayer ? 'is-active' : ''}
-                  onClick={() => setSingleLayer((current) => !current)}
-                  title={singleLayer ? 'Showing single layer' : 'Showing all layers up to current'}
+                  onClick={() => {
+                    setVisibleBottomLayer(0);
+                    setVisibleTopLayer(model.dimensions.height - 1);
+                  }}
+                  title="Show all layers"
                   style={{ width: 'auto', padding: '0 12px', gap: 6, display: 'inline-flex', alignItems: 'center' }}
                 >
                   <Layers size={15} />
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5, fontWeight: 600 }}>
-                    {visibleWorldY}{model.dimensions.height > 1 ? ` / ${model.origin.y + model.dimensions.height - 1}` : ''}
+                    {visibleBottomWorldY}-{visibleTopWorldY}
                   </span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => setVisibleLayer((current) => Math.min(model.dimensions.height - 1, current + 1))}
-                  disabled={visibleLayer >= model.dimensions.height - 1}
-                  title="Raise layer"
-                  aria-label="Raise layer"
+                  onClick={() => setVisibleTopLayer((current) => Math.min(model.dimensions.height - 1, current + 1))}
+                  disabled={visibleTopLayer >= model.dimensions.height - 1}
+                  title="Raise top layer"
+                  aria-label="Raise top layer"
                 >
                   <ChevronUp size={15} />
                 </button>
@@ -2612,8 +2797,8 @@ function App() {
                   model={texturePreviewModel}
                   cameraMode="orbit"
                   spectatorSpeed={spectatorSpeed}
-                  visibleLayer={0}
-                  singleLayer={false}
+                  visibleBottomLayer={0}
+                  visibleTopLayer={0}
                   autoRotate={false}
                   showGrid={false}
                   theme={theme}
@@ -2623,6 +2808,7 @@ function App() {
                   placementPreviewBlock={null}
                   cuboidBounds={null}
                   cuboidCorners={emptyCuboidCorners()}
+                  showCuboidCornerLabels={false}
                   textureAdjustments={{}}
                   textureEditMode={false}
                   onAxisOrientationChange={updateAxisGizmo}
@@ -2635,8 +2821,8 @@ function App() {
                   model={texturePreviewModel}
                   cameraMode="orbit"
                   spectatorSpeed={spectatorSpeed}
-                  visibleLayer={0}
-                  singleLayer={false}
+                  visibleBottomLayer={0}
+                  visibleTopLayer={0}
                   autoRotate={false}
                   showGrid={false}
                   theme={theme}
@@ -2646,6 +2832,7 @@ function App() {
                   placementPreviewBlock={null}
                   cuboidBounds={null}
                   cuboidCorners={emptyCuboidCorners()}
+                  showCuboidCornerLabels={false}
                   textureAdjustments={textureAdjustments}
                   textureEditMode
                   onTextureFaceSelect={handleTextureFaceSelect}
@@ -2660,8 +2847,8 @@ function App() {
               model={displayedModel}
               cameraMode={cameraMode}
               spectatorSpeed={spectatorSpeed}
-              visibleLayer={visibleLayer}
-              singleLayer={singleLayer}
+              visibleBottomLayer={visibleBottomLayer}
+              visibleTopLayer={visibleTopLayer}
               autoRotate={false}
               showGrid={showGrid}
               theme={theme}
@@ -2671,11 +2858,13 @@ function App() {
               placementPreviewBlock={appView === 'edit' && selectedBuildBlock !== 'minecraft:air' ? selectedBuildBlockPreview : null}
               cuboidBounds={cuboidBounds}
               cuboidCorners={cuboidCorners}
+              showCuboidCornerLabels={appView === 'inspect' && inspectorTab === 'selection' && Boolean(cuboidBounds)}
               rotationTarget={appView === 'edit' && rotateTargetLabel ? (materialsScope === 'cuboid' && cuboidBounds ? 'cuboid' : 'block') : null}
               rotationControlRef={rotationControlsRef}
               textureAdjustments={textureAdjustments}
               onBlockSelect={handleBlockSelect}
               onAxisOrientationChange={updateAxisGizmo}
+              onReady={handleViewerReady}
               viewerRef={viewerRef}
             />
           )}
@@ -2692,102 +2881,7 @@ function App() {
           </section>
         )}
 
-        {appView === 'viewer' ? (
-          model ? (
-            <>
-              <section className="panel-card" aria-label="Schematic info">
-                <div className="section-heading">
-                  <h2>Schematic Info</h2>
-                </div>
-                <div className="info-list">
-                  <div className="info-row">
-                    <span className="k">Name</span>
-                    <span className="v">{schematicName || model.name}</span>
-                  </div>
-                  <div className="info-row">
-                    <span className="k">Dimensions</span>
-                    <span className="v mono">{model.dimensions.width} × {model.dimensions.height} × {model.dimensions.length}</span>
-                  </div>
-                  <div className="info-row">
-                    <span className="k">Volume</span>
-                    <span className="v mono">{(model.dimensions.width * model.dimensions.height * model.dimensions.length).toLocaleString()} blocks</span>
-                  </div>
-                  <div className="info-row">
-                    <span className="k">Placed Blocks</span>
-                    <span className="v mono">{model.blocks.length.toLocaleString()}</span>
-                  </div>
-                  <div className="info-row">
-                    <span className="k">Unique Types</span>
-                    <span className="v mono">{materials.length.toLocaleString()}</span>
-                  </div>
-                  <div className="info-row">
-                    <span className="k">Source</span>
-                    <span className="info-badge">{model.source}</span>
-                  </div>
-                </div>
-              </section>
-
-              <section className="panel-card" aria-label="Supported formats">
-                <div className="section-heading">
-                  <h2>Supported Formats</h2>
-                </div>
-                <div className="format-list">
-                  {([
-                    ['.schem', 'Schematic (Sponge)'],
-                    ['.schematic', 'Legacy (MCEdit)'],
-                    ['.litematic', 'Litematica'],
-                    ['.nbt', 'Structure Block'],
-                  ] as const).map(([fmt, desc]) => (
-                    <div className="format-row" key={fmt}>
-                      <span className="dot" aria-hidden="true" />
-                      <span><span className="fmt">{fmt}</span> <span className="fmt-desc">{desc}</span></span>
-                      <Check size={16} className="check" strokeWidth={2.6} />
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              <section className="panel-card" aria-label="Camera controls">
-                <div className="section-heading">
-                  <h2>Camera Controls</h2>
-                </div>
-                <div className="camera-ref">
-                  <div className="camera-ref-row">
-                    <Orbit size={17} />
-                    <span className="label">Orbit</span>
-                    <span className="hint">Drag to rotate</span>
-                  </div>
-                  <div className="camera-ref-row">
-                    <Hand size={17} />
-                    <span className="label">Pan</span>
-                    <span className="hint">Shift + drag</span>
-                  </div>
-                  <div className="camera-ref-row">
-                    <ZoomIn size={17} />
-                    <span className="label">Zoom</span>
-                    <span className="hint">Scroll</span>
-                  </div>
-                  <div className="camera-ref-row">
-                    <RotateCcw size={17} />
-                    <span className="label">Reset</span>
-                    <span className="key">R</span>
-                  </div>
-                </div>
-                <button type="button" className="fit-button" onClick={() => viewerRef.current?.resetCamera()}>
-                  Fit to Schematic
-                </button>
-              </section>
-            </>
-          ) : (
-            <section className="panel-card" aria-label="Get started">
-              <div className="section-heading"><h2>Get Started</h2></div>
-              <p className="panel-empty">Import a schematic file to inspect its blocks, materials, and layers in 3D.</p>
-              <button type="button" className="primary-button" style={{ width: '100%', marginTop: 8 }} onClick={() => inputRef.current?.click()}>
-                <Upload size={16} /> Import Schematic
-              </button>
-            </section>
-          )
-        ) : appView === 'texture' ? (
+        {appView === 'texture' ? (
           <section className="texture-panel" aria-label="Texture adjustment editor">
             <div className="section-heading compact">
               <div>
@@ -2985,6 +3079,35 @@ function App() {
                   <button
                     type="button"
                     className="icon-button"
+                    onClick={saveCurrentSelection}
+                    title="Save selected area"
+                    aria-label="Save selected area"
+                    disabled={!cuboidBounds || Boolean(activeSelectionId)}
+                  >
+                    <Check size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    onClick={undoCuboidSelection}
+                    title="Undo selection change"
+                    aria-label="Undo selection change"
+                    disabled={selectionUndoStack.length === 0}
+                  >
+                    <RotateCcw size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    onClick={selectVisibleLayers}
+                    title="Select visible layers"
+                    aria-label="Select visible layers"
+                  >
+                    <Layers size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button"
                     onClick={clearCuboidSelection}
                     title="Clear selected area"
                     aria-label="Clear selected area"
@@ -2994,6 +3117,31 @@ function App() {
                   </button>
                 </div>
               </div>
+
+              {selectionAreas.length > 0 && (
+                <div className="selection-area-list" aria-label="Saved selected areas">
+                  {selectionAreas.map((area) => {
+                    const bounds = area.corners.a && area.corners.b ? normalizeCuboidBounds(area.corners.a, area.corners.b, model) : null;
+                    const dimensions = bounds ? dimensionsForBounds(bounds) : null;
+                    return (
+                      <div className={`selection-area-row${area.id === activeSelectionId ? ' is-active' : ''}`} key={area.id}>
+                        <button type="button" onClick={() => activateSelectionArea(area.id)}>
+                          <strong>{area.name}</strong>
+                          <span>{dimensions ? `${dimensions.width} x ${dimensions.height} x ${dimensions.length}` : 'Incomplete'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeSelectionArea(area.id)}
+                          title={`Remove ${area.name}`}
+                          aria-label={`Remove ${area.name}`}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {cuboidBounds && cuboidDimensions ? (
                 <>
@@ -3037,6 +3185,11 @@ function App() {
                       : 'Create a selected area, then left-click Corner A and right-click Corner B in the viewport.'}
                 </p>
               )}
+              <FilteredMaterialSummary
+                title="Selected Materials"
+                materials={cuboidMaterials}
+                emptyText={cuboidBounds ? 'No non-air blocks in this selection.' : 'Select an area to preview its materials.'}
+              />
             </section>
 
             <section
@@ -3046,7 +3199,7 @@ function App() {
               <div className="section-heading">
                 <div>
                   <p className="eyebrow">Layer view</p>
-                  <h2>Y {visibleWorldY}</h2>
+                  <h2>Y {visibleBottomWorldY}-{visibleTopWorldY}</h2>
                 </div>
                 <div className="stepper">
                   <button type="button" onClick={() => stepLayer(-1)} title="Previous layer">
@@ -3058,24 +3211,55 @@ function App() {
                 </div>
               </div>
 
-              <div className="slider-wrap" style={{ '--layer-progress': `${layerPercent}%` } as CSSProperties}>
+              <div className="layer-range">
+                <label>
+                  <span>Bottom</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max={Math.max(0, model.dimensions.height - 1)}
+                    value={visibleBottomLayer}
+                    onChange={(event) => {
+                      const next = Number(event.target.value);
+                      setVisibleBottomLayer(Math.min(next, visibleTopLayer));
+                    }}
+                    aria-label="Bottom visible layer"
+                  />
+                </label>
+                <label>
+                  <span>Top</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max={Math.max(0, model.dimensions.height - 1)}
+                    value={visibleTopLayer}
+                    onChange={(event) => {
+                      const next = Number(event.target.value);
+                      setVisibleTopLayer(Math.max(next, visibleBottomLayer));
+                    }}
+                    aria-label="Top visible layer"
+                  />
+                </label>
+              </div>
+              <div className="slider-wrap layer-range-preview" style={{ '--layer-min': `${bottomLayerPercent}%`, '--layer-progress': `${topLayerPercent}%` } as CSSProperties}>
                 <input
                   type="range"
                   min="0"
                   max={Math.max(0, model.dimensions.height - 1)}
-                  value={visibleLayer}
-                  onChange={(event) => setVisibleLayer(Number(event.target.value))}
-                  aria-label="Visible layer"
+                  value={visibleTopLayer}
+                  onChange={(event) => setVisibleTopLayer(Math.max(Number(event.target.value), visibleBottomLayer))}
+                  aria-label="Top visible layer quick adjustment"
                 />
               </div>
 
               <div className="mode-row">
-                <label className="toggle-row">
-                  <input type="checkbox" checked={singleLayer} onChange={(event) => setSingleLayer(event.target.checked)} />
-                  <span>Only this layer</span>
-                </label>
                 <span>{currentLayerBlockCount.toLocaleString()} blocks</span>
               </div>
+              <FilteredMaterialSummary
+                title="Visible Layer Materials"
+                materials={layerMaterials}
+                emptyText="No visible non-air blocks in this layer range."
+              />
             </section>
 
             <section
@@ -3122,35 +3306,6 @@ function App() {
                   Selected Area
                 </button>
               </div>
-              <div className="segmented-control" role="group" aria-label="Material list mode">
-                <button
-                  type="button"
-                  className={materialsMode === 'placed' ? 'is-active' : ''}
-                  onClick={() => setMaterialsMode('placed')}
-                >
-                  Placed Blocks
-                </button>
-                <button
-                  type="button"
-                  className={materialsMode === 'raw' ? 'is-active' : ''}
-                  onClick={() => setMaterialsMode('raw')}
-                >
-                  Raw Materials
-                </button>
-              </div>
-              <label className="toggle-row compact-toggle material-crafting-toggle">
-                <input
-                  type="checkbox"
-                  checked={integerCrafting}
-                  onChange={(event) => setIntegerCrafting(event.target.checked)}
-                />
-                <span>Whole crafts</span>
-              </label>
-              {materialsMode === 'raw' && recipeBreakdown.unresolved.length > 0 && (
-                <p className="raw-material-notice">
-                  {recipeBreakdown.unresolved.length.toLocaleString()} item types had no recipe and were counted as raw.
-                </p>
-              )}
               <label className="material-search">
                 <Search size={16} aria-hidden="true" />
                 <input
@@ -3164,7 +3319,7 @@ function App() {
               <div className="material-stack">
                 {filteredMaterials.map((material) => {
                   const isExpanded = expandedMaterialIds.has(material.id);
-                  const isSelected = materialsMode === 'placed' && material.id === selectedMaterialId;
+                  const isSelected = material.id === selectedMaterialId;
                   const breakdownId = `material-breakdown-${material.id}`;
                   const recipeTree = recipeTreeByMaterialId.get(normalizeRecipeItemId(material.id));
 
@@ -3203,7 +3358,6 @@ function App() {
                           aria-label={hiddenMaterialIds.has(material.id) ? `Show ${material.label}` : `Hide ${material.label}`}
                           title={hiddenMaterialIds.has(material.id) ? 'Show block' : 'Hide block'}
                           onClick={() => toggleMaterialVisibility(material.id)}
-                          disabled={materialsMode === 'raw'}
                         >
                           {hiddenMaterialIds.has(material.id) ? <EyeOff size={16} /> : <Eye size={16} />}
                         </button>
@@ -3214,7 +3368,7 @@ function App() {
                           className="material-breakdown"
                         >
                           <MaterialBreakdown materialId={material.id} count={material.count} />
-                          {materialsMode === 'placed' && recipeTree && (
+                          {recipeTree && (
                             <RecipeTree node={recipeTree} />
                           )}
                         </div>
@@ -3622,6 +3776,42 @@ function CuboidCornerControls({
           </div>
         );
       })}
+    </section>
+  );
+}
+
+function FilteredMaterialSummary({
+  title,
+  materials,
+  emptyText,
+}: {
+  title: string;
+  materials: MaterialSummary[];
+  emptyText: string;
+}) {
+  const shownMaterials = materials.slice(0, 10);
+  return (
+    <section className="filtered-materials" aria-label={title}>
+      <div className="filtered-materials-head">
+        <h3>{title}</h3>
+        <span>{materials.length.toLocaleString()} types</span>
+      </div>
+      {shownMaterials.length > 0 ? (
+        <div className="filtered-material-list">
+          {shownMaterials.map((material) => (
+            <div className="filtered-material-row" key={material.id}>
+              <BlockPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
+              <span>{material.label}</span>
+              <strong>{material.count.toLocaleString()}</strong>
+            </div>
+          ))}
+          {materials.length > shownMaterials.length && (
+            <p className="filtered-material-more">+{(materials.length - shownMaterials.length).toLocaleString()} more</p>
+          )}
+        </div>
+      ) : (
+        <p className="panel-empty">{emptyText}</p>
+      )}
     </section>
   );
 }
@@ -4474,7 +4664,8 @@ function isStairsStateKey(stateKey: string): boolean {
 }
 
 function isTallGrassStateKey(stateKey: string): boolean {
-  return stripBlockStateProperties(stateKey) === 'minecraft:tall_grass';
+  const id = stripBlockStateProperties(stateKey);
+  return id === 'minecraft:tall_grass' || id === 'minecraft:tall_dry_grass';
 }
 
 function isWaterCauldronStateKey(stateKey: string): boolean {
@@ -4530,6 +4721,119 @@ function blockPositionKey(block: VoxelBlock): string {
 
 function emptyCuboidCorners(): CuboidCorners {
   return { a: null, b: null };
+}
+
+function cloneCuboidCorners(corners: CuboidCorners): CuboidCorners {
+  return {
+    a: corners.a ? { ...corners.a } : null,
+    b: corners.b ? { ...corners.b } : null,
+  };
+}
+
+function createSelectionArea(corners: CuboidCorners, index: number): SelectionArea {
+  const now = Date.now();
+  return {
+    id: createStableId('selection'),
+    name: `Area ${index}`,
+    corners: cloneCuboidCorners(corners),
+    updatedAt: now,
+  };
+}
+
+function createStableId(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function schematicStorageIdentity(model: SchematicModel): string {
+  const dimensions = `${model.dimensions.width}x${model.dimensions.height}x${model.dimensions.length}`;
+  return hashText(`${model.name}|${model.source}|${dimensions}|${model.paletteSize}`);
+}
+
+function selectionStorageKey(identity: string): string {
+  return `${selectionStoragePrefix}:${identity}`;
+}
+
+function cameraStorageKey(identity: string): string {
+  return `${cameraStoragePrefix}:${identity}`;
+}
+
+function parseSelectionAreas(raw: string | null): SelectionArea[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((item, index): SelectionArea[] => {
+      if (!item || typeof item !== 'object') return [];
+      const candidate = item as Partial<SelectionArea>;
+      const corners = parseCuboidCorners(candidate.corners);
+      if (!corners) return [];
+      return [{
+        id: typeof candidate.id === 'string' ? candidate.id : createStableId('selection'),
+        name: typeof candidate.name === 'string' ? candidate.name : `Area ${index + 1}`,
+        corners,
+        updatedAt: typeof candidate.updatedAt === 'number' ? candidate.updatedAt : Date.now(),
+      }];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function parseCuboidCorners(value: unknown): CuboidCorners | null {
+  if (!value || typeof value !== 'object') return null;
+  const corners = value as { a?: unknown; b?: unknown };
+  return {
+    a: parseCuboidPoint(corners.a),
+    b: parseCuboidPoint(corners.b),
+  };
+}
+
+function parseCuboidPoint(value: unknown): CuboidPoint | null {
+  if (!value || typeof value !== 'object') return null;
+  const point = value as Record<string, unknown>;
+  if (typeof point.x !== 'number' || typeof point.y !== 'number' || typeof point.z !== 'number') return null;
+  return { x: point.x, y: point.y, z: point.z };
+}
+
+function clampCuboidCornersToModel(corners: CuboidCorners, model: SchematicModel): CuboidCorners {
+  return {
+    a: corners.a ? clampPointToModel(corners.a, model) : null,
+    b: corners.b ? clampPointToModel(corners.b, model) : null,
+  };
+}
+
+function parseSavedCameraViews(raw: string | null): SavedCameraView[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((item, index): SavedCameraView[] => {
+      if (!item || typeof item !== 'object') return [];
+      const candidate = item as Partial<SavedCameraView>;
+      if (!isSavedCameraPosition(candidate.position)) return [];
+      return [{
+        id: typeof candidate.id === 'string' ? candidate.id : createStableId('camera'),
+        name: typeof candidate.name === 'string' ? candidate.name : `Camera ${index + 1}`,
+        position: candidate.position,
+        isDefault: Boolean(candidate.isDefault),
+        updatedAt: typeof candidate.updatedAt === 'number' ? candidate.updatedAt : Date.now(),
+      }];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function isSavedCameraPosition(value: unknown): value is SavedCameraPosition {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<SavedCameraPosition>;
+  return isNumberTuple3(candidate.position) && isNumberTuple3(candidate.target);
+}
+
+function isNumberTuple3(value: unknown): value is [number, number, number] {
+  return Array.isArray(value)
+    && value.length === 3
+    && value.every((item) => typeof item === 'number' && Number.isFinite(item));
 }
 
 function pointFromBlock(block: VoxelBlock): CuboidPoint {

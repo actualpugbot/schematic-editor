@@ -7,7 +7,7 @@ const namedColors: Array<[RegExp, BlockAppearance]> = [
   [/^(air|void_air|cave_air)(?:$|\[)/, { color: 0x000000, label: 'Air' }],
   [/water|kelp|seagrass|bubble_column/, { color: 0x3d6cb9, label: 'Water' }],
   [/lava|magma/, { color: 0xf47b20, label: 'Lava' }],
-  [/grass_block|moss|azalea|leaves|vine|bamboo|cactus|kelp|seagrass/, { color: 0x5f9f4e, label: 'Foliage' }],
+  [/grass_block|short_grass|tall_grass|moss|azalea|leaves|vine|bamboo|cactus|kelp|seagrass/, { color: 0x5f9f4e, label: 'Foliage' }],
   [/dirt|mud|farmland|podzol|rooted_dirt/, { color: 0x8a6240, label: 'Earth' }],
   [/stone|andesite|diorite|granite|deepslate|tuff|basalt|calcite|dripstone|bedrock/, { color: 0x8d9190, label: 'Stone' }],
   [/cobblestone|bricks|brick|polished|smooth_stone/, { color: 0x777c7a, label: 'Masonry' }],

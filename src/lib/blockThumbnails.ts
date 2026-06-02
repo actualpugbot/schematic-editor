@@ -479,6 +479,7 @@ async function textureMaterial(
   const glowing = isBeaconInnerTexture(textureId) || isGlowingTexture(textureId);
   const transparent = textureRendersTransparent(textureId, translucent);
   const opacity = transparent ? translucentTextureOpacity(textureId) : 1;
+  const side = cutoutTextureNeedsDoubleSide(textureId) ? THREE.DoubleSide : THREE.FrontSide;
   const material = shade
     ? new THREE.MeshStandardMaterial({
         map: texture,
@@ -492,7 +493,7 @@ async function textureMaterial(
         opacity,
         alphaTest: cutout ? 0.5 : isWaterTexture(textureId) ? 0.02 : 0.08,
         depthWrite,
-        side: THREE.FrontSide,
+        side,
       })
     : new THREE.MeshBasicMaterial({
         map: texture,
@@ -501,7 +502,7 @@ async function textureMaterial(
         opacity,
         alphaTest: cutout ? 0.5 : 0.08,
         depthWrite,
-        side: THREE.FrontSide,
+        side,
         toneMapped: false,
       });
 
@@ -606,6 +607,26 @@ function isAlphaCutoutTexture(textureId: string): boolean {
 
 function isCrossPlaneFlowerTexture(path: string): boolean {
   return /^block\/(allium|azure_bluet|blue_orchid|dandelion|golden_dandelion|lily_of_the_valley|oxeye_daisy|poppy|.*_tulip)$/.test(path);
+}
+
+function cutoutTextureNeedsDoubleSide(textureId: string): boolean {
+  const path = textureId.replace(/^minecraft:/, '');
+  return (
+    path.includes('grass')
+    || path.includes('fern')
+    || path.includes('bush')
+    || path.includes('roots')
+    || path.includes('vines')
+    || path.includes('flower')
+    || isCrossPlaneFlowerTexture(path)
+    || /(^|\/)(wheat|carrots|potatoes|beetroots|nether_wart)_stage\d+$/.test(path)
+    || path.includes('crop')
+    || path.includes('sapling')
+    || path.includes('coral')
+    || path.includes('mushroom')
+    || path.includes('amethyst_bud')
+    || path.includes('dripstone')
+  );
 }
 
 function isWaterTexture(textureId: string): boolean {

@@ -13,8 +13,8 @@ interface Viewer3DProps {
   model: SchematicModel | null;
   cameraMode: CameraMode;
   spectatorSpeed: number;
-  visibleLayer: number;
-  singleLayer: boolean;
+  visibleBottomLayer: number;
+  visibleTopLayer: number;
   hiddenMaterialIds: Set<string>;
   playerHeadSelections: Record<string, string>;
   autoRotate: boolean;
@@ -24,6 +24,7 @@ interface Viewer3DProps {
   placementPreviewBlock: VoxelBlock | null;
   cuboidBounds?: CuboidBounds | null;
   cuboidCorners?: CuboidCornerPoints | null;
+  showCuboidCornerLabels?: boolean;
   rotationTarget?: 'block' | 'cuboid' | null;
   rotationControlRef?: MutableRefObject<HTMLDivElement | null>;
   textureAdjustments?: TextureAdjustmentMap;
@@ -71,12 +72,19 @@ export interface AxisGizmoVector {
 export interface Viewer3DHandle {
   spinOnce: () => void;
   resetCamera: () => void;
+  getCameraPosition: () => SavedCameraPosition | null;
+  applyCameraPosition: (position: SavedCameraPosition) => void;
 }
 
 export type SelectionButton = 'primary' | 'secondary';
 export type CameraMode = 'orbit' | 'spectator';
 export type PlacementPoint = CuboidCornerPoint;
 export type TextureAdjustmentMap = Record<string, TextureFaceAdjustment>;
+
+export interface SavedCameraPosition {
+  position: [number, number, number];
+  target: [number, number, number];
+}
 
 export interface TextureFaceAdjustment {
   offsetU: number;
@@ -164,6 +172,7 @@ export function Viewer3D(props: InternalViewerProps) {
   const latestPlacementPreviewBlockRef = useRef<VoxelBlock | null>(props.placementPreviewBlock);
   const latestCuboidBoundsRef = useRef<CuboidBounds | null | undefined>(props.cuboidBounds);
   const latestCuboidCornersRef = useRef<CuboidCornerPoints | null | undefined>(props.cuboidCorners);
+  const latestShowCuboidCornerLabelsRef = useRef(Boolean(props.showCuboidCornerLabels));
   const latestRotationTargetRef = useRef<'block' | 'cuboid' | null | undefined>(props.rotationTarget);
   const textureEditModeRef = useRef(Boolean(props.textureEditMode));
   const cameraModeRef = useRef<CameraMode>(props.cameraMode);
@@ -193,9 +202,10 @@ export function Viewer3D(props: InternalViewerProps) {
     if (!props.model) return [];
     return props.model.blocks.filter((block) =>
       !props.hiddenMaterialIds.has(blockMaterialId(block))
-      && (props.singleLayer ? block.y === props.visibleLayer : block.y <= props.visibleLayer),
+      && block.y >= props.visibleBottomLayer
+      && block.y <= props.visibleTopLayer,
     );
-  }, [props.hiddenMaterialIds, props.model, props.singleLayer, props.visibleLayer]);
+  }, [props.hiddenMaterialIds, props.model, props.visibleBottomLayer, props.visibleTopLayer]);
 
   useEffect(() => {
     latestModelRef.current = props.model;
@@ -217,6 +227,10 @@ export function Viewer3D(props: InternalViewerProps) {
   useEffect(() => {
     latestCuboidCornersRef.current = props.cuboidCorners;
   }, [props.cuboidCorners]);
+
+  useEffect(() => {
+    latestShowCuboidCornerLabelsRef.current = Boolean(props.showCuboidCornerLabels);
+  }, [props.showCuboidCornerLabels]);
 
   useEffect(() => {
     latestRotationTargetRef.current = props.rotationTarget;
@@ -489,6 +503,7 @@ export function Viewer3D(props: InternalViewerProps) {
       updateCuboidCornerLabels(
         cornerLabelRefs.current,
         latestCuboidCornersRef.current,
+        latestShowCuboidCornerLabelsRef.current && Boolean(latestCuboidBoundsRef.current),
         latestModelRef.current,
         camera,
         renderer,
@@ -521,6 +536,19 @@ export function Viewer3D(props: InternalViewerProps) {
         const model = latestModelRef.current;
         if (!model) return;
         fitCameraToModel(model.dimensions, camera, controls);
+        syncSpectatorStateFromCamera(camera, spectatorStateRef.current);
+      },
+      getCameraPosition: () => ({
+        position: [camera.position.x, camera.position.y, camera.position.z],
+        target: [controls.target.x, controls.target.y, controls.target.z],
+      }),
+      applyCameraPosition: (position) => {
+        camera.position.set(...position.position);
+        controls.target.set(...position.target);
+        camera.near = 0.03;
+        camera.far = Math.max(camera.far, camera.position.distanceTo(controls.target) * 8, 500);
+        camera.updateProjectionMatrix();
+        controls.update();
         syncSpectatorStateFromCamera(camera, spectatorStateRef.current);
       },
     };
@@ -655,7 +683,8 @@ export function Viewer3D(props: InternalViewerProps) {
 
     const isVisible =
       !props.hiddenMaterialIds.has(blockMaterialId(block))
-      && (props.singleLayer ? block.y === props.visibleLayer : block.y <= props.visibleLayer);
+      && block.y >= props.visibleBottomLayer
+      && block.y <= props.visibleTopLayer;
     if (!isVisible) {
       selectionBox.visible = false;
       return;
@@ -689,8 +718,8 @@ export function Viewer3D(props: InternalViewerProps) {
     props.model,
     props.playerHeadSelections,
     props.selectedBlock,
-    props.singleLayer,
-    props.visibleLayer,
+    props.visibleBottomLayer,
+    props.visibleTopLayer,
   ]);
 
   useEffect(() => {
@@ -724,7 +753,7 @@ export function Viewer3D(props: InternalViewerProps) {
   return (
     <div className="viewer-canvas" data-camera-mode={props.cameraMode} data-testid="viewer-canvas" ref={containerRef}>
       <span
-        className="cuboid-corner-label cuboid-corner-label-a"
+        className="cuboid-corner-tag cuboid-corner-tag-a"
         aria-hidden="true"
         ref={(node) => {
           cornerLabelRefs.current.a = node;
@@ -733,7 +762,7 @@ export function Viewer3D(props: InternalViewerProps) {
         A
       </span>
       <span
-        className="cuboid-corner-label cuboid-corner-label-b"
+        className="cuboid-corner-tag cuboid-corner-tag-b"
         aria-hidden="true"
         ref={(node) => {
           cornerLabelRefs.current.b = node;
@@ -1357,6 +1386,7 @@ function updateCuboidOverlay(
 function updateCuboidCornerLabels(
   labels: Record<'a' | 'b', HTMLSpanElement | null>,
   corners: CuboidCornerPoints | null | undefined,
+  shouldShow: boolean,
   model: SchematicModel | null,
   camera: THREE.PerspectiveCamera,
   renderer: THREE.WebGLRenderer,
@@ -1364,7 +1394,7 @@ function updateCuboidCornerLabels(
   for (const corner of ['a', 'b'] as const) {
     const label = labels[corner];
     const point = corners?.[corner];
-    if (!label || !point || !model) {
+    if (!label || !shouldShow || !point || !model) {
       if (label) label.classList.remove('is-visible');
       continue;
     }
@@ -2025,7 +2055,7 @@ function textureMaterial(
   const water = isWaterTexture(textureId);
   const transparent = textureRendersTransparent(textureId, translucent);
   const opacity = transparent ? translucentTextureOpacity(textureId) : 1;
-  const side = THREE.FrontSide;
+  const side = cutoutTextureNeedsDoubleSide(textureId) ? THREE.DoubleSide : THREE.FrontSide;
 
   const material = shade
     ? new THREE.MeshStandardMaterial({
@@ -2173,6 +2203,26 @@ function isCrossPlaneFlowerTexture(path: string): boolean {
   return /^block\/(allium|azure_bluet|blue_orchid|dandelion|golden_dandelion|lily_of_the_valley|oxeye_daisy|poppy|.*_tulip)$/.test(path);
 }
 
+function cutoutTextureNeedsDoubleSide(textureId: string): boolean {
+  const path = textureId.replace(/^minecraft:/, '');
+  return (
+    path.includes('grass')
+    || path.includes('fern')
+    || path.includes('bush')
+    || path.includes('roots')
+    || path.includes('vines')
+    || path.includes('flower')
+    || isCrossPlaneFlowerTexture(path)
+    || /(^|\/)(wheat|carrots|potatoes|beetroots|nether_wart)_stage\d+$/.test(path)
+    || path.includes('crop')
+    || path.includes('sapling')
+    || path.includes('coral')
+    || path.includes('mushroom')
+    || path.includes('amethyst_bud')
+    || path.includes('dripstone')
+  );
+}
+
 function isGlassTexture(textureId: string): boolean {
   const path = textureId.replace(/^minecraft:/, '');
   return path === 'block/glass' || /(^|\/).+_stained_glass(_pane_top)?$/.test(path) || path === 'block/tinted_glass';
@@ -2258,13 +2308,18 @@ function fitCameraToModel(
   controls: OrbitControls,
 ) {
   const target = new THREE.Vector3(0, Math.max(0, dimensions.height / 2 - 0.5), 0);
-  const radius = Math.max(dimensions.width, dimensions.length, dimensions.height, 8);
+  const horizontalRadius = Math.hypot(dimensions.width, dimensions.length) * 0.5;
+  const verticalRadius = Math.max(1, dimensions.height * 0.62);
+  const radius = Math.max(horizontalRadius, verticalRadius, 6);
+  const distance = radius / Math.sin(THREE.MathUtils.degToRad(camera.fov * 0.5)) * 1.06;
+  const direction = new THREE.Vector3(-0.92, 0.64, -1).normalize();
   controls.target.copy(target);
-  controls.maxDistance = Math.max(240, radius * 6);
-  camera.position.set(radius * -1.35, radius * 0.95 + dimensions.height * 0.4, radius * -1.45);
+  controls.maxDistance = Math.max(240, distance * 4);
+  camera.position.copy(target).add(direction.multiplyScalar(distance));
   camera.near = 0.03;
-  camera.far = Math.max(500, radius * 12);
+  camera.far = Math.max(500, distance * 8);
   camera.updateProjectionMatrix();
+  camera.lookAt(target);
   controls.update();
 }
 
