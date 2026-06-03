@@ -24,7 +24,8 @@ Files are parsed in the browser; uploads are not sent to a server.
 
 ## Deployment
 
-Pushes to `main` publish the built Vite app to GitHub Pages with GitHub Actions.
+Pushes to `main` or `ui_redo` publish the app to GitHub Pages with GitHub Actions.
+The `main` branch is deployed at the site root, and the `ui_redo` branch is deployed at `/new/`.
 
 ## Minecraft Assets
 

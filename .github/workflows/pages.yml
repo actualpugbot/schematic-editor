@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - ui_redo
   workflow_dispatch:
 
 permissions:
@@ -21,6 +22,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -36,13 +39,31 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build
-        run: pnpm build
+      - name: Fetch deployment branches
+        run: git fetch origin main ui_redo
+
+      - name: Build `main` site
+        run: |
+          git worktree add --detach ../pages-main origin/main
+          cd ../pages-main
+          pnpm install --frozen-lockfile
+          VITE_BASE_PATH=/schematic-editor/ pnpm build
+          mkdir -p ../pages-dist
+          cp -R dist/. ../pages-dist/
+
+      - name: Build `ui_redo` site
+        run: |
+          git worktree add --detach ../pages-ui-redo origin/ui_redo
+          cd ../pages-ui-redo
+          pnpm install --frozen-lockfile
+          VITE_BASE_PATH=/schematic-editor/new/ pnpm build
+          mkdir -p ../pages-dist/new
+          cp -R dist/. ../pages-dist/new/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: ../pages-dist
 
   deploy:
     environment:
