@@ -12,7 +12,7 @@ interface Props {
 export function FeaturedBuilder({
   name,
   label = 'Featured Builder',
-  avatarSrc = '/featured-builder.png',
+  avatarSrc = `${import.meta.env.BASE_URL}featured-builder.png`,
 }: Props) {
   return (
     <a
