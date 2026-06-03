@@ -13,7 +13,6 @@ import {
   Cuboid,
   Download,
   Eraser,
-  ExternalLink,
   Eye,
   EyeOff,
   FileText,
@@ -54,6 +53,7 @@ import {
   type Viewer3DHandle,
   textureAdjustmentKey,
 } from './components/Viewer3D';
+import { FeaturedBuilder } from './components/FeaturedBuilder';
 import { ShoppingCelebration } from './components/ShoppingCelebration';
 import {
   createBlockThumbnail,
@@ -92,6 +92,7 @@ type EditPanelTab = 'tools' | 'rotate' | 'replace';
 type AppView = 'inspect' | 'edit' | 'texture' | 'shopping' | 'resource';
 type EditTool = 'select' | 'build';
 type Theme = 'light' | 'dark';
+type SchematicOrigin = 'default' | 'uploaded';
 type MaterialsScope = 'build' | 'cuboid';
 type ShoppingLayout = 'grid' | 'list';
 type ThumbnailLoadState = 'idle' | 'loading' | 'ready' | 'failed';
@@ -464,6 +465,7 @@ function App() {
     return window.localStorage.getItem(leftRailCollapsedStorageKey) === 'true';
   });
   const [model, setModel] = useState<SchematicModel | null>(null);
+  const [schematicOrigin, setSchematicOrigin] = useState<SchematicOrigin>('default');
   const [appView, setAppView] = useState<AppView>('inspect');
   const [schematicName, setSchematicName] = useState('');
   const [isEditingSchematicName, setIsEditingSchematicName] = useState(false);
@@ -920,13 +922,14 @@ function App() {
         const defaultModel = { ...parsed.model, name: defaultSchematicName };
         const defaultDocument = renameSchematicDocument(parsed.nbt, parsed.model.source, defaultSchematicName);
         if (isCancelled) return;
-        applySchematic(defaultModel, defaultDocument, fileExtension(defaultSchematicFileName));
+        applySchematic(defaultModel, defaultDocument, fileExtension(defaultSchematicFileName), 'default');
       } catch (caught) {
         if (isCancelled) return;
 
         const fallback = createSampleModel();
         setModel(fallback);
         setSchematicName(fallback.name);
+        setSchematicOrigin('uploaded');
         setSchematicDocument(null);
         setSchematicExtension('.schem');
         setVisibleBottomLayer(0);
@@ -1058,8 +1061,9 @@ function App() {
     return () => window.cancelAnimationFrame(frame);
   }, [filteredMaterials, materialSearch, selectedMaterialId]);
 
-  const applySchematic = (nextModel: SchematicModel, nextDocument: NbtDocument | null, nextExtension: string) => {
+  const applySchematic = (nextModel: SchematicModel, nextDocument: NbtDocument | null, nextExtension: string, nextOrigin: SchematicOrigin = 'uploaded') => {
     setModel(nextModel);
+    setSchematicOrigin(nextOrigin);
     setSchematicName(nextModel.name);
     setIsEditingSchematicName(false);
     setSchematicDocument(nextDocument);
@@ -1095,7 +1099,7 @@ function App() {
     try {
       const buffer = await file.arrayBuffer();
       const parsed = parseSchematicDocument(buffer, { fileName: file.name });
-      applySchematic(parsed.model, parsed.nbt, fileExtension(file.name));
+      applySchematic(parsed.model, parsed.nbt, fileExtension(file.name), 'uploaded');
       setRecentFiles((current) => [
         { name: file.name, at: Date.now() },
         ...current.filter((entry) => entry.name !== file.name),
@@ -2680,6 +2684,10 @@ function App() {
                 </div>
               ))}
             </div>
+          )}
+
+          {appView === 'inspect' && model && (
+            <FeaturedBuilder name="MildMadi" />
           )}
 
           {cameraMode === 'spectator' && (
