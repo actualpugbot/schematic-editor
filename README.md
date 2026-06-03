@@ -24,7 +24,8 @@ Files are parsed in the browser; uploads are not sent to a server.
 
 ## Deployment
 
-Pushes to `main` or `ui_redo` publish the app to GitHub Pages with GitHub Actions.
+Pushes to `main` publish the app to GitHub Pages with GitHub Actions.
+Pushes to `ui_redo` trigger a `main`-based deploy so GitHub Pages environment protection can still pass.
 The `main` branch is deployed at the site root, and the `ui_redo` branch is deployed at `/new/`.
 
 ## Minecraft Assets
