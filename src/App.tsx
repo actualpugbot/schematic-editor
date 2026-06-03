@@ -100,6 +100,8 @@ type CuboidCornerId = 'a' | 'b';
 type Direction = 'up' | 'down' | 'north' | 'south' | 'west' | 'east';
 type RotationDirection = 'clockwise' | 'counterclockwise';
 
+const UV_VIEW_ENABLED = false;
+
 interface TextureSelection {
   stateKey: string;
   blockId: string;
@@ -803,7 +805,8 @@ function App() {
     });
   }, [blockLibraryItems, textureBlockSearch]);
   const texturePreviewModel = useMemo<SchematicModel>(() => createTexturePreviewModel(selectedTextureBlock), [selectedTextureBlock]);
-  const displayedModel = appView === 'texture' ? texturePreviewModel : model;
+  const textureViewActive = UV_VIEW_ENABLED && appView === 'texture';
+  const displayedModel = textureViewActive ? texturePreviewModel : model;
   const displayedHiddenMaterialIds = useMemo(() => new Set<string>(), []);
   const modelStorageIdentity = useMemo(() => (
     model ? schematicStorageIdentity(model) : ''
@@ -821,6 +824,12 @@ function App() {
     : { offsetU: 0, offsetV: 0, rotation: 0 };
   const exportedTextureAdjustmentCount = Object.keys(textureAdjustments).length;
   const rotateTargetLabel = materialsScope === 'cuboid' && cuboidBounds ? 'Selected Area' : selectedBlock ? 'Selected Block' : '';
+
+  useEffect(() => {
+    if (!UV_VIEW_ENABLED && appView === 'texture') {
+      setAppView('inspect');
+    }
+  }, [appView]);
 
   useEffect(() => {
     if (loadState !== 'ready') return;
@@ -1228,9 +1237,17 @@ function App() {
     setTheme((current) => (current === 'dark' ? 'light' : 'dark'));
   };
 
+  const panelRefForTab = (tab: InspectorTab) => (
+    tab === 'selection' ? selectionPanelRef : tab === 'layers' ? layerPanelRef : materialPanelRef
+  );
+
   const showPanel = (tab: InspectorTab) => {
     setInspectorTab(tab);
-    const panel = tab === 'selection' ? selectionPanelRef : tab === 'layers' ? layerPanelRef : materialPanelRef;
+  };
+
+  const revealPanel = (tab: InspectorTab) => {
+    setInspectorTab(tab);
+    const panel = panelRefForTab(tab);
     window.requestAnimationFrame(() => panel.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
   };
 
@@ -1242,7 +1259,7 @@ function App() {
       setMaterialsScope('build');
     }
     setCuboidSelectionMode(true);
-    if (revealViewPanel) showPanel('selection');
+    if (revealViewPanel) revealPanel('selection');
   };
 
   const pushSelectionUndo = (corners: CuboidCorners) => {
@@ -1327,7 +1344,7 @@ function App() {
 
   const openInspectorPanel = (tab: InspectorTab) => {
     setAppView('inspect');
-    showPanel(tab);
+    revealPanel(tab);
   };
 
   const activateEditTool = (tool: EditTool) => {
@@ -1543,7 +1560,7 @@ function App() {
     setSelectedTextureFace(null);
     setTextureExportText('');
     setCameraMode('orbit');
-    setAppView('texture');
+    if (UV_VIEW_ENABLED) setAppView('texture');
   };
 
   const handleTextureFaceSelect = (hit: TextureFaceHit) => {
@@ -1897,19 +1914,21 @@ function App() {
               <Pencil size={19} />
               <span>Edit</span>
             </button>
-            <button
-              type="button"
-              role="tab"
-              className={appView === 'texture' ? 'is-active' : ''}
-              onClick={() => setAppView('texture')}
-              aria-selected={appView === 'texture'}
-              aria-label="UV"
-              title="UV"
-              disabled={!model}
-            >
-              <ImageIcon size={19} />
-              <span>UV</span>
-            </button>
+            {UV_VIEW_ENABLED && (
+              <button
+                type="button"
+                role="tab"
+                className={textureViewActive ? 'is-active' : ''}
+                onClick={() => setAppView('texture')}
+                aria-selected={textureViewActive}
+                aria-label="UV"
+                title="UV"
+                disabled={!model}
+              >
+                <ImageIcon size={19} />
+                <span>UV</span>
+              </button>
+            )}
             <button
               type="button"
               role="tab"
@@ -1997,7 +2016,7 @@ function App() {
         </aside>
 
         <section
-          className={`viewport-panel${appView === 'shopping' || appView === 'resource' ? ' shopping-viewport' : ''}${appView === 'resource' ? ' resource-viewport' : ''}${selectedBlock && appView !== 'texture' && appView !== 'shopping' && appView !== 'resource' ? ' has-selection-modal' : ''}`}
+          className={`viewport-panel${appView === 'shopping' || appView === 'resource' ? ' shopping-viewport' : ''}${appView === 'resource' ? ' resource-viewport' : ''}${selectedBlock && !textureViewActive && appView !== 'shopping' && appView !== 'resource' ? ' has-selection-modal' : ''}`}
           aria-label={appView === 'resource' ? 'Resource Calculator' : appView === 'shopping' ? 'Shopping list' : 'Schematic 3D viewport'}
         >
           {appView === 'resource' && model ? (
@@ -2478,7 +2497,7 @@ function App() {
             </section>
           ) : (
             <>
-          {selectedBlock && appView !== 'texture' && (
+          {selectedBlock && !textureViewActive && (
             <section className="selection-inspector-card" aria-label="Selected block details">
               <div className="selection-inspector-header">
                 <div>
@@ -2657,7 +2676,7 @@ function App() {
             </div>
           </div>
 
-          {savedCameraViews.length > 0 && appView !== 'texture' && (
+          {savedCameraViews.length > 0 && !textureViewActive && (
             <div className="camera-saves" aria-label="Saved camera positions">
               {savedCameraViews.map((view) => (
                 <div className="camera-save-row" key={view.id}>
@@ -2709,7 +2728,7 @@ function App() {
             <span className="axis-label axis-x">X</span>
           </div>
 
-          {appView !== 'texture' && model && (
+          {!textureViewActive && model && (
             <div className="viewport-statusbar" aria-label="Viewport display controls">
               <label className="sb-chip" title="Toggle build grid">
                 <Grid2X2 size={16} aria-hidden="true" />
@@ -2777,7 +2796,7 @@ function App() {
             </div>
           )}
 
-          {appView === 'texture' ? (
+          {textureViewActive ? (
             <div className="texture-compare-canvases" aria-label="Texture comparison previews">
               <div className="texture-compare-pane">
                 <span>Default</span>
@@ -2869,7 +2888,7 @@ function App() {
           </section>
         )}
 
-        {appView === 'texture' ? (
+        {textureViewActive ? (
           <section className="texture-panel" aria-label="Texture adjustment editor">
             <div className="section-heading compact">
               <div>
