@@ -486,7 +486,6 @@ function App() {
   const integerCrafting = true;
   const [shoppingSearch, setShoppingSearch] = useState('');
   const [shoppingLayout, setShoppingLayout] = useState<ShoppingLayout>('grid');
-  const [shoppingPlanMode, setShoppingPlanMode] = useState(false);
   const [checkedPlanSteps, setCheckedPlanSteps] = useState<Set<string>>(() => new Set());
   const [checkedShoppingItems, setCheckedShoppingItems] = useState<Set<string>>(() => new Set());
   const [playerHeadSelections, setPlayerHeadSelections] = useState<Record<string, string>>({});
@@ -681,7 +680,6 @@ function App() {
   const shoppingScope = useMemo(() => (
     model ? shoppingScopeKey(model, materialsScope, cuboidBounds) : 'none'
   ), [cuboidBoundsKey, materialsScope, model]);
-  const shoppingModeScope = `${shoppingScope}:placed:integer`;
   const shoppingStorage = useMemo(() => (
     model ? shoppingStorageKey(model, shoppingScope, activeMaterials) : ''
   ), [activeMaterials, model, shoppingScope]);
@@ -699,24 +697,6 @@ function App() {
     });
   }, [activeMaterials, shoppingSearch]);
   const shoppingGroups = useMemo(() => groupShoppingMaterials(shoppingMaterials), [shoppingMaterials]);
-  const resourceMaterials = useMemo(() => {
-    const query = shoppingSearch.trim().toLocaleLowerCase();
-    if (!query) return visibleMaterials;
-
-    return visibleMaterials.filter((material) => {
-      const label = material.label.toLocaleLowerCase();
-      const id = material.id.toLocaleLowerCase();
-      return label.includes(query) || id.includes(query);
-    });
-  }, [shoppingSearch, visibleMaterials]);
-  const resourceGroups = useMemo(() => groupShoppingMaterials(resourceMaterials), [resourceMaterials]);
-  const resourceStats = useMemo(() => ({
-    totalOutputItems: activeMaterials.reduce((sum, material) => sum + material.count, 0),
-    rawMaterialItems: rawMaterials.reduce((sum, material) => sum + material.count, 0),
-    uniqueRawMaterials: rawMaterials.length,
-    craftingSteps: craftPlan.steps.length,
-    unresolvedItems: recipeBreakdown.unresolved.length,
-  }), [activeMaterials, craftPlan.steps.length, rawMaterials, recipeBreakdown.unresolved.length]);
   const checkedShoppingMaterialCount = useMemo(() => (
     activeMaterials.filter((material) => checkedShoppingItems.has(shoppingItemKey(shoppingScope, material))).length
   ), [activeMaterials, checkedShoppingItems, shoppingScope]);
@@ -1676,7 +1656,6 @@ function App() {
   const openResourceCalculator = () => {
     if (!model) return;
     setShoppingSearch('');
-    setShoppingPlanMode(false);
     setAppView('resource');
   };
 
@@ -2023,303 +2002,169 @@ function App() {
             <section className="shopping-board resource-board" aria-label="Resource Calculator">
               <div className="shopping-header">
                 <div className="shopping-title-block">
-                  <p className="eyebrow">{shoppingPlanMode ? 'Crafting Plan' : 'Resource Calculator'}</p>
+                  <p className="eyebrow">Crafting Plan</p>
                   <h2>{schematicName}</h2>
                 </div>
                 <div className="shopping-actions">
-                  <div className="segmented-control" role="group" aria-label="Calculator view">
+                  <div className="segmented-control shopping-scope" role="group" aria-label="Crafting plan scope">
                     <button
                       type="button"
-                      className={!shoppingPlanMode ? 'is-active' : ''}
-                      onClick={() => setShoppingPlanMode(false)}
+                      className={materialsScope === 'build' ? 'is-active' : ''}
+                      onClick={() => setMaterialsScope('build')}
                     >
-                      <ClipboardList size={15} />
-                      Material Totals
+                      Entire Build
                     </button>
                     <button
                       type="button"
-                      className={shoppingPlanMode ? 'is-active' : ''}
-                      onClick={() => setShoppingPlanMode(true)}
+                      className={materialsScope === 'cuboid' ? 'is-active' : ''}
+                      onClick={() => {
+                        if (cuboidBounds) {
+                          setMaterialsScope('cuboid');
+                        } else {
+                          beginCuboidSelection();
+                          setAppView('inspect');
+                          setInspectorTab('selection');
+                        }
+                      }}
                     >
-                      <Hammer size={15} />
-                      Crafting Plan
+                      Selected Area
                     </button>
                   </div>
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => openInspectorPanel('materials')}
-                  >
-                    <Cuboid size={16} />
-                    Materials
-                  </button>
                 </div>
               </div>
 
-              {shoppingPlanMode ? (
-                <div className="craft-plan" aria-label="Crafting plan">
-                  <aside className="craft-plan-ingredients" aria-label="Base ingredients">
-                    <div className="craft-plan-ingredients-head">
-                      <h3>Base Ingredients</h3>
-                      <span>{rawMaterials.length} types</span>
-                    </div>
-                    <div
-                      className="craft-plan-progress"
-                      style={{ '--plan-progress': `${rawMaterials.length ? Math.round((rawMaterials.filter((m) => checkedPlanSteps.has(`raw:${m.id}`)).length / rawMaterials.length) * 100) : 0}%` } as CSSProperties}
-                    >
-                      <span>{rawMaterials.length ? Math.round((rawMaterials.filter((m) => checkedPlanSteps.has(`raw:${m.id}`)).length / rawMaterials.length) * 100) : 0}% gathered</span>
-                    </div>
-                    <div className="craft-plan-ingredient-list">
-                      {rawMaterials.map((material) => {
-                        const key = `raw:${material.id}`;
-                        const checked = checkedPlanSteps.has(key);
-                        return (
-                          <button
-                            type="button"
-                            key={material.id}
-                            className={`craft-plan-ingredient${checked ? ' is-checked' : ''}`}
-                            onClick={() => setCheckedPlanSteps((current) => {
-                              const next = new Set(current);
-                              if (next.has(key)) next.delete(key); else next.add(key);
-                              return next;
-                            })}
-                            aria-pressed={checked}
-                          >
-                            <span className={`plan-check${checked ? ' is-on' : ''}`}>{checked && <Check size={12} strokeWidth={3} />}</span>
-                            <BlockPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
-                            <span className="plan-ing-meta">
-                              <strong>{material.label}</strong>
-                              <span>{material.count.toLocaleString()} · {Math.ceil(material.count / 64)} stacks</span>
-                            </span>
-                          </button>
-                        );
-                      })}
-                      {rawMaterials.length === 0 && <p className="material-empty">No base ingredients to gather.</p>}
-                    </div>
-                  </aside>
-
-                  <div className="craft-plan-flow" aria-label="Crafting flow">
-                    {craftPlan.groups.map((group) => (
-                      <section className="craft-plan-group" key={group.id}>
-                        <div className="craft-plan-group-head">
-                          <h3>{group.label}</h3>
-                          <span>{group.steps.length} {group.steps.length === 1 ? 'step' : 'steps'}</span>
-                        </div>
-                        <div className="craft-plan-steps">
-                          {group.steps.map((step) => {
-                            const checked = checkedPlanSteps.has(`step:${step.id}`);
-                            return (
-                              <div className={`craft-plan-step${checked ? ' is-checked' : ''}`} key={step.id}>
-                                <div className="craft-plan-inputs">
-                                  {step.inputs.map((input) => (
-                                    <div className="craft-plan-chip" key={input.id}>
-                                      <BlockPreview stateKey={input.stateKey} color={input.color} layers={input.thumbnailLayers} />
-                                      <span className="chip-label">{input.label}</span>
-                                      <span className="chip-count">{input.count.toLocaleString()}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                                <div className="craft-plan-arrow" aria-hidden="true">
-                                  <span className="craft-plan-method">{recipeTypeLabel(step.method)}</span>
-                                  <ChevronRight size={18} />
-                                </div>
-                                <button
-                                  type="button"
-                                  className="craft-plan-output"
-                                  onClick={() => setCheckedPlanSteps((current) => {
-                                    const next = new Set(current);
-                                    const k = `step:${step.id}`;
-                                    if (next.has(k)) next.delete(k); else next.add(k);
-                                    return next;
-                                  })}
-                                  aria-pressed={checked}
-                                >
-                                  <span className={`plan-check${checked ? ' is-on' : ''}`}>{checked && <Check size={12} strokeWidth={3} />}</span>
-                                  <BlockPreview stateKey={step.stateKey} color={step.color} layers={step.thumbnailLayers} />
-                                  <span className="plan-out-meta">
-                                    <strong>{step.label}</strong>
-                                    <span>{step.count.toLocaleString()} · {step.crafts.toLocaleString()} {step.crafts === 1 ? 'craft' : 'crafts'}</span>
-                                  </span>
-                                </button>
-                              </div>
-                            );
+              <div className="craft-plan" aria-label="Crafting plan">
+                <aside className="craft-plan-ingredients" aria-label="Base ingredients">
+                  <div className="craft-plan-ingredients-head">
+                    <h3>Base Ingredients</h3>
+                    <span>{rawMaterials.length} types</span>
+                  </div>
+                  <div
+                    className="craft-plan-progress"
+                    style={{ '--plan-progress': `${rawMaterials.length ? Math.round((rawMaterials.filter((m) => checkedPlanSteps.has(`raw:${m.id}`)).length / rawMaterials.length) * 100) : 0}%` } as CSSProperties}
+                  >
+                    <span>{rawMaterials.length ? Math.round((rawMaterials.filter((m) => checkedPlanSteps.has(`raw:${m.id}`)).length / rawMaterials.length) * 100) : 0}% gathered</span>
+                  </div>
+                  <div className="craft-plan-ingredient-list">
+                    {rawMaterials.map((material) => {
+                      const key = `raw:${material.id}`;
+                      const checked = checkedPlanSteps.has(key);
+                      return (
+                        <button
+                          type="button"
+                          key={material.id}
+                          className={`craft-plan-ingredient${checked ? ' is-checked' : ''}`}
+                          onClick={() => setCheckedPlanSteps((current) => {
+                            const next = new Set(current);
+                            if (next.has(key)) next.delete(key); else next.add(key);
+                            return next;
                           })}
-                        </div>
-                      </section>
-                    ))}
-                    {craftPlan.groups.length === 0 && (
-                      <p className="material-empty">No crafting steps — every material is gathered directly.</p>
-                    )}
+                          aria-pressed={checked}
+                        >
+                          <span className={`plan-check${checked ? ' is-on' : ''}`}>{checked && <Check size={12} strokeWidth={3} />}</span>
+                          <BlockPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
+                          <span className="plan-ing-meta">
+                            <strong>{material.label}</strong>
+                            <span>{material.count.toLocaleString()} · {Math.ceil(material.count / 64)} stacks</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {rawMaterials.length === 0 && <p className="material-empty">No base ingredients to gather.</p>}
                   </div>
+                </aside>
 
-                  <aside className="craft-plan-queue" aria-label="Do next">
-                    <div className="craft-plan-queue-head">
-                      <h3>Do Next</h3>
-                      <span className="queue-badge">{craftPlan.steps.filter((s) => !checkedPlanSteps.has(`step:${s.id}`)).length}</span>
-                    </div>
-                    <div className="craft-plan-queue-list">
-                      {craftPlan.steps.map((step, index) => {
-                        const checked = checkedPlanSteps.has(`step:${step.id}`);
-                        const fromLabel = step.inputs.map((input) => input.label).join(' + ');
-                        return (
-                          <button
-                            type="button"
-                            key={step.id}
-                            className={`craft-plan-queue-item${checked ? ' is-checked' : ''}`}
-                            onClick={() => setCheckedPlanSteps((current) => {
-                              const next = new Set(current);
-                              const k = `step:${step.id}`;
-                              if (next.has(k)) next.delete(k); else next.add(k);
-                              return next;
-                            })}
-                            aria-pressed={checked}
-                          >
-                            <span className="queue-index">{index + 1}</span>
-                            <BlockPreview stateKey={step.stateKey} color={step.color} layers={step.thumbnailLayers} />
-                            <span className="queue-meta">
-                              <strong>{recipeTypeLabel(step.method)} {step.label}</strong>
-                              <span className="queue-count">{step.count.toLocaleString()} ({step.crafts.toLocaleString()} {step.crafts === 1 ? 'craft' : 'crafts'})</span>
-                              <span className="queue-from">From {fromLabel}</span>
-                            </span>
-                            <span className={`plan-check${checked ? ' is-on' : ''}`}>{checked && <Check size={12} strokeWidth={3} />}</span>
-                          </button>
-                        );
-                      })}
-                      {craftPlan.steps.length === 0 && <p className="material-empty">Nothing to craft.</p>}
-                    </div>
-                  </aside>
-                </div>
-              ) : (
-              <>
-              <div className="shopping-toolbar">
-
-                <div className="segmented-control shopping-scope" role="group" aria-label="Resource Calculator scope">
-                  <button
-                    type="button"
-                    className={materialsScope === 'build' ? 'is-active' : ''}
-                    onClick={() => setMaterialsScope('build')}
-                  >
-                    Entire Build
-                  </button>
-                  <button
-                    type="button"
-                    className={materialsScope === 'cuboid' ? 'is-active' : ''}
-                    onClick={() => {
-                      if (cuboidBounds) {
-                        setMaterialsScope('cuboid');
-                      } else {
-                        beginCuboidSelection();
-                        setAppView('inspect');
-                        setInspectorTab('selection');
-                      }
-                    }}
-                  >
-                    Selected Area
-                  </button>
-                </div>
-                <label className="material-search shopping-search">
-                  <Search size={16} aria-hidden="true" />
-                  <input
-                    type="search"
-                    value={shoppingSearch}
-                    onChange={(event) => setShoppingSearch(event.target.value)}
-                    placeholder="Search resources"
-                    aria-label="Search resources"
-                  />
-                </label>
-                <div className="segmented-control shopping-layout-toggle" role="group" aria-label="Resource layout">
-                  <button
-                    type="button"
-                    className={shoppingLayout === 'grid' ? 'is-active' : ''}
-                    onClick={() => setShoppingLayout('grid')}
-                    aria-pressed={shoppingLayout === 'grid'}
-                    title="Grid view"
-                  >
-                    <Grid2X2 size={16} aria-hidden="true" />
-                    <span>Grid</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={shoppingLayout === 'list' ? 'is-active' : ''}
-                    onClick={() => setShoppingLayout('list')}
-                    aria-pressed={shoppingLayout === 'list'}
-                    title="List view"
-                  >
-                    <List size={16} aria-hidden="true" />
-                    <span>List</span>
-                  </button>
-                </div>
-              </div>
-
-              <div
-                className="shopping-progress resource-progress"
-                style={{ '--shopping-progress': '100%' } as CSSProperties}
-                aria-label="Resource totals"
-              >
-                <div>
-                  <span>Output</span>
-                  <strong>{resourceStats.totalOutputItems.toLocaleString()}</strong>
-                </div>
-                <div>
-                  <span>Raw Items</span>
-                  <strong>{resourceStats.rawMaterialItems.toLocaleString()}</strong>
-                </div>
-                <div>
-                  <span>Craft Steps</span>
-                  <strong>{resourceStats.craftingSteps.toLocaleString()}</strong>
-                </div>
-                <div>
-                  <span>Missing Recipes</span>
-                  <strong>{resourceStats.unresolvedItems.toLocaleString()}</strong>
-                </div>
-              </div>
-
-              <div className={`shopping-list is-${shoppingLayout}`} aria-live="polite">
-                {resourceGroups.map((group) => (
-                    <section className="shopping-group" key={group.id} aria-label={group.label}>
-                      <div className="shopping-group-heading">
-                        <span>{group.label}</span>
-                        <div className="shopping-group-summary">
-                          <strong>{group.materials.length.toLocaleString()} types</strong>
-                        </div>
+                <div className="craft-plan-flow" aria-label="Crafting flow">
+                  {craftPlan.groups.map((group) => (
+                    <section className="craft-plan-group" key={group.id}>
+                      <div className="craft-plan-group-head">
+                        <h3>{group.label}</h3>
+                        <span>{group.steps.length} {group.steps.length === 1 ? 'step' : 'steps'}</span>
                       </div>
-                      <div className="shopping-group-items">
-                        {group.materials.map((material) => {
-                          const itemKey = shoppingItemKey(shoppingModeScope, material);
-
+                      <div className="craft-plan-steps">
+                        {group.steps.map((step) => {
+                          const checked = checkedPlanSteps.has(`step:${step.id}`);
                           return (
-                            <div
-                              key={itemKey}
-                              className="shopping-row resource-row"
-                            >
-                              <BlockPreview
-                                stateKey={material.stateKey}
-                                color={material.color}
-                                layers={material.thumbnailLayers}
-                              />
-                              <span className="shopping-row-label">
-                                <strong>{material.label}</strong>
-                              </span>
-                              <span className="shopping-row-count">{material.count.toLocaleString()}</span>
-                              <MaterialBreakdown materialId={material.id} count={material.count} />
+                            <div className={`craft-plan-step${checked ? ' is-checked' : ''}`} key={step.id}>
+                              <div className="craft-plan-inputs">
+                                {step.inputs.map((input) => (
+                                  <div className="craft-plan-chip" key={input.id}>
+                                    <BlockPreview stateKey={input.stateKey} color={input.color} layers={input.thumbnailLayers} />
+                                    <span className="chip-label">{input.label}</span>
+                                    <span className="chip-count">{input.count.toLocaleString()}</span>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="craft-plan-arrow" aria-hidden="true">
+                                <span className="craft-plan-method">{recipeTypeLabel(step.method)}</span>
+                                <ChevronRight size={18} />
+                              </div>
+                              <button
+                                type="button"
+                                className="craft-plan-output"
+                                onClick={() => setCheckedPlanSteps((current) => {
+                                  const next = new Set(current);
+                                  const k = `step:${step.id}`;
+                                  if (next.has(k)) next.delete(k); else next.add(k);
+                                  return next;
+                                })}
+                                aria-pressed={checked}
+                              >
+                                <span className={`plan-check${checked ? ' is-on' : ''}`}>{checked && <Check size={12} strokeWidth={3} />}</span>
+                                <BlockPreview stateKey={step.stateKey} color={step.color} layers={step.thumbnailLayers} />
+                                <span className="plan-out-meta">
+                                  <strong>{step.label}</strong>
+                                  <span>{step.count.toLocaleString()} · {step.crafts.toLocaleString()} {step.crafts === 1 ? 'craft' : 'crafts'}</span>
+                                </span>
+                              </button>
                             </div>
                           );
                         })}
                       </div>
                     </section>
-                ))}
-                {resourceGroups.length === 0 && (
-                  <p className="material-empty">
-                    {materialsScope === 'cuboid' && !cuboidBounds
-                      ? 'Select an area to calculate resources for that region.'
-                      : shoppingSearch.trim()
-                        ? `No resources match "${shoppingSearch.trim()}".`
-                        : 'No non-air blocks to calculate.'}
-                  </p>
-                )}
+                  ))}
+                  {craftPlan.groups.length === 0 && (
+                    <p className="material-empty">No crafting steps — every material is gathered directly.</p>
+                  )}
+                </div>
+
+                <aside className="craft-plan-queue" aria-label="Do next">
+                  <div className="craft-plan-queue-head">
+                    <h3>Do Next</h3>
+                    <span className="queue-badge">{craftPlan.steps.filter((s) => !checkedPlanSteps.has(`step:${s.id}`)).length}</span>
+                  </div>
+                  <div className="craft-plan-queue-list">
+                    {craftPlan.steps.map((step, index) => {
+                      const checked = checkedPlanSteps.has(`step:${step.id}`);
+                      const fromLabel = step.inputs.map((input) => input.label).join(' + ');
+                      return (
+                        <button
+                          type="button"
+                          key={step.id}
+                          className={`craft-plan-queue-item${checked ? ' is-checked' : ''}`}
+                          onClick={() => setCheckedPlanSteps((current) => {
+                            const next = new Set(current);
+                            const k = `step:${step.id}`;
+                            if (next.has(k)) next.delete(k); else next.add(k);
+                            return next;
+                          })}
+                          aria-pressed={checked}
+                        >
+                          <span className="queue-index">{index + 1}</span>
+                          <BlockPreview stateKey={step.stateKey} color={step.color} layers={step.thumbnailLayers} />
+                          <span className="queue-meta">
+                            <strong>{recipeTypeLabel(step.method)} {step.label}</strong>
+                            <span className="queue-count">{step.count.toLocaleString()} ({step.crafts.toLocaleString()} {step.crafts === 1 ? 'craft' : 'crafts'})</span>
+                            <span className="queue-from">From {fromLabel}</span>
+                          </span>
+                          <span className={`plan-check${checked ? ' is-on' : ''}`}>{checked && <Check size={12} strokeWidth={3} />}</span>
+                        </button>
+                      );
+                    })}
+                    {craftPlan.steps.length === 0 && <p className="material-empty">Nothing to craft.</p>}
+                  </div>
+                </aside>
               </div>
-              </>
-              )}
             </section>
           ) : appView === 'shopping' && model ? (
             <section className="shopping-board" aria-label="Required resources shopping list">
@@ -2705,7 +2550,7 @@ function App() {
             </div>
           )}
 
-          {appView === 'inspect' && model && (
+          {appView === 'inspect' && model && schematicOrigin === 'default' && (
             <FeaturedBuilder name="MildMadi" />
           )}
 
