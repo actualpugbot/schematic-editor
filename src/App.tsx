@@ -3679,6 +3679,12 @@ function materialIdForStateKey(stateKey: string): string {
   if (path === 'wall_hanging_sign') return id.replace(/wall_hanging_sign$/, 'hanging_sign');
   if (isWallSignStateKey(id)) return id.replace(/_wall_sign$/, '_sign');
   if (isWallHangingSignStateKey(id)) return id.replace(/_wall_hanging_sign$/, '_hanging_sign');
+  if (path === 'wall_torch') return 'minecraft:torch';
+  if (path === 'soul_wall_torch') return 'minecraft:soul_torch';
+  if (path === 'redstone_wall_torch') return 'minecraft:redstone_torch';
+  if (path === 'copper_wall_torch') return 'minecraft:copper_torch';
+  if (path === 'player_wall_head') return 'minecraft:player_head';
+  if (path === 'piglin_wall_head') return 'minecraft:piglin_head';
   return id;
 }
 
@@ -4188,6 +4194,8 @@ function materialEntriesForBlock(block: VoxelBlock): Array<{ id: string; quantit
   const quantity = materialQuantityForBlock(block);
   if (quantity === 0) return [];
 
+  if (isFlowingWaterStateKey(block.stateKey)) return [];
+
   if (isWaterSourceStateKey(block.stateKey)) {
     return [{ id: 'water_bucket', quantity, stateKey: 'minecraft:water_bucket' }];
   }
@@ -4205,6 +4213,14 @@ function materialEntriesForBlock(block: VoxelBlock): Array<{ id: string; quantit
       { id: 'flower_pot', quantity, stateKey: 'minecraft:flower_pot' },
       { id: pottedPlantId, quantity, stateKey: recipeItemStateKey(pottedPlantId) },
     ];
+  }
+
+  if (isWheatCropStateKey(block.stateKey)) {
+    return [{ id: 'wheat_seeds', quantity, stateKey: 'minecraft:wheat_seeds' }];
+  }
+
+  if (isDirtCountStateKey(block.stateKey)) {
+    return [{ id: 'dirt', quantity, stateKey: 'minecraft:dirt' }];
   }
 
   const id = materialIdForBlock(block);
@@ -4235,9 +4251,15 @@ function pottedPlantMaterialId(stateKey: string): string | null {
 
 function materialStateKeyForBlock(block: VoxelBlock): string {
   if (isFenceStateKey(block.stateKey)) return fenceMaterialStateKey(block.stateKey);
+  if (isFenceGateStateKey(block.stateKey)) return fenceGateMaterialStateKey(block.stateKey);
   if (isStairsStateKey(block.stateKey)) return stairMaterialStateKey(block.stateKey);
+  if (isTrapdoorStateKey(block.stateKey)) return trapdoorMaterialStateKey(block.stateKey);
+  if (isPaneStateKey(block.stateKey)) return paneMaterialStateKey(block.stateKey);
   if (isWallStateKey(block.stateKey)) return wallMaterialStateKey(block.stateKey);
   if (isPistonBaseStateKey(block.stateKey)) return pistonMaterialStateKey(block.stateKey);
+  if (isCampfireStateKey(block.stateKey)) return campfireMaterialStateKey(block.stateKey);
+  if (isWallTorchStateKey(block.stateKey)) return wallTorchMaterialStateKey(block.stateKey);
+  if (isDisplayHeadStateKey(block.stateKey)) return headMaterialStateKey(block);
   return block.stateKey;
 }
 
@@ -4254,6 +4276,18 @@ function fenceMaterialStateKey(stateKey: string): string {
   }, parsed.order);
 }
 
+function fenceGateMaterialStateKey(stateKey: string): string {
+  const parsed = parseStateKey(stateKey);
+  if (!parsed) return stateKey;
+
+  return formatStateKey(parsed.id, {
+    ...parsed.properties,
+    facing: 'east',
+    in_wall: 'false',
+    open: 'false',
+  }, parsed.order);
+}
+
 function stairMaterialStateKey(stateKey: string): string {
   const parsed = parseStateKey(stateKey);
   if (!parsed) return stateKey;
@@ -4266,6 +4300,29 @@ function stairMaterialStateKey(stateKey: string): string {
   }, parsed.order);
 }
 
+function trapdoorMaterialStateKey(stateKey: string): string {
+  const parsed = parseStateKey(stateKey);
+  if (!parsed) return stateKey;
+
+  return formatStateKey(parsed.id, {
+    ...parsed.properties,
+    open: 'false',
+  }, parsed.order);
+}
+
+function paneMaterialStateKey(stateKey: string): string {
+  const parsed = parseStateKey(stateKey);
+  if (!parsed) return stateKey;
+
+  return formatStateKey(parsed.id, {
+    ...parsed.properties,
+    east: 'false',
+    north: 'false',
+    south: 'false',
+    west: 'false',
+  }, parsed.order);
+}
+
 function pistonMaterialStateKey(stateKey: string): string {
   const parsed = parseStateKey(stateKey);
   if (!parsed) return stateKey;
@@ -4274,6 +4331,39 @@ function pistonMaterialStateKey(stateKey: string): string {
     ...parsed.properties,
     extended: 'false',
   }, parsed.order);
+}
+
+function campfireMaterialStateKey(stateKey: string): string {
+  const parsed = parseStateKey(stateKey);
+  if (!parsed) return stateKey;
+
+  return formatStateKey(parsed.id, {
+    ...parsed.properties,
+    lit: 'true',
+  }, parsed.order);
+}
+
+function wallTorchMaterialStateKey(stateKey: string): string {
+  const parsed = parseStateKey(stateKey);
+  const id = materialIdForStateKey(stateKey);
+  if (id === 'minecraft:redstone_torch') {
+    return withBlockStateProperties(id, { lit: parsed?.properties.lit ?? 'true' });
+  }
+  return id;
+}
+
+function headMaterialStateKey(block: VoxelBlock): string {
+  const parsed = parseStateKey(block.stateKey);
+  if (!parsed) return block.stateKey;
+
+  const id = materialIdForStateKey(block.stateKey);
+  const properties: Record<string, string> = { rotation: '0' };
+  const headTextureId = parsed.properties.SchematicEditor_head ?? block.playerHeadTexture?.id;
+  if (id === 'minecraft:player_head' && headTextureId) {
+    properties.SchematicEditor_head = headTextureId;
+  }
+
+  return formatStateKey(id, properties, ['rotation', 'SchematicEditor_head']);
 }
 
 function wallMaterialStateKey(stateKey: string): string {
@@ -4404,6 +4494,8 @@ function shoppingCategoryRank(id: string): number {
 function materialQuantityForBlock(block: VoxelBlock): number {
   if (isDoorStateKey(block.stateKey) && parseStateKey(block.stateKey)?.properties.half === 'upper') return 0;
   if (isBedStateKey(block.stateKey) && parseStateKey(block.stateKey)?.properties.part === 'head') return 0;
+  if (isUpperHalfTallPlantStateKey(block.stateKey)) return 0;
+  if (isPitcherCropStateKey(block.stateKey) && parseStateKey(block.stateKey)?.properties.half === 'upper') return 0;
   if (isPistonHeadStateKey(block.stateKey)) return 0;
   return isDoubleSlabStateKey(block.stateKey) ? 2 : 1;
 }
@@ -4414,7 +4506,7 @@ function materialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] | unde
   if (isWallStateKey(stateKey)) return wallMaterialThumbnailLayers(stateKey);
   if (isBedStateKey(stateKey)) return bedMaterialThumbnailLayers(stateKey);
   if (isDoorStateKey(stateKey)) return doorMaterialThumbnailLayers(stateKey);
-  if (isTallGrassStateKey(stateKey)) return tallGrassMaterialThumbnailLayers(stateKey);
+  if (isTallPlantStateKey(stateKey)) return tallPlantMaterialThumbnailLayers(stateKey);
   if (isPitcherCropStateKey(stateKey)) return pitcherCropMaterialThumbnailLayers(stateKey);
   return undefined;
 }
@@ -4475,7 +4567,7 @@ function pitcherCropMaterialThumbnailLayers(stateKey: string): BlockThumbnailLay
   ];
 }
 
-function tallGrassMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {
+function tallPlantMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {
   const baseState = stripBlockStateProperties(stateKey);
 
   return [
@@ -4520,8 +4612,25 @@ function isTallGrassStateKey(stateKey: string): boolean {
   return id === 'minecraft:tall_grass' || id === 'minecraft:tall_dry_grass';
 }
 
+function isTallPlantStateKey(stateKey: string): boolean {
+  const id = stripBlockStateProperties(stateKey);
+  return id === 'minecraft:large_fern'
+    || id === 'minecraft:lilac'
+    || id === 'minecraft:peony'
+    || id === 'minecraft:rose_bush'
+    || id === 'minecraft:sunflower'
+    || id === 'minecraft:tall_grass'
+    || id === 'minecraft:tall_dry_grass'
+    || id === 'minecraft:tall_seagrass';
+}
+
 function isWaterCauldronStateKey(stateKey: string): boolean {
   return stripBlockStateProperties(stateKey) === 'minecraft:water_cauldron';
+}
+
+function isFlowingWaterStateKey(stateKey: string): boolean {
+  const parsed = parseStateKey(stateKey);
+  return parsed?.id === 'minecraft:water' && parsed.properties.level !== undefined && parsed.properties.level !== '0';
 }
 
 function isWaterSourceStateKey(stateKey: string): boolean {
@@ -4552,9 +4661,53 @@ function isDoubleSlabStateKey(stateKey: string): boolean {
     && parseStateKey(stateKey)?.properties.type === 'double';
 }
 
+function isFenceGateStateKey(stateKey: string): boolean {
+  return stripBlockStateProperties(stateKey).replace(/^minecraft:/, '').endsWith('_fence_gate');
+}
+
 function isDoorStateKey(stateKey: string): boolean {
   const id = stripBlockStateProperties(stateKey).replace(/^minecraft:/, '');
   return id.endsWith('_door') && !id.endsWith('_trapdoor');
+}
+
+function isTrapdoorStateKey(stateKey: string): boolean {
+  return stripBlockStateProperties(stateKey).replace(/^minecraft:/, '').endsWith('_trapdoor');
+}
+
+function isPaneStateKey(stateKey: string): boolean {
+  const id = stripBlockStateProperties(stateKey).replace(/^minecraft:/, '');
+  return id.endsWith('_pane') || id.endsWith('_bars');
+}
+
+function isCampfireStateKey(stateKey: string): boolean {
+  const id = stripBlockStateProperties(stateKey).replace(/^minecraft:/, '');
+  return id === 'campfire' || id === 'soul_campfire';
+}
+
+function isWallTorchStateKey(stateKey: string): boolean {
+  const id = stripBlockStateProperties(stateKey).replace(/^minecraft:/, '');
+  return id === 'wall_torch' || id === 'soul_wall_torch' || id === 'redstone_wall_torch' || id === 'copper_wall_torch';
+}
+
+function isDisplayHeadStateKey(stateKey: string): boolean {
+  const id = stripBlockStateProperties(stateKey);
+  return id === 'minecraft:player_head'
+    || id === 'minecraft:player_wall_head'
+    || id === 'minecraft:piglin_head'
+    || id === 'minecraft:piglin_wall_head';
+}
+
+function isWheatCropStateKey(stateKey: string): boolean {
+  return stripBlockStateProperties(stateKey) === 'minecraft:wheat';
+}
+
+function isDirtCountStateKey(stateKey: string): boolean {
+  const id = stripBlockStateProperties(stateKey);
+  return id === 'minecraft:farmland' || id === 'minecraft:dirt_path';
+}
+
+function isUpperHalfTallPlantStateKey(stateKey: string): boolean {
+  return isTallPlantStateKey(stateKey) && parseStateKey(stateKey)?.properties.half === 'upper';
 }
 
 function isWallSignStateKey(stateKey: string): boolean {
