@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   Box,
   BoxSelect,
@@ -60,7 +60,7 @@ import {
   preloadBlockThumbnails,
   type BlockThumbnailLayer,
 } from './lib/blockThumbnails';
-import { textureUrl, type ModelFaceName } from './lib/minecraftModels';
+import { parseBlockStateKey as parseMinecraftBlockStateKey, textureUrl, type ModelFaceName } from './lib/minecraftModels';
 import { writeNbt, type NbtDocument } from './lib/nbt';
 import {
   defaultRecipeTypePreference,
@@ -82,13 +82,15 @@ import {
   type VoxelBlock,
 } from './lib/schematic';
 import creativeInventoryData from './lib/data/creative_inventory.json';
+import recipeBundle from './lib/data/recipes.generated.json';
+import thumbnailDisplayAdjustmentsJson from './lib/data/thumbnail_display_adjustments.json';
 import defaultSchematicUrl from '../mossy_roof_house.litematic?url';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 type DraggedFileKind = 'none' | 'unsupported-file' | 'unknown-file' | 'schematic-file';
 type InspectorTab = 'selection' | 'materials' | 'layers';
 type EditPanelTab = 'tools' | 'rotate' | 'replace';
-type AppView = 'inspect' | 'edit' | 'texture' | 'shopping' | 'resource';
+type AppView = 'inspect' | 'edit' | 'texture' | 'shopping' | 'resource' | 'thumbnail-debug';
 type EditTool = 'select' | 'build';
 type Theme = 'light' | 'dark';
 type SchematicOrigin = 'default' | 'uploaded';
@@ -162,6 +164,40 @@ interface ShoppingMaterialGroup {
   id: string;
   label: string;
   materials: MaterialSummary[];
+}
+
+interface ThumbnailDisplayAdjustment {
+  scale: number;
+  rotateX: number;
+  rotateY: number;
+  previewStateKey?: string;
+  previewLayers?: BlockThumbnailLayer[];
+}
+
+type ThumbnailDisplayAdjustmentMap = Record<string, ThumbnailDisplayAdjustment>;
+
+interface ThumbnailDebugItem {
+  key: string;
+  stateKey: string;
+  label: string;
+  color: number;
+  category: string;
+  family: 'block' | 'item';
+  layers?: BlockThumbnailLayer[];
+  sources: string[];
+}
+
+interface ThumbnailPreviewRequest {
+  stateKey: string;
+  layers?: BlockThumbnailLayer[];
+}
+
+type ThumbnailOrientationMode = 'facing' | 'horizontal_facing' | 'rotation' | 'axis' | null;
+
+interface ThumbnailOrientationSummary {
+  mode: ThumbnailOrientationMode;
+  value: string | null;
+  label: string | null;
 }
 
 interface BlockLibraryItem {
@@ -261,6 +297,35 @@ const colorGroupOrder: Array<{ id: ColorGroupId; label: string }> = [
   { id: 'purple', label: 'Purple' },
   { id: 'pink', label: 'Pink' },
 ];
+const defaultThumbnailDisplayAdjustment: ThumbnailDisplayAdjustment = {
+  scale: 1,
+  rotateX: 0,
+  rotateY: 0,
+};
+const thumbnailVerticalFacingBlockIds = new Set([
+  'minecraft:amethyst_cluster',
+  'minecraft:small_amethyst_bud',
+  'minecraft:medium_amethyst_bud',
+  'minecraft:large_amethyst_bud',
+  'minecraft:calibrated_sculk_sensor',
+  'minecraft:command_block',
+  'minecraft:chain_command_block',
+  'minecraft:crafter',
+  'minecraft:dispenser',
+  'minecraft:dropper',
+  'minecraft:end_rod',
+  'minecraft:hopper',
+  'minecraft:lightning_rod',
+  'minecraft:observer',
+  'minecraft:piston',
+  'minecraft:piston_head',
+  'minecraft:repeating_command_block',
+  'minecraft:sticky_piston',
+  'minecraft:trial_spawner',
+  'minecraft:vault',
+]);
+const defaultBlockPreviewAdjustments = thumbnailDisplayAdjustmentsJson as unknown as ThumbnailDisplayAdjustmentMap;
+const ThumbnailDisplayAdjustmentsContext = createContext<ThumbnailDisplayAdjustmentMap>(defaultBlockPreviewAdjustments);
 const woodTypeOrder = [
   'oak',
   'spruce',
@@ -469,6 +534,12 @@ function App() {
   const [selectedBlock, setSelectedBlock] = useState<VoxelBlock | null>(null);
   const [expandedMaterialIds, setExpandedMaterialIds] = useState<Set<string>>(() => new Set());
   const [materialSearch, setMaterialSearch] = useState('');
+  const [thumbnailDebugSearch, setThumbnailDebugSearch] = useState('');
+  const [thumbnailDisplayAdjustments, setThumbnailDisplayAdjustments] = useState<ThumbnailDisplayAdjustmentMap>(
+    defaultBlockPreviewAdjustments,
+  );
+  const [selectedThumbnailDebugKey, setSelectedThumbnailDebugKey] = useState('');
+  const [thumbnailAdjustmentsCopied, setThumbnailAdjustmentsCopied] = useState(false);
   const [hiddenMaterialIds, setHiddenMaterialIds] = useState<Set<string>>(() => new Set());
   const integerCrafting = true;
   const [shoppingSearch, setShoppingSearch] = useState('');
@@ -507,6 +578,7 @@ function App() {
   const materialItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const selectionPanelRef = useRef<HTMLElement | null>(null);
   const materialPanelRef = useRef<HTMLElement | null>(null);
+  const thumbnailAdjustmentsCopiedTimeoutRef = useRef<number | null>(null);
   const layerPanelRef = useRef<HTMLElement | null>(null);
   const schematicNameInputRef = useRef<HTMLInputElement | null>(null);
   const [showCelebration, setShowCelebration] = useState(false);
@@ -524,6 +596,12 @@ function App() {
   const selectedBlockWorldZ = selectedBlock && model ? model.origin.z + selectedBlock.z : null;
   const spectatorSpeed = 11;
   const showUploadOverlay = isDraggingFile;
+
+  useEffect(() => () => {
+    if (thumbnailAdjustmentsCopiedTimeoutRef.current !== null) {
+      window.clearTimeout(thumbnailAdjustmentsCopiedTimeoutRef.current);
+    }
+  }, []);
 
   const updateAxisGizmo = useCallback((orientation: AxisGizmoOrientation) => {
     const gizmo = axisGizmoRef.current;
@@ -748,6 +826,155 @@ function App() {
       };
     })
   ), [allBuildBlocks]);
+  const blockLibraryStateKeys = useMemo(() => new Set(blockLibraryItems.map((item) => item.stateKey)), [blockLibraryItems]);
+  const recipeThumbnailStateKeys = useMemo(() => {
+    const bundle = recipeBundle as unknown as {
+      recipes: Record<string, Array<{ inputs: Record<string, number | undefined> }>>;
+      raw: string[];
+    };
+    const itemIds = new Set<string>();
+
+    for (const [outputId, recipes] of Object.entries(bundle.recipes)) {
+      itemIds.add(normalizeRecipeItemId(outputId));
+      for (const recipe of recipes) {
+        for (const inputId of Object.keys(recipe.inputs)) {
+          itemIds.add(normalizeRecipeItemId(inputId));
+        }
+      }
+    }
+
+    for (const rawId of bundle.raw) {
+      itemIds.add(normalizeRecipeItemId(rawId));
+    }
+
+    return Array.from(itemIds, (id) => recipeItemStateKey(id)).sort((a, b) => a.localeCompare(b));
+  }, []);
+  const thumbnailDebugItems = useMemo<ThumbnailDebugItem[]>(() => {
+    const entries = new Map<string, ThumbnailDebugItem & { sourceSet: Set<string> }>();
+    const upsertItem = (
+      stateKey: string,
+      {
+        label,
+        family,
+        category,
+        source,
+        layers,
+      }: {
+        label: string;
+        family: 'block' | 'item';
+        category: string;
+        source: string;
+        layers?: BlockThumbnailLayer[];
+      },
+    ) => {
+      const key = thumbnailDisplayAdjustmentKey(stateKey);
+      const existing = entries.get(key);
+      if (existing) {
+        existing.sourceSet.add(source);
+        if (!existing.layers && layers) existing.layers = layers;
+        return;
+      }
+
+      const preview = createVoxelBlock(0, 0, 0, stateKey);
+      entries.set(key, {
+        key,
+        stateKey,
+        label,
+        color: preview.color,
+        category,
+        family,
+        layers,
+        sources: [],
+        sourceSet: new Set([source]),
+      });
+    };
+
+    for (const item of blockLibraryItems) {
+      upsertItem(item.stateKey, {
+        label: item.label,
+        family: 'block',
+        category: `Block Library / ${creativeInventoryTabLabel(item.category)}`,
+        source: 'Block Library',
+        layers: materialThumbnailLayers(item.stateKey),
+      });
+    }
+
+    for (const stateKey of recipeThumbnailStateKeys) {
+      const isBlock = blockLibraryStateKeys.has(stateKey);
+      upsertItem(stateKey, {
+        label: formatBlockName(stateKey),
+        family: isBlock ? 'block' : 'item',
+        category: isBlock ? 'Materials & Recipes / Blocks' : 'Materials & Recipes / Items',
+        source: 'Materials & Recipes',
+        layers: isBlock ? materialThumbnailLayers(stateKey) : undefined,
+      });
+    }
+
+    return Array.from(entries.values())
+      .map(({ sourceSet, ...item }) => ({
+        ...item,
+        sources: Array.from(sourceSet).sort(),
+      }))
+      .sort((a, b) => (
+        a.family.localeCompare(b.family)
+          || a.label.localeCompare(b.label)
+          || a.stateKey.localeCompare(b.stateKey)
+      ));
+  }, [blockLibraryItems, blockLibraryStateKeys, recipeThumbnailStateKeys]);
+  const filteredThumbnailDebugItems = useMemo(() => {
+    const query = thumbnailDebugSearch.trim().toLocaleLowerCase();
+    if (!query) return thumbnailDebugItems;
+
+    return thumbnailDebugItems.filter((item) => (
+      item.label.toLocaleLowerCase().includes(query)
+      || item.stateKey.toLocaleLowerCase().includes(query)
+      || item.category.toLocaleLowerCase().includes(query)
+      || item.sources.some((source) => source.toLocaleLowerCase().includes(query))
+    ));
+  }, [thumbnailDebugItems, thumbnailDebugSearch]);
+  const selectedThumbnailDebugItem = useMemo(() => (
+    thumbnailDebugItems.find((item) => item.key === selectedThumbnailDebugKey)
+      ?? filteredThumbnailDebugItems[0]
+      ?? thumbnailDebugItems[0]
+      ?? null
+  ), [filteredThumbnailDebugItems, selectedThumbnailDebugKey, thumbnailDebugItems]);
+  const selectedThumbnailDisplayAdjustment = selectedThumbnailDebugItem
+    ? thumbnailDisplayAdjustments[selectedThumbnailDebugItem.key] ?? defaultThumbnailDisplayAdjustment
+    : defaultThumbnailDisplayAdjustment;
+  const selectedThumbnailPreviewRequest = useMemo<ThumbnailPreviewRequest | null>(() => {
+    if (!selectedThumbnailDebugItem) return null;
+    return resolveThumbnailPreviewRequest(
+      selectedThumbnailDebugItem.stateKey,
+      selectedThumbnailDebugItem.layers,
+      selectedThumbnailDisplayAdjustment,
+    );
+  }, [selectedThumbnailDebugItem, selectedThumbnailDisplayAdjustment]);
+  const selectedThumbnailOrientation = useMemo<ThumbnailOrientationSummary | null>(() => (
+    selectedThumbnailPreviewRequest ? summarizeThumbnailOrientation(selectedThumbnailPreviewRequest) : null
+  ), [selectedThumbnailPreviewRequest]);
+  const selectedThumbnailHorizontalDirections = useMemo(() => {
+    if (!selectedThumbnailPreviewRequest) return [] as Direction[];
+    if (selectedThumbnailOrientation?.mode === 'axis') return [] as Direction[];
+    return (['north', 'east', 'south', 'west'] as const).filter((direction) => (
+      canSetThumbnailPreviewRequestDirection(selectedThumbnailPreviewRequest, direction)
+    ));
+  }, [selectedThumbnailOrientation?.mode, selectedThumbnailPreviewRequest]);
+  const selectedThumbnailVerticalDirections = useMemo(() => {
+    if (!selectedThumbnailPreviewRequest) return [] as Direction[];
+    if (selectedThumbnailOrientation?.mode === 'axis') return [] as Direction[];
+    if (!supportsVerticalThumbnailDirection(selectedThumbnailPreviewRequest)) return [] as Direction[];
+    return (['up', 'down'] as const).filter((direction) => (
+      canSetThumbnailPreviewRequestDirection(selectedThumbnailPreviewRequest, direction)
+    ));
+  }, [selectedThumbnailOrientation?.mode, selectedThumbnailPreviewRequest]);
+  const selectedThumbnailAxes = useMemo(() => {
+    if (!selectedThumbnailPreviewRequest || selectedThumbnailOrientation?.mode !== 'axis') return [] as Array<'x' | 'y' | 'z'>;
+    return (['x', 'y', 'z'] as const).filter((axis) => canSetThumbnailPreviewRequestAxis(selectedThumbnailPreviewRequest, axis));
+  }, [selectedThumbnailOrientation?.mode, selectedThumbnailPreviewRequest]);
+  const exportedThumbnailDisplayAdjustments = useMemo(() => (
+    serializeThumbnailDisplayAdjustments(thumbnailDisplayAdjustments)
+  ), [thumbnailDisplayAdjustments]);
+  const adjustedThumbnailItemCount = Object.keys(exportedThumbnailDisplayAdjustments).length;
 
   const filteredBlockLibraryItems = useMemo(() => {
     const query = blockSearch.trim().toLocaleLowerCase();
@@ -798,6 +1025,12 @@ function App() {
   }, [appView]);
 
   useEffect(() => {
+    if (!thumbnailDebugItems.length) return;
+    if (selectedThumbnailDebugKey && thumbnailDebugItems.some((item) => item.key === selectedThumbnailDebugKey)) return;
+    setSelectedThumbnailDebugKey(thumbnailDebugItems[0].key);
+  }, [selectedThumbnailDebugKey, thumbnailDebugItems]);
+
+  useEffect(() => {
     if (loadState !== 'ready') return;
 
     const controller = new AbortController();
@@ -835,6 +1068,23 @@ function App() {
 
     return () => controller.abort();
   }, [appView, filteredBlockLibraryItems, loadState]);
+
+  useEffect(() => {
+    if (appView !== 'thumbnail-debug') return;
+
+    const controller = new AbortController();
+    preloadBlockThumbnails(filteredThumbnailDebugItems.slice(0, 480).map((item) => ({
+      stateKey: item.stateKey,
+      color: item.color,
+      layers: item.layers,
+    })), {
+      batchSize: 24,
+      priority: 'interactive',
+      signal: controller.signal,
+    });
+
+    return () => controller.abort();
+  }, [appView, filteredThumbnailDebugItems]);
 
   useEffect(() => {
     if (materialsScope === 'cuboid' && !cuboidBounds) {
@@ -1629,6 +1879,107 @@ function App() {
     void navigator.clipboard?.writeText(text).catch(() => undefined);
   };
 
+  const updateSelectedThumbnailScale = (value: number) => {
+    if (!selectedThumbnailDebugItem) return;
+
+    setThumbnailDisplayAdjustments((current) => {
+      const previous = current[selectedThumbnailDebugItem.key] ?? defaultThumbnailDisplayAdjustment;
+      const next = normalizeThumbnailDisplayAdjustment({
+        ...previous,
+        scale: value,
+      });
+
+      if (isDefaultThumbnailDisplayAdjustment(next)) {
+        const updated = { ...current };
+        delete updated[selectedThumbnailDebugItem.key];
+        return updated;
+      }
+
+      return {
+        ...current,
+        [selectedThumbnailDebugItem.key]: next,
+      };
+    });
+  };
+
+  const updateSelectedThumbnailPreviewRequest = (request: ThumbnailPreviewRequest) => {
+    if (!selectedThumbnailDebugItem) return;
+
+    setThumbnailDisplayAdjustments((current) => {
+      const previous = current[selectedThumbnailDebugItem.key] ?? defaultThumbnailDisplayAdjustment;
+      const normalizedRequest = normalizeThumbnailPreviewRequest(request);
+      const baseRequest = baseThumbnailPreviewRequest(selectedThumbnailDebugItem.stateKey, selectedThumbnailDebugItem.layers);
+      const next = normalizeThumbnailDisplayAdjustment({
+        ...previous,
+        previewStateKey: thumbnailPreviewRequestsEqual(normalizedRequest, baseRequest) ? undefined : normalizedRequest.stateKey,
+        previewLayers: thumbnailPreviewRequestsEqual(normalizedRequest, baseRequest) ? undefined : normalizedRequest.layers,
+      });
+
+      if (isDefaultThumbnailDisplayAdjustment(next)) {
+        const updated = { ...current };
+        delete updated[selectedThumbnailDebugItem.key];
+        return updated;
+      }
+
+      return {
+        ...current,
+        [selectedThumbnailDebugItem.key]: next,
+      };
+    });
+  };
+
+  const rotateSelectedThumbnailPreview = (direction: RotationDirection) => {
+    if (!selectedThumbnailPreviewRequest) return;
+    updateSelectedThumbnailPreviewRequest(rotateThumbnailPreviewRequestY(selectedThumbnailPreviewRequest, direction));
+  };
+
+  const setSelectedThumbnailDirection = (direction: Direction) => {
+    if (!selectedThumbnailPreviewRequest) return;
+    updateSelectedThumbnailPreviewRequest(setThumbnailPreviewRequestDirection(selectedThumbnailPreviewRequest, direction));
+  };
+
+  const setSelectedThumbnailAxis = (axis: 'x' | 'y' | 'z') => {
+    if (!selectedThumbnailPreviewRequest) return;
+    updateSelectedThumbnailPreviewRequest(setThumbnailPreviewRequestAxis(selectedThumbnailPreviewRequest, axis));
+  };
+
+  const resetSelectedThumbnailDisplayAdjustment = () => {
+    if (!selectedThumbnailDebugItem) return;
+    setThumbnailDisplayAdjustments((current) => {
+      const updated = { ...current };
+      delete updated[selectedThumbnailDebugItem.key];
+      return updated;
+    });
+  };
+
+  const resetAllThumbnailDisplayAdjustments = () => {
+    setThumbnailDisplayAdjustments(defaultBlockPreviewAdjustments);
+  };
+
+  const copyThumbnailDisplayAdjustments = () => {
+    const text = JSON.stringify(exportedThumbnailDisplayAdjustments, null, 2);
+    const copyOperation = navigator.clipboard?.writeText(text);
+    if (!copyOperation) {
+      setThumbnailAdjustmentsCopied(false);
+      setEditNotice('Clipboard copy is not available in this browser.');
+      return;
+    }
+
+    void copyOperation.then(() => {
+      if (thumbnailAdjustmentsCopiedTimeoutRef.current !== null) {
+        window.clearTimeout(thumbnailAdjustmentsCopiedTimeoutRef.current);
+      }
+      setThumbnailAdjustmentsCopied(true);
+      thumbnailAdjustmentsCopiedTimeoutRef.current = window.setTimeout(() => {
+        setThumbnailAdjustmentsCopied(false);
+        thumbnailAdjustmentsCopiedTimeoutRef.current = null;
+      }, 1800);
+    }).catch(() => {
+      setThumbnailAdjustmentsCopied(false);
+      setEditNotice('Could not copy the thumbnail display adjustment JSON.');
+    });
+  };
+
   const openShoppingList = () => {
     if (!model) return;
     setShoppingSearch('');
@@ -1639,6 +1990,11 @@ function App() {
     if (!model) return;
     setShoppingSearch('');
     setAppView('resource');
+  };
+
+  const openThumbnailDebug = () => {
+    setThumbnailDebugSearch('');
+    setAppView('thumbnail-debug');
   };
 
   const saveCameraView = () => {
@@ -1748,13 +2104,14 @@ function App() {
   }, [appView, deleteSelection]);
 
   return (
-    <main
-      className={`app-shell${showUploadOverlay ? ' is-upload-message-visible' : ''}`}
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
+    <ThumbnailDisplayAdjustmentsContext.Provider value={thumbnailDisplayAdjustments}>
+      <main
+        className={`app-shell${showUploadOverlay ? ' is-upload-message-visible' : ''}`}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
       <div className="drop-overlay" aria-hidden={!showUploadOverlay} aria-live="polite">
         <div>
           <FileUp size={38} />
@@ -1836,7 +2193,7 @@ function App() {
         </div>
       </header>
 
-      <div className={`workspace${leftRailCollapsed ? ' is-left-rail-collapsed' : ''}${appView === 'shopping' ? ' is-shopping' : ''}${appView === 'resource' ? ' is-resource' : ''}`}>
+      <div className={`workspace${leftRailCollapsed ? ' is-left-rail-collapsed' : ''}${appView === 'shopping' ? ' is-shopping' : ''}${appView === 'resource' ? ' is-resource' : ''}${appView === 'thumbnail-debug' ? ' is-thumbnail-debug' : ''}`}>
         <button
           type="button"
           className="rail-toggle"
@@ -1916,6 +2273,18 @@ function App() {
               <ShoppingCart size={19} />
               <span>Shopping List</span>
             </button>
+            <button
+              type="button"
+              role="tab"
+              className={appView === 'thumbnail-debug' ? 'is-active' : ''}
+              onClick={openThumbnailDebug}
+              aria-selected={appView === 'thumbnail-debug'}
+              aria-label="Thumbnail Debug"
+              title="Thumbnail Debug"
+            >
+              <SlidersHorizontal size={19} />
+              <span>Thumbnail Debug</span>
+            </button>
           </div>
 
           <div
@@ -1954,10 +2323,316 @@ function App() {
         </aside>
 
         <section
-          className={`viewport-panel${appView === 'shopping' || appView === 'resource' ? ' shopping-viewport' : ''}${appView === 'resource' ? ' resource-viewport' : ''}${selectedBlock && !textureViewActive && appView !== 'shopping' && appView !== 'resource' ? ' has-selection-modal' : ''}`}
-          aria-label={appView === 'resource' ? 'Resource Calculator' : appView === 'shopping' ? 'Shopping list' : 'Schematic 3D viewport'}
+          className={`viewport-panel${appView === 'shopping' || appView === 'resource' || appView === 'thumbnail-debug' ? ' shopping-viewport' : ''}${appView === 'resource' ? ' resource-viewport' : ''}${appView === 'thumbnail-debug' ? ' thumbnail-debug-viewport' : ''}${selectedBlock && !textureViewActive && appView !== 'shopping' && appView !== 'resource' && appView !== 'thumbnail-debug' ? ' has-selection-modal' : ''}`}
+          aria-label={appView === 'resource' ? 'Resource Calculator' : appView === 'shopping' ? 'Shopping list' : appView === 'thumbnail-debug' ? 'Thumbnail debug' : 'Schematic 3D viewport'}
         >
-          {appView === 'resource' && model ? (
+          {appView === 'thumbnail-debug' ? (
+            <section className="thumbnail-debug-board" aria-label="Thumbnail debug catalog">
+              <div className="thumbnail-debug-header">
+                <div className="shopping-title-block">
+                  <p className="eyebrow">Thumbnail Debug</p>
+                  <h2>Preview Defaults</h2>
+                </div>
+                <div className="thumbnail-debug-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={resetSelectedThumbnailDisplayAdjustment}
+                    disabled={!selectedThumbnailDebugItem || !thumbnailDisplayAdjustments[selectedThumbnailDebugItem.key]}
+                  >
+                    <RotateCcw size={16} />
+                    Reset Selected
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={resetAllThumbnailDisplayAdjustments}
+                    disabled={adjustedThumbnailItemCount === 0}
+                  >
+                    <X size={16} />
+                    Reset All
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={copyThumbnailDisplayAdjustments}
+                  >
+                    {thumbnailAdjustmentsCopied ? <Check size={15} aria-hidden="true" /> : <ClipboardList size={15} aria-hidden="true" />}
+                    {thumbnailAdjustmentsCopied ? 'Copied JSON' : 'Copy JSON'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="thumbnail-debug-toolbar">
+                <label className="material-search">
+                  <Search size={16} aria-hidden="true" />
+                  <input
+                    type="search"
+                    value={thumbnailDebugSearch}
+                    onChange={(event) => setThumbnailDebugSearch(event.target.value)}
+                    placeholder="Search blocks, items, or ids"
+                    aria-label="Search thumbnail debug items"
+                  />
+                </label>
+                <div className="thumbnail-debug-summary" aria-label="Thumbnail debug summary">
+                  <span>{filteredThumbnailDebugItems.length.toLocaleString()} visible</span>
+                  <span>{thumbnailDebugItems.length.toLocaleString()} total</span>
+                  <span>{adjustedThumbnailItemCount.toLocaleString()} adjusted</span>
+                </div>
+              </div>
+
+              <div className="thumbnail-debug-layout">
+                <section className="thumbnail-debug-catalog" aria-label="Thumbnail catalog">
+                  <div className="thumbnail-debug-grid">
+                    {filteredThumbnailDebugItems.map((item) => {
+                      const isSelected = selectedThumbnailDebugItem?.key === item.key;
+                      const hasAdjustment = Boolean(thumbnailDisplayAdjustments[item.key]);
+
+                      return (
+                        <button
+                          type="button"
+                          key={item.key}
+                          className={`thumbnail-debug-card${isSelected ? ' is-selected' : ''}${hasAdjustment ? ' is-adjusted' : ''}`}
+                          onClick={() => setSelectedThumbnailDebugKey(item.key)}
+                          aria-pressed={isSelected}
+                        >
+                          <span className="thumbnail-debug-card-preview">
+                            <BlockPreview
+                              stateKey={item.stateKey}
+                              color={item.color}
+                              layers={item.layers}
+                            />
+                          </span>
+                          <span className="thumbnail-debug-card-meta">
+                            <strong>{item.label}</strong>
+                            <span>{item.family === 'block' ? 'Block' : 'Item'}</span>
+                            <small>{item.stateKey}</small>
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {filteredThumbnailDebugItems.length === 0 && (
+                      <p className="material-empty">No thumbnail entries match "{thumbnailDebugSearch.trim()}".</p>
+                    )}
+                  </div>
+                </section>
+
+                <aside className="thumbnail-debug-editor" aria-label="Thumbnail adjustment editor">
+                  {selectedThumbnailDebugItem ? (
+                    <>
+                      <div className="thumbnail-debug-editor-head">
+                        <div>
+                          <p className="eyebrow">{selectedThumbnailDebugItem.family === 'block' ? 'Block' : 'Item'}</p>
+                          <h3>{selectedThumbnailDebugItem.label}</h3>
+                        </div>
+                        {thumbnailDisplayAdjustments[selectedThumbnailDebugItem.key] && (
+                          <span className="thumbnail-debug-adjusted-pill">Adjusted</span>
+                        )}
+                      </div>
+
+                      <div className="thumbnail-debug-preview-stage">
+                        <div className="thumbnail-debug-preview-samples">
+                          <div>
+                            <span>Small</span>
+                            <BlockPreview
+                              stateKey={selectedThumbnailDebugItem.stateKey}
+                              color={selectedThumbnailDebugItem.color}
+                              layers={selectedThumbnailDebugItem.layers}
+                              size={28}
+                            />
+                          </div>
+                          <div>
+                            <span>Default</span>
+                            <BlockPreview
+                              stateKey={selectedThumbnailDebugItem.stateKey}
+                              color={selectedThumbnailDebugItem.color}
+                              layers={selectedThumbnailDebugItem.layers}
+                              size={42}
+                            />
+                          </div>
+                          <div>
+                            <span>Large</span>
+                            <BlockPreview
+                              stateKey={selectedThumbnailDebugItem.stateKey}
+                              color={selectedThumbnailDebugItem.color}
+                              layers={selectedThumbnailDebugItem.layers}
+                              size={68}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <dl className="thumbnail-debug-facts">
+                        <div>
+                          <dt>State Key</dt>
+                          <dd>{selectedThumbnailDebugItem.stateKey}</dd>
+                        </div>
+                        <div>
+                          <dt>Facing</dt>
+                          <dd>{selectedThumbnailOrientation?.label ?? 'Not direction-aware'}</dd>
+                        </div>
+                        <div>
+                          <dt>Category</dt>
+                          <dd>{selectedThumbnailDebugItem.category}</dd>
+                        </div>
+                        <div>
+                          <dt>Sources</dt>
+                          <dd>{selectedThumbnailDebugItem.sources.join(' · ')}</dd>
+                        </div>
+                      </dl>
+
+                      <div className="thumbnail-debug-controls">
+                        <label className="thumbnail-debug-control">
+                          <div>
+                            <span>Scale</span>
+                            <strong>{selectedThumbnailDisplayAdjustment.scale.toFixed(2)}x</strong>
+                          </div>
+                          <input
+                            type="range"
+                            min="0.5"
+                            max="2.4"
+                            step="0.05"
+                            value={selectedThumbnailDisplayAdjustment.scale}
+                            onChange={(event) => updateSelectedThumbnailScale(Number(event.target.value))}
+                          />
+                        </label>
+
+                        <div className="thumbnail-debug-control">
+                          <div>
+                            <span>Rotate Around Y</span>
+                            <strong>{selectedThumbnailOrientation?.label ?? 'No directional state'}</strong>
+                          </div>
+                          <div className="thumbnail-debug-direction-actions">
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => rotateSelectedThumbnailPreview('counterclockwise')}
+                              disabled={!selectedThumbnailPreviewRequest || thumbnailPreviewRequestsEqual(
+                                rotateThumbnailPreviewRequestY(selectedThumbnailPreviewRequest, 'counterclockwise'),
+                                selectedThumbnailPreviewRequest,
+                              )}
+                            >
+                              <RotateCcw size={16} />
+                              Rotate Left
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => rotateSelectedThumbnailPreview('clockwise')}
+                              disabled={!selectedThumbnailPreviewRequest || thumbnailPreviewRequestsEqual(
+                                rotateThumbnailPreviewRequestY(selectedThumbnailPreviewRequest, 'clockwise'),
+                                selectedThumbnailPreviewRequest,
+                              )}
+                            >
+                              <RotateCw size={16} />
+                              Rotate Right
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="thumbnail-debug-control">
+                          <div>
+                            <span>Set Facing</span>
+                            <strong>Changes the rendered block state</strong>
+                          </div>
+                          {selectedThumbnailAxes.length > 0 && (
+                            <div className="thumbnail-debug-direction-actions" role="group" aria-label="Set axis">
+                              {(['x', 'y', 'z'] as const).map((axis) => {
+                                const nextRequest = selectedThumbnailPreviewRequest
+                                  ? setThumbnailPreviewRequestAxis(selectedThumbnailPreviewRequest, axis)
+                                  : null;
+                                const isActive = selectedThumbnailPreviewRequest && nextRequest
+                                  ? thumbnailPreviewRequestsEqual(nextRequest, selectedThumbnailPreviewRequest)
+                                  : false;
+
+                                return (
+                                  <button
+                                    type="button"
+                                    key={axis}
+                                    className={`secondary-button${isActive ? ' is-active' : ''}`}
+                                    onClick={() => setSelectedThumbnailAxis(axis)}
+                                    disabled={!selectedThumbnailPreviewRequest || !canSetThumbnailPreviewRequestAxis(selectedThumbnailPreviewRequest, axis)}
+                                    aria-pressed={isActive}
+                                  >
+                                    Axis {axis.toUpperCase()}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {selectedThumbnailHorizontalDirections.length > 0 && (
+                            <div className="thumbnail-debug-direction-grid" role="group" aria-label="Set horizontal facing">
+                              {(['north', 'east', 'south', 'west'] as const).map((direction) => {
+                                const nextRequest = selectedThumbnailPreviewRequest
+                                  ? setThumbnailPreviewRequestDirection(selectedThumbnailPreviewRequest, direction)
+                                  : null;
+                                const isActive = selectedThumbnailPreviewRequest && nextRequest
+                                  ? thumbnailPreviewRequestsEqual(nextRequest, selectedThumbnailPreviewRequest)
+                                  : false;
+
+                                return (
+                                  <button
+                                    type="button"
+                                    key={direction}
+                                    className={`secondary-button${isActive ? ' is-active' : ''}`}
+                                    onClick={() => setSelectedThumbnailDirection(direction)}
+                                    disabled={!selectedThumbnailPreviewRequest || !canSetThumbnailPreviewRequestDirection(selectedThumbnailPreviewRequest, direction)}
+                                    aria-pressed={isActive}
+                                  >
+                                    {direction}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {selectedThumbnailVerticalDirections.length > 0 && (
+                            <div className="thumbnail-debug-direction-actions" role="group" aria-label="Set vertical facing">
+                              {(['up', 'down'] as const).map((direction) => {
+                                const nextRequest = selectedThumbnailPreviewRequest
+                                  ? setThumbnailPreviewRequestDirection(selectedThumbnailPreviewRequest, direction)
+                                  : null;
+                                const isActive = selectedThumbnailPreviewRequest && nextRequest
+                                  ? thumbnailPreviewRequestsEqual(nextRequest, selectedThumbnailPreviewRequest)
+                                  : false;
+
+                                return (
+                                  <button
+                                    type="button"
+                                    key={direction}
+                                    className={`secondary-button${isActive ? ' is-active' : ''}`}
+                                    onClick={() => setSelectedThumbnailDirection(direction)}
+                                    disabled={!selectedThumbnailPreviewRequest || !canSetThumbnailPreviewRequestDirection(selectedThumbnailPreviewRequest, direction)}
+                                    aria-pressed={isActive}
+                                  >
+                                    {direction}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {selectedThumbnailAxes.length === 0
+                            && selectedThumbnailHorizontalDirections.length === 0
+                            && selectedThumbnailVerticalDirections.length === 0 && (
+                            <p className="thumbnail-debug-control-note">This preview does not expose a directional state we can override yet.</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="thumbnail-debug-export">
+                        <div className="thumbnail-debug-export-head">
+                          <strong>Default JSON</strong>
+                          <span>Copy this into the thumbnail defaults map.</span>
+                        </div>
+                        <pre>{JSON.stringify(exportedThumbnailDisplayAdjustments, null, 2)}</pre>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="material-empty">Choose a thumbnail from the catalog to start adjusting its default display.</p>
+                  )}
+                </aside>
+              </div>
+            </section>
+          ) : appView === 'resource' && model ? (
             <section className="shopping-board resource-board" aria-label="Resource Calculator">
               <div className="shopping-header">
                 <div className="shopping-title-block">
@@ -3074,7 +3749,7 @@ function App() {
             </section>
 
             <section
-              className={`material-list inspector-panel${inspectorTab === 'materials' ? ' is-active' : ''}`}
+              className={`material-list material-list-panel inspector-panel${inspectorTab === 'materials' ? ' is-active' : ''}`}
               ref={materialPanelRef}
             >
               <div className="section-heading compact">
@@ -3452,15 +4127,38 @@ function App() {
           onDone={() => setShowCelebration(false)}
         />
       )}
-    </main>
+      </main>
+    </ThumbnailDisplayAdjustmentsContext.Provider>
   );
 }
 
-function BlockPreview({ stateKey, color, layers }: { stateKey: string; color: number; layers?: BlockThumbnailLayer[] }) {
+function BlockPreview({
+  stateKey,
+  color,
+  layers,
+  size,
+  rotateX,
+  rotateY,
+  adjustmentKey,
+}: {
+  stateKey: string;
+  color: number;
+  layers?: BlockThumbnailLayer[];
+  size?: number;
+  rotateX?: number;
+  rotateY?: number;
+  adjustmentKey?: string;
+}) {
+  const thumbnailDisplayAdjustments = useContext(ThumbnailDisplayAdjustmentsContext);
+  const defaultAdjustment = thumbnailDisplayAdjustments[adjustmentKey ?? thumbnailDisplayAdjustmentKey(stateKey)]
+    ?? defaultThumbnailDisplayAdjustment;
+  const previewRequest = resolveThumbnailPreviewRequest(stateKey, layers, defaultAdjustment);
   const previewRef = useRef<HTMLSpanElement | null>(null);
-  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(() => getCachedBlockThumbnail(stateKey, color, layers) ?? null);
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(() => (
+    getCachedBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers) ?? null
+  ));
   const [thumbnailState, setThumbnailState] = useState<ThumbnailLoadState>(() => {
-    const cachedThumbnail = getCachedBlockThumbnail(stateKey, color, layers);
+    const cachedThumbnail = getCachedBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers);
     if (cachedThumbnail === undefined) return 'idle';
     return cachedThumbnail ? 'ready' : 'failed';
   });
@@ -3487,7 +4185,7 @@ function BlockPreview({ stateKey, color, layers }: { stateKey: string; color: nu
   }, []);
 
   useEffect(() => {
-    const cachedThumbnail = getCachedBlockThumbnail(stateKey, color, layers);
+    const cachedThumbnail = getCachedBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers);
     if (cachedThumbnail !== undefined) {
       setThumbnailUrl(cachedThumbnail);
       setThumbnailState(cachedThumbnail ? 'ready' : 'failed');
@@ -3499,7 +4197,7 @@ function BlockPreview({ stateKey, color, layers }: { stateKey: string; color: nu
     let cancelled = false;
     setThumbnailUrl(null);
     setThumbnailState('loading');
-    void createBlockThumbnail(stateKey, color, layers)
+    void createBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers)
       .then((url) => {
         if (cancelled) return;
         setThumbnailUrl(url);
@@ -3514,7 +4212,9 @@ function BlockPreview({ stateKey, color, layers }: { stateKey: string; color: nu
     return () => {
       cancelled = true;
     };
-  }, [color, isVisible, layers, stateKey]);
+  }, [color, isVisible, previewRequest.layers, previewRequest.stateKey]);
+  const resolvedRotateX = rotateX ?? defaultAdjustment.rotateX;
+  const resolvedRotateY = rotateY ?? defaultAdjustment.rotateY;
 
   return (
     <span
@@ -3525,6 +4225,10 @@ function BlockPreview({ stateKey, color, layers }: { stateKey: string; color: nu
       aria-hidden="true"
       style={{
         '--block-thumbnail': thumbnailUrl ? `url("${thumbnailUrl}")` : 'none',
+        '--block-preview-size': size ? `${size}px` : undefined,
+        '--block-preview-scale': defaultAdjustment.scale.toString(),
+        '--block-preview-rotate-x': `${resolvedRotateX}deg`,
+        '--block-preview-rotate-y': `${resolvedRotateY}deg`,
       } as CSSProperties}
     >
       {thumbnailState === 'failed' && (
@@ -3536,6 +4240,276 @@ function BlockPreview({ stateKey, color, layers }: { stateKey: string; color: nu
       )}
     </span>
   );
+}
+
+function thumbnailDisplayAdjustmentKey(stateKey: string): string {
+  return stateKey;
+}
+
+function baseThumbnailPreviewRequest(stateKey: string, layers?: BlockThumbnailLayer[]): ThumbnailPreviewRequest {
+  return normalizeThumbnailPreviewRequest({ stateKey, layers });
+}
+
+function resolveThumbnailPreviewRequest(
+  stateKey: string,
+  layers: BlockThumbnailLayer[] | undefined,
+  adjustment: ThumbnailDisplayAdjustment,
+): ThumbnailPreviewRequest {
+  return normalizeThumbnailPreviewRequest({
+    stateKey: adjustment.previewStateKey ?? stateKey,
+    layers: adjustment.previewLayers ?? layers,
+  });
+}
+
+function normalizeThumbnailPreviewRequest(request: ThumbnailPreviewRequest): ThumbnailPreviewRequest {
+  return {
+    stateKey: request.stateKey,
+    layers: normalizeThumbnailPreviewLayers(request.layers),
+  };
+}
+
+function normalizeThumbnailPreviewLayers(layers?: BlockThumbnailLayer[]): BlockThumbnailLayer[] | undefined {
+  if (!layers || layers.length === 0) return undefined;
+
+  return layers.map((layer) => ({
+    stateKey: layer.stateKey,
+    offset: layer.offset ? [...layer.offset] as [number, number, number] : undefined,
+  }));
+}
+
+function normalizeThumbnailDisplayAdjustment(adjustment: ThumbnailDisplayAdjustment): ThumbnailDisplayAdjustment {
+  return {
+    scale: clamp(Math.round(adjustment.scale * 100) / 100, 0.5, 2.4),
+    rotateX: clamp(Math.round(adjustment.rotateX ?? 0), -60, 60),
+    rotateY: clamp(Math.round(adjustment.rotateY ?? 0), -60, 60),
+    previewStateKey: adjustment.previewStateKey,
+    previewLayers: normalizeThumbnailPreviewLayers(adjustment.previewLayers),
+  };
+}
+
+function isDefaultThumbnailDisplayAdjustment(adjustment: ThumbnailDisplayAdjustment): boolean {
+  return adjustment.scale === defaultThumbnailDisplayAdjustment.scale
+    && adjustment.rotateX === defaultThumbnailDisplayAdjustment.rotateX
+    && adjustment.rotateY === defaultThumbnailDisplayAdjustment.rotateY
+    && adjustment.previewStateKey === undefined
+    && adjustment.previewLayers === undefined;
+}
+
+function serializeThumbnailDisplayAdjustments(adjustments: ThumbnailDisplayAdjustmentMap): ThumbnailDisplayAdjustmentMap {
+  return Object.fromEntries(
+    Object.entries(adjustments)
+      .map(([key, adjustment]) => [key, normalizeThumbnailDisplayAdjustment(adjustment)] as const)
+      .filter(([, adjustment]) => !isDefaultThumbnailDisplayAdjustment(adjustment))
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function thumbnailPreviewRequestsEqual(left: ThumbnailPreviewRequest, right: ThumbnailPreviewRequest): boolean {
+  return left.stateKey === right.stateKey && thumbnailPreviewLayersEqual(left.layers, right.layers);
+}
+
+function thumbnailPreviewLayersEqual(left?: BlockThumbnailLayer[], right?: BlockThumbnailLayer[]): boolean {
+  if (!left?.length && !right?.length) return true;
+  if (!left || !right || left.length !== right.length) return false;
+
+  return left.every((layer, index) => {
+    const other = right[index];
+    if (!other || layer.stateKey !== other.stateKey) return false;
+    const leftOffset = layer.offset ?? [0, 0, 0];
+    const rightOffset = other.offset ?? [0, 0, 0];
+    return leftOffset[0] === rightOffset[0]
+      && leftOffset[1] === rightOffset[1]
+      && leftOffset[2] === rightOffset[2];
+  });
+}
+
+function rotateThumbnailPreviewRequestY(
+  request: ThumbnailPreviewRequest,
+  direction: RotationDirection,
+): ThumbnailPreviewRequest {
+  return normalizeThumbnailPreviewRequest({
+    stateKey: rotateBlockStateKeyY(request.stateKey, direction),
+    layers: request.layers?.map((layer) => ({
+      stateKey: rotateBlockStateKeyY(layer.stateKey, direction),
+      offset: layer.offset ? rotateThumbnailLayerOffsetY(layer.offset, direction) : undefined,
+    })),
+  });
+}
+
+function rotateThumbnailLayerOffsetY(
+  offset: [number, number, number],
+  direction: RotationDirection,
+): [number, number, number] {
+  const [x, y, z] = offset;
+  return direction === 'clockwise' ? [-z, y, x] : [z, y, -x];
+}
+
+function summarizeThumbnailOrientation(request: ThumbnailPreviewRequest): ThumbnailOrientationSummary {
+  const properties = parseMinecraftBlockStateKey(primaryThumbnailPreviewStateKey(request)).properties;
+  if (isDirection(properties.facing)) {
+    return { mode: 'facing', value: properties.facing, label: formatThumbnailDirectionLabel(properties.facing) };
+  }
+  if (isHorizontalDirection(properties.horizontal_facing)) {
+    return {
+      mode: 'horizontal_facing',
+      value: properties.horizontal_facing,
+      label: formatThumbnailDirectionLabel(properties.horizontal_facing),
+    };
+  }
+  if (isHorizontalDirection(properties.rotation)) {
+    return { mode: 'rotation', value: properties.rotation, label: formatThumbnailDirectionLabel(properties.rotation) };
+  }
+  if (properties.rotation && /^\d+$/.test(properties.rotation)) {
+    const direction = horizontalDirectionFromRotationValue(properties.rotation);
+    return { mode: 'rotation', value: properties.rotation, label: `${formatThumbnailDirectionLabel(direction)} (${properties.rotation})` };
+  }
+  if (properties.axis === 'x' || properties.axis === 'y' || properties.axis === 'z') {
+    return { mode: 'axis', value: properties.axis, label: `Axis ${properties.axis.toUpperCase()}` };
+  }
+
+  return { mode: null, value: null, label: null };
+}
+
+function primaryThumbnailPreviewStateKey(request: ThumbnailPreviewRequest): string {
+  return request.layers?.[0]?.stateKey ?? request.stateKey;
+}
+
+function supportsVerticalThumbnailDirection(request: ThumbnailPreviewRequest): boolean {
+  const stateKey = primaryThumbnailPreviewStateKey(request);
+  const normalized = parseMinecraftBlockStateKey(stateKey);
+  const facing = normalized.properties.facing;
+  if (facing === 'up' || facing === 'down') return true;
+  return thumbnailVerticalFacingBlockIds.has(normalized.id);
+}
+
+function canSetThumbnailPreviewRequestDirection(request: ThumbnailPreviewRequest, direction: Direction): boolean {
+  return !thumbnailPreviewRequestsEqual(request, setThumbnailPreviewRequestDirection(request, direction));
+}
+
+function setThumbnailPreviewRequestDirection(request: ThumbnailPreviewRequest, direction: Direction): ThumbnailPreviewRequest {
+  if (isHorizontalDirection(direction)) {
+    const currentDirection = summarizeThumbnailOrientation(request).mode === 'axis'
+      ? null
+      : thumbnailPreviewHorizontalDirection(request);
+    if (currentDirection) {
+      let next = request;
+      for (let turns = 0; turns < 4 && thumbnailPreviewHorizontalDirection(next) !== direction; turns += 1) {
+        next = rotateThumbnailPreviewRequestY(next, 'clockwise');
+      }
+      if (thumbnailPreviewHorizontalDirection(next) === direction) return next;
+    }
+  }
+
+  return normalizeThumbnailPreviewRequest({
+    stateKey: setBlockStateKeyDirection(request.stateKey, direction),
+    layers: request.layers?.map((layer) => ({
+      stateKey: setBlockStateKeyDirection(layer.stateKey, direction),
+      offset: layer.offset ? [...layer.offset] as [number, number, number] : undefined,
+    })),
+  });
+}
+
+function canSetThumbnailPreviewRequestAxis(request: ThumbnailPreviewRequest, axis: 'x' | 'y' | 'z'): boolean {
+  return !thumbnailPreviewRequestsEqual(request, setThumbnailPreviewRequestAxis(request, axis));
+}
+
+function setThumbnailPreviewRequestAxis(request: ThumbnailPreviewRequest, axis: 'x' | 'y' | 'z'): ThumbnailPreviewRequest {
+  return normalizeThumbnailPreviewRequest({
+    stateKey: setBlockStateKeyAxis(request.stateKey, axis),
+    layers: request.layers?.map((layer) => ({
+      stateKey: setBlockStateKeyAxis(layer.stateKey, axis),
+      offset: layer.offset ? [...layer.offset] as [number, number, number] : undefined,
+    })),
+  });
+}
+
+function thumbnailPreviewHorizontalDirection(
+  request: ThumbnailPreviewRequest,
+): 'north' | 'east' | 'south' | 'west' | null {
+  const properties = parseMinecraftBlockStateKey(primaryThumbnailPreviewStateKey(request)).properties;
+  if (isHorizontalDirection(properties.facing)) return properties.facing;
+  if (isHorizontalDirection(properties.horizontal_facing)) return properties.horizontal_facing;
+  if (isHorizontalDirection(properties.rotation)) return properties.rotation;
+  if (properties.rotation && /^\d+$/.test(properties.rotation)) return horizontalDirectionFromRotationValue(properties.rotation);
+  return null;
+}
+
+function setBlockStateKeyDirection(stateKey: string, direction: Direction): string {
+  const parsed = parseStateKey(stateKey);
+  const normalized = parseMinecraftBlockStateKey(stateKey);
+  const nextProperties = { ...normalized.properties };
+
+  if (nextProperties.facing !== undefined && (direction === 'up' || direction === 'down' || isHorizontalDirection(direction))) {
+    nextProperties.facing = direction;
+    return formatStateKey(normalized.id, nextProperties, parsed?.order ?? []);
+  }
+  if (isHorizontalDirection(direction) && nextProperties.horizontal_facing !== undefined) {
+    nextProperties.horizontal_facing = direction;
+    return formatStateKey(normalized.id, nextProperties, parsed?.order ?? []);
+  }
+  if (isHorizontalDirection(direction) && nextProperties.rotation !== undefined) {
+    if (isHorizontalDirection(nextProperties.rotation)) {
+      nextProperties.rotation = direction;
+    } else if (/^\d+$/.test(nextProperties.rotation)) {
+      nextProperties.rotation = rotationValueForHorizontalDirection(direction);
+    } else {
+      return stateKey;
+    }
+    return formatStateKey(normalized.id, nextProperties, parsed?.order ?? []);
+  }
+  if (nextProperties.axis !== undefined) {
+    nextProperties.axis = axisForDirection(direction);
+    return formatStateKey(normalized.id, nextProperties, parsed?.order ?? []);
+  }
+
+  return stateKey;
+}
+
+function setBlockStateKeyAxis(stateKey: string, axis: 'x' | 'y' | 'z'): string {
+  const parsed = parseStateKey(stateKey);
+  const normalized = parseMinecraftBlockStateKey(stateKey);
+  if (normalized.properties.axis === undefined) return stateKey;
+
+  return formatStateKey(normalized.id, { ...normalized.properties, axis }, parsed?.order ?? []);
+}
+
+function horizontalDirectionFromRotationValue(rotation: string): 'north' | 'east' | 'south' | 'west' {
+  const steps = ((Number.parseInt(rotation, 10) % 16) + 16) % 16;
+  const quarterTurn = Math.round(steps / 4) % 4;
+  return (['north', 'east', 'south', 'west'] as const)[quarterTurn];
+}
+
+function rotationValueForHorizontalDirection(direction: 'north' | 'east' | 'south' | 'west'): string {
+  switch (direction) {
+    case 'east':
+      return '4';
+    case 'south':
+      return '8';
+    case 'west':
+      return '12';
+    case 'north':
+    default:
+      return '0';
+  }
+}
+
+function axisForDirection(direction: Direction): 'x' | 'y' | 'z' {
+  if (direction === 'up' || direction === 'down') return 'y';
+  if (direction === 'east' || direction === 'west') return 'x';
+  return 'z';
+}
+
+function isDirection(value: string | undefined): value is Direction {
+  return value === 'up'
+    || value === 'down'
+    || value === 'north'
+    || value === 'south'
+    || value === 'east'
+    || value === 'west';
+}
+
+function formatThumbnailDirectionLabel(direction: Direction | string): string {
+  return direction.charAt(0).toUpperCase() + direction.slice(1);
 }
 
 function CuboidCornerControls({

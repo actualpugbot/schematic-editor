@@ -1,0 +1,1472 @@
+{
+  "minecraft:acacia_button": {
+    "scale": 1.25,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:acacia_button[face=floor,facing=west,powered=false]"
+  },
+  "minecraft:acacia_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:acacia_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:acacia_door[facing=west,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:acacia_door[facing=west,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:acacia_fence": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:acacia_fence",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:acacia_fence[east=false,north=true,south=true,west=false]"
+      }
+    ]
+  },
+  "minecraft:acacia_shelf": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:acacia_shelf[facing=east,powered=false]"
+  },
+  "minecraft:acacia_trapdoor": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:acacia_trapdoor[facing=east,half=bottom,open=false]"
+  },
+  "minecraft:activator_rail": {
+    "scale": 1.15,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:allium": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:andesite_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:andesite_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:andesite_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:anvil": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:anvil[facing=south]"
+  },
+  "minecraft:bamboo_button": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:bamboo_button[face=floor,facing=east,powered=false]"
+  },
+  "minecraft:bamboo_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:bamboo_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:bamboo_door[facing=east,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:bamboo_door[facing=east,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:bamboo_fence": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:bamboo_fence",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:bamboo_fence[east=false,north=true,south=true,west=false]"
+      }
+    ]
+  },
+  "minecraft:bamboo_shelf": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:bamboo_shelf[facing=east,powered=false]"
+  },
+  "minecraft:bee_nest": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:bee_nest[facing=east,honey_level=0]"
+  },
+  "minecraft:beehive": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:beehive[facing=east,honey_level=0]"
+  },
+  "minecraft:big_dripleaf": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:big_dripleaf[facing=east,tilt=none]"
+  },
+  "minecraft:birch_button": {
+    "scale": 1.15,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:birch_button[face=floor,facing=east,powered=false]"
+  },
+  "minecraft:birch_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:birch_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:birch_door[facing=east,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:birch_door[facing=east,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:birch_fence": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:birch_fence",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:birch_fence[east=false,north=true,south=true,west=false]"
+      }
+    ]
+  },
+  "minecraft:birch_shelf": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:birch_shelf[facing=east,powered=false]"
+  },
+  "minecraft:birch_trapdoor": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:birch_trapdoor[facing=east,half=bottom,open=false]"
+  },
+  "minecraft:black_bed": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:black_candle": {
+    "scale": 1.35,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:blackstone_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:blackstone_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:blackstone_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:blast_furnace": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:blast_furnace[facing=east,lit=false]"
+  },
+  "minecraft:blue_bed": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:blue_candle": {
+    "scale": 1.35,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:brain_coral_fan": {
+    "scale": 1.8,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:brown_bed": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:brown_candle": {
+    "scale": 1.35,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:brown_mushroom": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:candle": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:carved_pumpkin": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:carved_pumpkin[facing=east]"
+  },
+  "minecraft:chain_command_block": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:chain_command_block[conditional=false,facing=up]"
+  },
+  "minecraft:cherry_button": {
+    "scale": 1.15,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:cherry_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:cherry_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:cherry_door[facing=east,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:cherry_door[facing=east,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:cherry_fence": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:cherry_fence",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:cherry_fence[east=false,north=true,south=true,west=false]"
+      }
+    ]
+  },
+  "minecraft:cherry_shelf": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:cherry_shelf[facing=east,powered=false]"
+  },
+  "minecraft:chipped_anvil": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:chipped_anvil[facing=south]"
+  },
+  "minecraft:chiseled_bookshelf": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:chiseled_bookshelf[facing=east,slot_0_occupied=true,slot_1_occupied=true,slot_2_occupied=true,slot_3_occupied=true,slot_4_occupied=true,slot_5_occupied=true]"
+  },
+  "minecraft:cobbled_deepslate_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:cobbled_deepslate_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:cobbled_deepslate_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:cobblestone_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:cobblestone_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:cobblestone_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:comparator": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:comparator[facing=west,mode=compare,powered=false]"
+  },
+  "minecraft:copper_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:copper_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:copper_door[facing=east,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:copper_door[facing=east,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:crimson_button": {
+    "scale": 1.25,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:crimson_button[face=floor,facing=east,powered=false]"
+  },
+  "minecraft:crimson_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:crimson_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:crimson_door[facing=east,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:crimson_door[facing=east,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:crimson_fence": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:crimson_fence",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:crimson_fence[east=false,north=true,south=true,west=false]"
+      }
+    ]
+  },
+  "minecraft:crimson_shelf": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:crimson_shelf[facing=east,powered=false]"
+  },
+  "minecraft:cyan_bed": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:cyan_candle": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:damaged_anvil": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:damaged_anvil[facing=south]"
+  },
+  "minecraft:dark_oak_button": {
+    "scale": 1.15,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:dark_oak_button[face=floor,facing=east,powered=false]"
+  },
+  "minecraft:dark_oak_fence": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:dark_oak_fence",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:dark_oak_fence[east=false,north=true,south=true,west=false]"
+      }
+    ]
+  },
+  "minecraft:dark_oak_shelf": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:dark_oak_shelf[facing=east,powered=false]"
+  },
+  "minecraft:dead_tube_coral_wall_fan": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:dead_tube_coral_wall_fan[facing=north]"
+  },
+  "minecraft:deepslate_brick_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:deepslate_brick_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:deepslate_brick_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:detector_rail": {
+    "scale": 1.15,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:diorite_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:diorite_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:diorite_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:dispenser": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:dispenser[facing=east]"
+  },
+  "minecraft:dropper": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:dropper[facing=east]"
+  },
+  "minecraft:end_stone_brick_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:end_stone_brick_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:end_stone_brick_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:exposed_copper_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:exposed_copper_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:exposed_copper_door[facing=east,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:exposed_copper_door[facing=east,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:flower_pot": {
+    "scale": 1.2,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:furnace": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:furnace[facing=east,lit=false]"
+  },
+  "minecraft:golden_dandelion": {
+    "scale": 1.55,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:granite_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:granite_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:granite_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:gray_bed": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:gray_candle": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:green_bed": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:hopper": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:hopper[facing=down]"
+  },
+  "minecraft:iron_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:iron_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:iron_door[facing=east,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:iron_door[facing=east,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:jack_o_lantern": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:jack_o_lantern[facing=east]"
+  },
+  "minecraft:jungle_button": {
+    "scale": 1.15,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:jungle_button[face=floor,facing=east,powered=false]"
+  },
+  "minecraft:jungle_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:jungle_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:jungle_door[facing=east,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:jungle_door[facing=east,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:jungle_fence": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:jungle_fence",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:jungle_fence[east=false,north=true,south=true,west=false]"
+      }
+    ]
+  },
+  "minecraft:jungle_shelf": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:jungle_shelf[facing=east,powered=false]"
+  },
+  "minecraft:lectern": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:lectern[facing=east]"
+  },
+  "minecraft:lever": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:lever[face=floor,facing=east,powered=false]"
+  },
+  "minecraft:light_gray_bed": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:light_gray_candle": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:lime_bed": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:lime_candle": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:loom": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:loom[facing=east]"
+  },
+  "minecraft:mangrove_button": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:mangrove_button[face=floor,facing=east,powered=false]"
+  },
+  "minecraft:mangrove_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:mangrove_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:mangrove_door[facing=east,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:mangrove_door[facing=east,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:mangrove_fence": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:mangrove_fence",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:mangrove_fence[east=false,north=true,south=true,west=false]"
+      }
+    ]
+  },
+  "minecraft:mangrove_shelf": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:mangrove_shelf[facing=east,powered=false]"
+  },
+  "minecraft:mossy_cobblestone_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:mossy_cobblestone_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:mossy_cobblestone_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:mossy_stone_brick_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:mossy_stone_brick_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:mossy_stone_brick_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:mud_brick_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:mud_brick_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:mud_brick_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:nether_brick_fence": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:nether_brick_fence",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:nether_brick_fence[east=false,north=true,south=true,west=false]"
+      }
+    ]
+  },
+  "minecraft:nether_brick_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:nether_brick_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:nether_brick_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:oak_button": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:oak_button[face=floor,facing=east,powered=false]"
+  },
+  "minecraft:oak_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:oak_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:oak_door[facing=east,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:oak_door[facing=east,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:oak_fence": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:oak_fence",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:oak_fence[east=false,north=true,south=true,west=false]"
+      }
+    ]
+  },
+  "minecraft:oak_shelf": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:oak_shelf[facing=east,powered=false]"
+  },
+  "minecraft:observer": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:observer[facing=east,powered=false]"
+  },
+  "minecraft:orange_candle": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:oxidized_copper_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:oxidized_copper_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:oxidized_copper_door[facing=east,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:oxidized_copper_door[facing=east,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:pale_oak_button": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:pale_oak_button[face=floor,facing=east,powered=false]"
+  },
+  "minecraft:pale_oak_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:pale_oak_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:pale_oak_door[facing=east,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:pale_oak_door[facing=east,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:pale_oak_fence": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:pale_oak_fence",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:pale_oak_fence[east=false,north=true,south=true,west=false]"
+      }
+    ]
+  },
+  "minecraft:pale_oak_shelf": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:pale_oak_shelf[facing=east,powered=false]"
+  },
+  "minecraft:pink_candle": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:piston": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:piston[extended=false,facing=up]"
+  },
+  "minecraft:polished_basalt": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:polished_basalt[axis=y]"
+  },
+  "minecraft:polished_blackstone_button": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:polished_blackstone_button[face=floor,facing=east,powered=false]"
+  },
+  "minecraft:polished_blackstone_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:polished_blackstone_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:polished_blackstone_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:polished_deepslate_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:polished_deepslate_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:polished_deepslate_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:polished_tuff_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:polished_tuff_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:polished_tuff_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:powered_rail": {
+    "scale": 1.15,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:purple_candle": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:rail": {
+    "scale": 1.15,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:red_candle": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:red_mushroom": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:red_sandstone_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:red_sandstone_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:red_sandstone_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:repeater": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:repeater[delay=1,facing=west,locked=false,powered=false]"
+  },
+  "minecraft:resin_brick_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:resin_brick_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:resin_brick_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:sandstone_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:sandstone_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:sandstone_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:smoker": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:smoker[facing=east,lit=false]"
+  },
+  "minecraft:spruce_button": {
+    "scale": 1.15,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:spruce_button[face=floor,facing=east,powered=false]"
+  },
+  "minecraft:spruce_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:spruce_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:spruce_door[facing=east,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:spruce_door[facing=east,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:spruce_fence": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:spruce_fence",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:spruce_fence[east=false,north=true,south=true,west=false]"
+      }
+    ]
+  },
+  "minecraft:spruce_shelf": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:spruce_shelf[facing=east,powered=false]"
+  },
+  "minecraft:sticky_piston": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:sticky_piston[extended=false,facing=up]"
+  },
+  "minecraft:stone_brick_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:stone_brick_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:stone_brick_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:stone_button": {
+    "scale": 1.15,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:stone_button[face=floor,facing=east,powered=false]"
+  },
+  "minecraft:tripwire": {
+    "scale": 1.55,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:tuff_brick_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:tuff_brick_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:tuff_brick_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:tuff_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:tuff_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:tuff_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:warped_button": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:warped_button[face=floor,facing=east,powered=false]"
+  },
+  "minecraft:warped_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:warped_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:warped_door[facing=east,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:warped_door[facing=east,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:warped_fence": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:warped_fence",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:warped_fence[east=false,north=true,south=true,west=false]"
+      }
+    ]
+  },
+  "minecraft:warped_shelf": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:warped_shelf[facing=east,powered=false]"
+  },
+  "minecraft:waxed_copper_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:waxed_copper_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:waxed_copper_door[facing=east,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:waxed_copper_door[facing=east,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:waxed_exposed_copper_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:waxed_exposed_copper_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:waxed_exposed_copper_door[facing=east,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:waxed_exposed_copper_door[facing=east,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:waxed_oxidized_copper_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:waxed_oxidized_copper_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:waxed_oxidized_copper_door[facing=east,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:waxed_oxidized_copper_door[facing=east,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:waxed_weathered_copper_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:waxed_weathered_copper_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:waxed_weathered_copper_door[facing=east,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:waxed_weathered_copper_door[facing=east,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:weathered_copper_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:weathered_copper_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:weathered_copper_door[facing=east,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:weathered_copper_door[facing=east,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:dark_oak_door": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:dark_oak_door",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:dark_oak_door[facing=east,hinge=left,open=false,half=lower]"
+      },
+      {
+        "stateKey": "minecraft:dark_oak_door[facing=east,hinge=left,open=false,half=upper]",
+        "offset": [
+          0,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "minecraft:white_bed": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:orange_bed": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:magenta_bed": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:light_blue_bed": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:yellow_bed": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:pink_bed": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:purple_bed": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:red_bed": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:white_candle": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:magenta_candle": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:light_blue_candle": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:yellow_candle": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:green_candle": {
+    "scale": 1.4,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:brick_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:brick_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:brick_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:deepslate_tile_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:deepslate_tile_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:deepslate_tile_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:polished_blackstone_brick_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:polished_blackstone_brick_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:polished_blackstone_brick_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:prismarine_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:prismarine_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:prismarine_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:red_nether_brick_wall": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:red_nether_brick_wall",
+    "previewLayers": [
+      {
+        "stateKey": "minecraft:red_nether_brick_wall[east=none,north=low,south=low,up=true,west=none]"
+      }
+    ]
+  },
+  "minecraft:tube_coral_fan": {
+    "scale": 1.8,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:bubble_coral_fan": {
+    "scale": 1.8,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:fire_coral_fan": {
+    "scale": 1.8,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:horn_coral_fan": {
+    "scale": 1.8,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:dead_tube_coral_fan": {
+    "scale": 1.8,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:dead_brain_coral_fan": {
+    "scale": 1.8,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:dead_bubble_coral_fan": {
+    "scale": 1.8,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:dead_fire_coral_fan": {
+    "scale": 1.8,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:dead_horn_coral_fan": {
+    "scale": 1.8,
+    "rotateX": 0,
+    "rotateY": 0
+  },
+  "minecraft:tube_coral_wall_fan": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:tube_coral_wall_fan[facing=north]"
+  },
+  "minecraft:brain_coral_wall_fan": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:brain_coral_wall_fan[facing=north]"
+  },
+  "minecraft:bubble_coral_wall_fan": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:bubble_coral_wall_fan[facing=north]"
+  },
+  "minecraft:fire_coral_wall_fan": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:fire_coral_wall_fan[facing=north]"
+  },
+  "minecraft:horn_coral_wall_fan": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:horn_coral_wall_fan[facing=north]"
+  },
+  "minecraft:dead_brain_coral_wall_fan": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:dead_brain_coral_wall_fan[facing=north]"
+  },
+  "minecraft:dead_bubble_coral_wall_fan": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:dead_bubble_coral_wall_fan[facing=north]"
+  },
+  "minecraft:dead_fire_coral_wall_fan": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:dead_fire_coral_wall_fan[facing=north]"
+  },
+  "minecraft:dead_horn_coral_wall_fan": {
+    "scale": 1,
+    "rotateX": 0,
+    "rotateY": 0,
+    "previewStateKey": "minecraft:dead_horn_coral_wall_fan[facing=north]"
+  }
+}
