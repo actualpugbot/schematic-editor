@@ -148,6 +148,7 @@ const hiddenMaterial = new THREE.MeshBasicMaterial({
 const horizontalFaces = new Set<ModelFaceName>(['north', 'south', 'west', 'east']);
 const cuboidOverlayPadding = 0.018;
 const cornerLabelOffset = 0.86;
+const defaultSchematicRotationY = -Math.PI / 2;
 const labelProjectionVector = new THREE.Vector3();
 const rotationControlProjectionVector = new THREE.Vector3();
 
@@ -157,6 +158,7 @@ export function Viewer3D(props: InternalViewerProps) {
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
+  const displayGroupRef = useRef<THREE.Group | null>(null);
   const modelGroupRef = useRef<THREE.Group | null>(null);
   const gridRef = useRef<THREE.Group | null>(null);
   const floorRef = useRef<THREE.Mesh | null>(null);
@@ -325,25 +327,30 @@ export function Viewer3D(props: InternalViewerProps) {
     floor.receiveShadow = true;
     scene.add(floor);
 
+    const displayGroup = new THREE.Group();
+    displayGroup.rotation.y = defaultSchematicRotationY;
+    displayGroupRef.current = displayGroup;
+    scene.add(displayGroup);
+
     const modelGroup = new THREE.Group();
     modelGroupRef.current = modelGroup;
-    scene.add(modelGroup);
+    displayGroup.add(modelGroup);
 
     const gridGroup = new THREE.Group();
     gridRef.current = gridGroup;
-    scene.add(gridGroup);
+    displayGroup.add(gridGroup);
 
     const selectionBox = createSelectionBox();
     selectionBoxRef.current = selectionBox;
-    scene.add(selectionBox);
+    displayGroup.add(selectionBox);
 
     const placementPreview = createPlacementPreviewBox();
     placementPreviewRef.current = placementPreview;
-    scene.add(placementPreview);
+    displayGroup.add(placementPreview);
 
     const cuboidOverlay = createCuboidOverlay(props.theme);
     cuboidOverlayRef.current = cuboidOverlay;
-    scene.add(cuboidOverlay);
+    displayGroup.add(cuboidOverlay);
 
     const resize = () => {
       const rect = container.getBoundingClientRect();
@@ -365,7 +372,7 @@ export function Viewer3D(props: InternalViewerProps) {
       pointerStart.y = event.clientY;
       renderer.domElement.focus();
       if (textureEditModeRef.current && event.button === 0 && cameraModeRef.current !== 'spectator') {
-        const hit = pickTextureFace(event, renderer, camera, modelGroup);
+        const hit = pickTextureFace(event, renderer, camera, modelGroup, displayGroup);
         if (hit) {
           event.preventDefault();
           textureDragStart = { x: event.clientX, y: event.clientY, hit };
@@ -399,6 +406,7 @@ export function Viewer3D(props: InternalViewerProps) {
         renderer,
         camera,
         modelGroup,
+        displayGroup,
         latestModelRef.current,
         latestBlockKeysRef.current,
       );
@@ -421,6 +429,7 @@ export function Viewer3D(props: InternalViewerProps) {
           renderer,
           camera,
           modelGroup,
+          displayGroup,
           latestModelRef.current,
           latestBlockKeysRef.current,
         ),
@@ -505,6 +514,7 @@ export function Viewer3D(props: InternalViewerProps) {
         latestCuboidCornersRef.current,
         latestShowCuboidCornerLabelsRef.current && Boolean(latestCuboidBoundsRef.current),
         latestModelRef.current,
+        displayGroup,
         camera,
         renderer,
       );
@@ -514,6 +524,7 @@ export function Viewer3D(props: InternalViewerProps) {
         latestSelectedBlockRef.current,
         latestCuboidBoundsRef.current ?? null,
         latestModelRef.current,
+        displayGroup,
         camera,
         renderer,
       );
@@ -584,6 +595,7 @@ export function Viewer3D(props: InternalViewerProps) {
       cameraRef.current = null;
       rendererRef.current = null;
       controlsRef.current = null;
+      displayGroupRef.current = null;
       floorRef.current = null;
       selectionBoxRef.current = null;
       placementPreviewRef.current = null;
@@ -1388,6 +1400,7 @@ function updateCuboidCornerLabels(
   corners: CuboidCornerPoints | null | undefined,
   shouldShow: boolean,
   model: SchematicModel | null,
+  displayGroup: THREE.Group,
   camera: THREE.PerspectiveCamera,
   renderer: THREE.WebGLRenderer,
 ) {
@@ -1404,6 +1417,7 @@ function updateCuboidCornerLabels(
       point.y + cornerLabelOffset,
       point.z - (model.dimensions.length - 1) / 2,
     );
+    displayGroup.localToWorld(labelProjectionVector);
     labelProjectionVector.project(camera);
 
     if (
@@ -1430,6 +1444,7 @@ function updateRotationControlPosition(
   selectedBlock: VoxelBlock | null,
   cuboidBounds: CuboidBounds | null,
   model: SchematicModel | null,
+  displayGroup: THREE.Group,
   camera: THREE.PerspectiveCamera,
   renderer: THREE.WebGLRenderer,
 ) {
@@ -1462,6 +1477,7 @@ function updateRotationControlPosition(
     );
   }
 
+  displayGroup.localToWorld(rotationControlProjectionVector);
   rotationControlProjectionVector.project(camera);
 
   if (
@@ -1581,6 +1597,7 @@ function pickTextureFace(
   renderer: THREE.WebGLRenderer,
   camera: THREE.PerspectiveCamera,
   modelGroup: THREE.Group,
+  displayGroup: THREE.Group,
 ): TextureFaceHit | null {
   const hit = pickModelIntersection(event, renderer, camera, modelGroup);
   if (!hit || hit.instanceId === undefined) return null;
@@ -1594,7 +1611,7 @@ function pickTextureFace(
   const materialIndex = hit.face?.materialIndex;
   const face = typeof materialIndex === 'number' && faceOrder[materialIndex]
     ? faceOrder[materialIndex]
-    : faceFromIntersectionNormal(hit, mesh);
+    : faceFromIntersectionNormal(hit, mesh, displayGroup);
 
   return {
     block,
@@ -1609,6 +1626,7 @@ function pickPlacementPoint(
   renderer: THREE.WebGLRenderer,
   camera: THREE.PerspectiveCamera,
   modelGroup: THREE.Group,
+  displayGroup: THREE.Group,
   model: SchematicModel | null,
   occupiedBlockKeys: Set<string>,
 ): PlacementPoint | null {
@@ -1622,7 +1640,7 @@ function pickPlacementPoint(
   const block = blocks?.[hit.instanceId];
   if (!block) return null;
 
-  const face = faceFromIntersectionNormal(hit, mesh);
+  const face = faceFromIntersectionNormal(hit, mesh, displayGroup);
   const offset = faceOffsets[face];
   const point = {
     x: block.x + offset[0],
@@ -1671,14 +1689,21 @@ function pickModelIntersection(
   return intersections.find((intersection) => intersection.instanceId !== undefined) ?? null;
 }
 
-function faceFromIntersectionNormal(hit: THREE.Intersection, mesh: THREE.InstancedMesh): ModelFaceName {
+function faceFromIntersectionNormal(
+  hit: THREE.Intersection,
+  mesh: THREE.InstancedMesh,
+  displayGroup: THREE.Group,
+): ModelFaceName {
   const normal = hit.face?.normal.clone() ?? new THREE.Vector3(0, 1, 0);
   const matrix = new THREE.Matrix4();
+  const displayRotation = new THREE.Quaternion();
   if (hit.instanceId !== undefined) {
     mesh.getMatrixAt(hit.instanceId, matrix);
     normal.transformDirection(matrix);
   }
   normal.transformDirection(mesh.matrixWorld).normalize();
+  displayGroup.getWorldQuaternion(displayRotation);
+  normal.applyQuaternion(displayRotation.invert()).normalize();
 
   let bestFace: ModelFaceName = 'up';
   let bestDot = -Infinity;
