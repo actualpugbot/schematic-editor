@@ -15,7 +15,6 @@ import {
   Eraser,
   Eye,
   EyeOff,
-  FileText,
   FileUp,
   Focus,
   Grid2X2,
@@ -443,18 +442,6 @@ const blockstateFiles = import.meta.glob('/public/minecraft-assets/assets/minecr
   import: 'default',
 });
 
-function formatRelativeTime(timestamp: number): string {
-  const diff = Date.now() - timestamp;
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} hr ago`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return 'Yesterday';
-  return `${days} days ago`;
-}
-
 function App() {
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window === 'undefined') return 'light';
@@ -503,7 +490,6 @@ function App() {
   const [editTool, setEditTool] = useState<EditTool>('select');
   const [selectedBuildBlock, setSelectedBuildBlock] = useState(emptyBuildBlock);
   const [recentBuildBlocks, setRecentBuildBlocks] = useState<string[]>([]);
-  const [recentFiles, setRecentFiles] = useState<{ name: string; at: number }[]>([]);
   const [blockSearch, setBlockSearch] = useState('');
   const [textureBlockSearch, setTextureBlockSearch] = useState('');
   const [selectedTextureBlock, setSelectedTextureBlock] = useState('minecraft:oak_planks');
@@ -1089,10 +1075,6 @@ function App() {
       const buffer = await file.arrayBuffer();
       const parsed = parseSchematicDocument(buffer, { fileName: file.name });
       applySchematic(parsed.model, parsed.nbt, fileExtension(file.name), 'uploaded');
-      setRecentFiles((current) => [
-        { name: file.name, at: Date.now() },
-        ...current.filter((entry) => entry.name !== file.name),
-      ].slice(0, 6));
     } catch (caught) {
       setLoadState('error');
       setError(caught instanceof Error ? caught.message : 'Could not read this schematic file.');
@@ -1955,29 +1937,6 @@ function App() {
               <span>Browse Files</span>
             </button>
           </div>
-
-          {recentFiles.length > 0 && (
-            <div className="rail-recent">
-              <div className="rail-recent-head">
-                <span>Recent Files</span>
-              </div>
-              {recentFiles.map((entry, index) => (
-                <button
-                  type="button"
-                  key={`${entry.name}-${entry.at}`}
-                  className={`rail-recent-item${index === 0 ? ' is-active' : ''}`}
-                  onClick={() => inputRef.current?.click()}
-                  title={entry.name}
-                >
-                  <FileText size={16} />
-                  <span className="meta">
-                    <span className="name">{entry.name}</span>
-                    <span className="time">{formatRelativeTime(entry.at)}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
 
           <div className="rail-spacer" />
 
