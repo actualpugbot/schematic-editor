@@ -4316,10 +4316,10 @@ function paneMaterialStateKey(stateKey: string): string {
 
   return formatStateKey(parsed.id, {
     ...parsed.properties,
-    east: 'false',
+    east: 'true',
     north: 'false',
     south: 'false',
-    west: 'false',
+    west: 'true',
   }, parsed.order);
 }
 
