@@ -110,6 +110,31 @@ const THUMBNAIL_DEBUG_ENABLED = false;
 const defaultExportFormat: SchematicExportFormat = '.litematic';
 const defaultSchematicFileName = 'mossy_roof_house.litematic';
 const defaultSchematicName = 'Mossy Roof House';
+const exportFormatOptions: Array<{
+  value: SchematicExportFormat;
+  label: string;
+  shortLabel: string;
+  description: string;
+}> = [
+  {
+    value: '.litematic',
+    label: 'Litematic (.litematic)',
+    shortLabel: 'Litematic',
+    description: 'Best for modern Litematica builds and round-tripping edits.',
+  },
+  {
+    value: '.schem',
+    label: 'Sponge (.schem)',
+    shortLabel: 'Sponge',
+    description: 'Good for Sponge-compatible tools and newer schematic workflows.',
+  },
+  {
+    value: '.schematic',
+    label: 'Legacy (.schematic)',
+    shortLabel: 'Legacy',
+    description: 'Older MCEdit-style export with limited block-state support.',
+  },
+];
 
 interface TextureSelection {
   stateKey: string;
@@ -532,6 +557,7 @@ function App() {
   const [schematicDocument, setSchematicDocument] = useState<NbtDocument | null>(null);
   const [schematicExtension, setSchematicExtension] = useState('.litematic');
   const [exportFormat, setExportFormat] = useState<SchematicExportFormat>(defaultExportFormat);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [hasEditChanges, setHasEditChanges] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [error, setError] = useState('');
@@ -588,6 +614,7 @@ function App() {
   const thumbnailAdjustmentsCopiedTimeoutRef = useRef<number | null>(null);
   const layerPanelRef = useRef<HTMLElement | null>(null);
   const schematicNameInputRef = useRef<HTMLInputElement | null>(null);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
   const [showCelebration, setShowCelebration] = useState(false);
   const skipNextShoppingPersistRef = useRef(false);
   const skipNextSelectionPersistRef = useRef(false);
@@ -603,12 +630,36 @@ function App() {
   const selectedBlockWorldZ = selectedBlock && model ? model.origin.z + selectedBlock.z : null;
   const spectatorSpeed = 11;
   const showUploadOverlay = isDraggingFile;
+  const currentExportFormatOption = exportFormatOptions.find((option) => option.value === exportFormat) ?? exportFormatOptions[0];
 
   useEffect(() => () => {
     if (thumbnailAdjustmentsCopiedTimeoutRef.current !== null) {
       window.clearTimeout(thumbnailAdjustmentsCopiedTimeoutRef.current);
     }
   }, []);
+
+  useEffect(() => {
+    if (!isExportMenuOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node) || exportMenuRef.current?.contains(target)) return;
+      setIsExportMenuOpen(false);
+    };
+
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsExportMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleWindowKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleWindowKeyDown);
+    };
+  }, [isExportMenuOpen]);
 
   const updateAxisGizmo = useCallback((orientation: AxisGizmoOrientation) => {
     const gizmo = axisGizmoRef.current;
@@ -2208,19 +2259,6 @@ function App() {
             <Plus size={16} />
             <span>New</span>
           </button>
-          <label className="topbar-format-picker">
-            <span>Format</span>
-            <select
-              value={exportFormat}
-              onChange={(event) => setExportFormat(event.target.value as SchematicExportFormat)}
-              aria-label="Export format"
-              title="Choose export format"
-            >
-              <option value=".litematic">Litematic (.litematic)</option>
-              <option value=".schem">Sponge (.schem)</option>
-              <option value=".schematic">Legacy (.schematic)</option>
-            </select>
-          </label>
           <button
             type="button"
             className={`topbar-icon-btn${isDarkTheme ? ' is-on' : ''}`}
@@ -2230,16 +2268,62 @@ function App() {
           >
             {isDarkTheme ? <Sun size={18} /> : <Moon size={18} />}
           </button>
-          <button
-            type="button"
-            className="topbar-save"
-            onClick={exportRenamedSchematic}
-            disabled={!canSaveSchematic}
-            title={hasEditChanges ? 'Export edited build' : 'Export schematic'}
+          <div
+            className={`topbar-export${isExportMenuOpen ? ' is-open' : ''}`}
+            ref={exportMenuRef}
           >
-            <Download size={16} />
-            <span>Export</span>
-          </button>
+            <button
+              type="button"
+              className="topbar-save topbar-save-main"
+              onClick={() => {
+                setIsExportMenuOpen(false);
+                exportRenamedSchematic();
+              }}
+              disabled={!canSaveSchematic}
+              title={`${hasEditChanges ? 'Export edited build' : 'Export schematic'} as ${currentExportFormatOption.label}`}
+            >
+              <Download size={16} />
+              <span>Export</span>
+              <span className="topbar-save-format">{currentExportFormatOption.shortLabel}</span>
+            </button>
+            <button
+              type="button"
+              className="topbar-save topbar-save-toggle"
+              onClick={() => setIsExportMenuOpen((open) => !open)}
+              aria-label="Choose export format"
+              aria-haspopup="menu"
+              aria-expanded={isExportMenuOpen}
+              title={`Choose export format (${currentExportFormatOption.shortLabel})`}
+            >
+              <ChevronDown size={16} className="topbar-save-chevron" />
+            </button>
+            <div className="topbar-export-menu" role="menu" aria-label="Save format">
+              {exportFormatOptions.map((option) => {
+                const isActive = option.value === exportFormat;
+
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="menuitemradio"
+                    className={`topbar-export-option${isActive ? ' is-active' : ''}`}
+                    aria-checked={isActive}
+                    onClick={() => {
+                      setExportFormat(option.value);
+                      setIsExportMenuOpen(false);
+                    }}
+                    title={`Save as ${option.label}`}
+                  >
+                    <span className="topbar-export-option-copy">
+                      <strong>{option.shortLabel}</strong>
+                      <span>{option.description}</span>
+                    </span>
+                    {isActive ? <Check size={15} aria-hidden="true" /> : null}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </header>
 
