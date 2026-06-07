@@ -2284,7 +2284,6 @@ function App() {
             >
               <Download size={16} />
               <span>Export</span>
-              <span className="topbar-save-format">{currentExportFormatOption.shortLabel}</span>
             </button>
             <button
               type="button"
@@ -4710,25 +4709,21 @@ function FilteredMaterialSummary({
   materials: MaterialSummary[];
   emptyText: string;
 }) {
-  const shownMaterials = materials.slice(0, 10);
   return (
     <section className="filtered-materials" aria-label={title}>
       <div className="filtered-materials-head">
         <h3>{title}</h3>
         <span>{materials.length.toLocaleString()} types</span>
       </div>
-      {shownMaterials.length > 0 ? (
+      {materials.length > 0 ? (
         <div className="filtered-material-list">
-          {shownMaterials.map((material) => (
+          {materials.map((material) => (
             <div className="filtered-material-row" key={material.id}>
               <BlockPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
               <span>{material.label}</span>
               <strong>{material.count.toLocaleString()}</strong>
             </div>
           ))}
-          {materials.length > shownMaterials.length && (
-            <p className="filtered-material-more">+{(materials.length - shownMaterials.length).toLocaleString()} more</p>
-          )}
         </div>
       ) : (
         <p className="panel-empty">{emptyText}</p>

@@ -309,17 +309,6 @@ input, select, textarea { font-family: inherit; }
   border-radius: var(--r-sm) 0 0 var(--r-sm);
   padding-right: 14px;
 }
-.topbar-save-format {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  padding: 2px 8px;
-  border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.16);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-}
 .topbar-save-toggle {
   justify-content: center;
   width: 40px;
@@ -2088,7 +2077,6 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); ou
   .left-rail .rail-cluster button { justify-content: center; padding: 0; }
   .rail-dropzone { padding: 12px; }
   .brand-lockup strong, .brand-beta { display: none; }
-  .topbar-save-format { display: none; }
   .topbar-export-menu { min-width: 248px; }
 }
 @media (max-width: 920px) {
