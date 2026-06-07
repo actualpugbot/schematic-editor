@@ -59,6 +59,8 @@ export interface SchematicModel {
   warnings: string[];
 }
 
+export type SchematicExportFormat = '.litematic' | '.schem' | '.schematic';
+
 export interface ParsedSchematicDocument {
   model: SchematicModel;
   nbt: NbtDocument;
@@ -150,29 +152,8 @@ export function finalizeSchematicModel(model: Omit<SchematicModel, 'layerCounts'
 
 export function createSpongeSchematicDocument(model: SchematicModel, name: string): NbtDocument {
   const paletteEntries = buildModelPaletteEntries(model.blocks);
-  const palette: NbtCompound = {};
-  paletteEntries.forEach((stateKey, index) => {
-    palette[stateKey] = index;
-  });
-  const paletteIndexes = new Map(paletteEntries.map((stateKey, index) => [stateKey, index]));
-  const totalBlocks = model.dimensions.width * model.dimensions.height * model.dimensions.length;
-  const blockIds = Array.from({ length: totalBlocks }, () => paletteIndexes.get('minecraft:air') ?? 0);
-
-  for (const block of model.blocks) {
-    if (
-      block.x < 0
-      || block.x >= model.dimensions.width
-      || block.y < 0
-      || block.y >= model.dimensions.height
-      || block.z < 0
-      || block.z >= model.dimensions.length
-    ) {
-      continue;
-    }
-
-    const index = block.x + block.z * model.dimensions.width + block.y * model.dimensions.width * model.dimensions.length;
-    blockIds[index] = paletteIndexes.get(block.stateKey) ?? 0;
-  }
+  const palette = createPaletteCompound(paletteEntries);
+  const blockIds = buildModelBlockIds(model, paletteEntries);
 
   const schematic: NbtCompound = {
     Version: 2,
@@ -197,6 +178,147 @@ export function createSpongeSchematicDocument(model: SchematicModel, name: strin
       Schematic: schematic,
     },
   };
+}
+
+export function createLitematicSchematicDocument(model: SchematicModel, name: string): NbtDocument {
+  const paletteEntries = buildModelPaletteEntries(model.blocks);
+  const blockIds = buildModelBlockIds(model, paletteEntries);
+  const totalBlocks = model.dimensions.width * model.dimensions.height * model.dimensions.length;
+  const timestamp = BigInt(Date.now());
+  const regionName = safeFileBaseName(name);
+  const bitsPerEntry = Math.max(2, Math.ceil(Math.log2(Math.max(1, paletteEntries.length))));
+
+  return {
+    name: 'Litematic',
+    value: {
+      MinecraftDataVersion: 4189,
+      Version: 6,
+      SubVersion: 1,
+      Metadata: {
+        Name: name,
+        Author: 'Schematic Editor',
+        Description: 'Created in Schematic Editor',
+        RegionCount: 1,
+        TimeCreated: timestamp,
+        TimeModified: timestamp,
+        TotalBlocks: model.blocks.length,
+        TotalVolume: totalBlocks,
+        EnclosingSize: {
+          x: model.dimensions.width,
+          y: model.dimensions.height,
+          z: model.dimensions.length,
+        },
+      },
+      Regions: {
+        [regionName]: {
+          Position: {
+            x: model.origin.x,
+            y: model.origin.y,
+            z: model.origin.z,
+          },
+          Size: {
+            x: model.dimensions.width,
+            y: model.dimensions.height,
+            z: model.dimensions.length,
+          },
+          BlockStatePalette: paletteEntries.map(serializeLitematicPaletteEntry),
+          BlockStates: encodePackedLongArray(blockIds, bitsPerEntry),
+          Entities: [],
+          PendingBlockTicks: [],
+          PendingFluidTicks: [],
+          TileEntities: [],
+        },
+      },
+    },
+  };
+}
+
+export function createLegacySchematicDocument(model: SchematicModel, name: string): NbtDocument {
+  const totalBlocks = model.dimensions.width * model.dimensions.height * model.dimensions.length;
+  const blocks = new Int8Array(totalBlocks);
+  const data = new Int8Array(totalBlocks);
+  const addBlocks = new Uint8Array(Math.ceil(totalBlocks / 2));
+  const lookup = legacyBlockStateLookup();
+  const unsupported = new Set<string>();
+
+  for (const block of model.blocks) {
+    if (
+      block.x < 0
+      || block.x >= model.dimensions.width
+      || block.y < 0
+      || block.y >= model.dimensions.height
+      || block.z < 0
+      || block.z >= model.dimensions.length
+    ) {
+      continue;
+    }
+
+    const legacyBlock = lookup.get(block.stateKey);
+    if (!legacyBlock) {
+      unsupported.add(block.stateKey);
+      continue;
+    }
+
+    const index = block.x + block.z * model.dimensions.width + block.y * model.dimensions.width * model.dimensions.length;
+    blocks[index] = legacyBlock.id & 0xff;
+    data[index] = legacyBlock.metadata & 0xff;
+    const high = (legacyBlock.id >> 8) & 0x0f;
+    if (high > 0) {
+      const packedIndex = Math.floor(index / 2);
+      addBlocks[packedIndex] |= index % 2 === 0 ? high : high << 4;
+    }
+  }
+
+  if (unsupported.size > 0) {
+    const preview = Array.from(unsupported).slice(0, 6).join(', ');
+    throw new Error(
+      `Could not export .schematic because the legacy format does not support these block states: ${preview}${unsupported.size > 6 ? ', …' : ''}.`,
+    );
+  }
+
+  const schematic: NbtCompound = {
+    Materials: 'Alpha',
+    Width: model.dimensions.width,
+    Height: model.dimensions.height,
+    Length: model.dimensions.length,
+    Blocks: blocks,
+    Data: data,
+    Entities: [],
+    TileEntities: [],
+    Metadata: {
+      Name: name,
+    },
+  };
+
+  if (addBlocks.some((value) => value !== 0)) {
+    schematic.AddBlocks = new Int8Array(addBlocks.buffer);
+  }
+
+  return {
+    name: 'Schematic',
+    value: schematic,
+  };
+}
+
+export function createStarterModel(): SchematicModel {
+  const dimensions = { width: 32, height: 24, length: 32 };
+  const blocks: VoxelBlock[] = [];
+
+  for (let x = 0; x < dimensions.width; x += 1) {
+    for (let z = 0; z < dimensions.length; z += 1) {
+      blocks.push(createVoxelBlock(x, 0, z, 'minecraft:stone'));
+    }
+  }
+
+  return finalizeModel({
+    name: 'New schematic',
+    source: 'Sample',
+    dimensions,
+    origin: { x: 0, y: 0, z: 0 },
+    blocks,
+    paletteSize: 1,
+    warnings: [],
+  });
 }
 
 export function createSampleModel(): SchematicModel {
@@ -817,6 +939,38 @@ function buildModelPaletteEntries(blocks: VoxelBlock[]): string[] {
   return Array.from(states);
 }
 
+function createPaletteCompound(paletteEntries: string[]): NbtCompound {
+  const palette: NbtCompound = {};
+  paletteEntries.forEach((stateKey, index) => {
+    palette[stateKey] = index;
+  });
+  return palette;
+}
+
+function buildModelBlockIds(model: SchematicModel, paletteEntries: string[]): number[] {
+  const paletteIndexes = new Map(paletteEntries.map((stateKey, index) => [stateKey, index]));
+  const totalBlocks = model.dimensions.width * model.dimensions.height * model.dimensions.length;
+  const blockIds = Array.from({ length: totalBlocks }, () => paletteIndexes.get('minecraft:air') ?? 0);
+
+  for (const block of model.blocks) {
+    if (
+      block.x < 0
+      || block.x >= model.dimensions.width
+      || block.y < 0
+      || block.y >= model.dimensions.height
+      || block.z < 0
+      || block.z >= model.dimensions.length
+    ) {
+      continue;
+    }
+
+    const index = block.x + block.z * model.dimensions.width + block.y * model.dimensions.width * model.dimensions.length;
+    blockIds[index] = paletteIndexes.get(block.stateKey) ?? 0;
+  }
+
+  return blockIds;
+}
+
 function encodeVarInts(values: number[]): Int8Array {
   const bytes: number[] = [];
 
@@ -869,9 +1023,65 @@ function decodeVarInts(bytes: Uint8Array, expectedLength: number): number[] {
   return values;
 }
 
+function encodePackedLongArray(values: number[], bitsPerEntry: number): BigInt64Array {
+  const totalBits = values.length * bitsPerEntry;
+  const longs = new BigInt64Array(Math.ceil(totalBits / 64));
+  const mask = (1n << BigInt(bitsPerEntry)) - 1n;
+
+  for (let index = 0; index < values.length; index += 1) {
+    const bitIndex = index * bitsPerEntry;
+    const longIndex = Math.floor(bitIndex / 64);
+    const startBit = bitIndex % 64;
+    const value = BigInt(values[index]) & mask;
+
+    longs[longIndex] = BigInt.asIntN(
+      64,
+      BigInt.asUintN(64, longs[longIndex]) | (value << BigInt(startBit)),
+    );
+
+    const bitsWritten = 64 - startBit;
+    if (bitsWritten < bitsPerEntry) {
+      longs[longIndex + 1] = BigInt.asIntN(
+        64,
+        BigInt.asUintN(64, longs[longIndex + 1]) | (value >> BigInt(bitsWritten)),
+      );
+    }
+  }
+
+  return longs;
+}
+
 function readLegacyHighBits(addBlocks: Uint8Array, index: number): number {
   const packed = addBlocks[Math.floor(index / 2)] ?? 0;
   return index % 2 === 0 ? packed & 0x0f : (packed >> 4) & 0x0f;
+}
+
+function serializeLitematicPaletteEntry(stateKey: string): NbtCompound {
+  const match = /^(?<id>[^\[]+)(?:\[(?<properties>.*)\])?$/.exec(stateKey);
+  if (!match?.groups) {
+    return { Name: stateKey };
+  }
+
+  const entry: NbtCompound = {
+    Name: match.groups.id,
+  };
+
+  if (!match.groups.properties) {
+    return entry;
+  }
+
+  const properties: NbtCompound = {};
+  for (const pair of match.groups.properties.split(',')) {
+    const [key, ...valueParts] = pair.split('=');
+    if (!key) continue;
+    properties[key] = valueParts.join('=') || '';
+  }
+
+  if (Object.keys(properties).length > 0) {
+    entry.Properties = properties;
+  }
+
+  return entry;
 }
 
 function readLitematicPaletteEntry(value: unknown): string {
@@ -1158,10 +1368,43 @@ function legacyBlockStateName(id: number, metadata = 0): string {
   return names.get(id) ?? `minecraft:legacy_block_${id}`;
 }
 
+let cachedLegacyBlockStateLookup: Map<string, { id: number; metadata: number }> | null = null;
+
+function legacyBlockStateLookup() {
+  if (cachedLegacyBlockStateLookup) {
+    return cachedLegacyBlockStateLookup;
+  }
+
+  const lookup = new Map<string, { id: number; metadata: number }>([['minecraft:air', { id: 0, metadata: 0 }]]);
+
+  for (let id = 0; id <= 0x0fff; id += 1) {
+    for (let metadata = 0; metadata <= 0x0f; metadata += 1) {
+      const stateKey = normalizeImportedBlockStateKey(legacyBlockStateName(id, metadata));
+      if (stateKey.startsWith('minecraft:legacy_block_') || lookup.has(stateKey)) continue;
+      lookup.set(stateKey, { id, metadata });
+    }
+  }
+
+  cachedLegacyBlockStateLookup = lookup;
+  return lookup;
+}
+
 function normalizeImportedBlockStateKey(stateKey: string): string {
   const [rawId, rawProperties] = stateKey.split('[', 2);
   const id = normalizeImportedBlockId(rawId);
   return rawProperties ? `${id}[${rawProperties}` : id;
+}
+
+function safeFileBaseName(name: string): string {
+  const safeName = name
+    .trim()
+    .replace(/\.[a-z0-9]+$/i, '')
+    .replace(/[<>:"/\\|?*\x00-\x1f]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/^\.+/, '')
+    .trim();
+
+  return safeName || 'schematic';
 }
 
 function normalizeImportedBlockId(id: string): string {

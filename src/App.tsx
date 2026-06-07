@@ -71,12 +71,16 @@ import {
   type RecipeType,
 } from './lib/recipes';
 import {
-  createSpongeSchematicDocument,
-  createVoxelBlock,
+  createLegacySchematicDocument,
+  createLitematicSchematicDocument,
   createSampleModel,
+  createSpongeSchematicDocument,
+  createStarterModel,
+  createVoxelBlock,
   finalizeSchematicModel,
   parseSchematicDocument,
   renameSchematicDocument,
+  type SchematicExportFormat,
   type PlayerHeadTexture,
   type SchematicModel,
   type VoxelBlock,
@@ -93,7 +97,7 @@ type EditPanelTab = 'tools' | 'rotate' | 'replace';
 type AppView = 'inspect' | 'edit' | 'texture' | 'shopping' | 'resource' | 'thumbnail-debug';
 type EditTool = 'select' | 'build';
 type Theme = 'light' | 'dark';
-type SchematicOrigin = 'default' | 'uploaded';
+type SchematicOrigin = 'default' | 'uploaded' | 'new';
 type MaterialsScope = 'build' | 'cuboid';
 type ShoppingLayout = 'grid' | 'list';
 type ThumbnailLoadState = 'idle' | 'loading' | 'ready' | 'failed';
@@ -102,6 +106,10 @@ type Direction = 'up' | 'down' | 'north' | 'south' | 'west' | 'east';
 type RotationDirection = 'clockwise' | 'counterclockwise';
 
 const UV_VIEW_ENABLED = false;
+const THUMBNAIL_DEBUG_ENABLED = false;
+const defaultExportFormat: SchematicExportFormat = '.litematic';
+const defaultSchematicFileName = 'mossy_roof_house.litematic';
+const defaultSchematicName = 'Mossy Roof House';
 
 interface TextureSelection {
   stateKey: string;
@@ -237,8 +245,6 @@ type ColorGroupId =
   | 'pink';
 
 const schematicFileExtensions = new Set(['.litematic', '.schem', '.schematic', '.nbt']);
-const defaultSchematicFileName = 'mossy_roof_house.litematic';
-const defaultSchematicName = 'Mossy Roof House';
 const themeStorageKey = 'schematic-editor-theme';
 const leftRailCollapsedStorageKey = 'schematic-editor-left-rail-collapsed';
 const shoppingListStoragePrefix = 'schematic-editor-shopping-list';
@@ -524,7 +530,8 @@ function App() {
   const [schematicName, setSchematicName] = useState('');
   const [isEditingSchematicName, setIsEditingSchematicName] = useState(false);
   const [schematicDocument, setSchematicDocument] = useState<NbtDocument | null>(null);
-  const [schematicExtension, setSchematicExtension] = useState('.schem');
+  const [schematicExtension, setSchematicExtension] = useState('.litematic');
+  const [exportFormat, setExportFormat] = useState<SchematicExportFormat>(defaultExportFormat);
   const [hasEditChanges, setHasEditChanges] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [error, setError] = useState('');
@@ -1070,7 +1077,7 @@ function App() {
   }, [appView, filteredBlockLibraryItems, loadState]);
 
   useEffect(() => {
-    if (appView !== 'thumbnail-debug') return;
+    if (!THUMBNAIL_DEBUG_ENABLED || appView !== 'thumbnail-debug') return;
 
     const controller = new AbortController();
     preloadBlockThumbnails(filteredThumbnailDebugItems.slice(0, 480).map((item) => ({
@@ -1085,6 +1092,11 @@ function App() {
 
     return () => controller.abort();
   }, [appView, filteredThumbnailDebugItems]);
+
+  useEffect(() => {
+    if (THUMBNAIL_DEBUG_ENABLED || appView !== 'thumbnail-debug') return;
+    setAppView('inspect');
+  }, [appView]);
 
   useEffect(() => {
     if (materialsScope === 'cuboid' && !cuboidBounds) {
@@ -1128,48 +1140,6 @@ function App() {
     }
     prevShoppingProgressRef.current = shoppingProgressPercent;
   }, [shoppingProgressPercent, totalShoppingItems, shoppingStorage]);
-
-  useEffect(() => {
-    let isCancelled = false;
-
-    const loadDefaultSchematic = async () => {
-      setLoadState('loading');
-      setError('');
-
-      try {
-        const response = await fetch(defaultSchematicUrl);
-        if (!response.ok) {
-          throw new Error(`Could not load ${defaultSchematicFileName}.`);
-        }
-
-        const buffer = await response.arrayBuffer();
-        const parsed = parseSchematicDocument(buffer, { fileName: defaultSchematicFileName });
-        const defaultModel = { ...parsed.model, name: defaultSchematicName };
-        const defaultDocument = renameSchematicDocument(parsed.nbt, parsed.model.source, defaultSchematicName);
-        if (isCancelled) return;
-        applySchematic(defaultModel, defaultDocument, fileExtension(defaultSchematicFileName), 'default');
-      } catch (caught) {
-        if (isCancelled) return;
-
-        const fallback = createSampleModel();
-        setModel(fallback);
-        setSchematicName(fallback.name);
-        setSchematicOrigin('uploaded');
-        setSchematicDocument(null);
-        setSchematicExtension('.schem');
-        setVisibleBottomLayer(0);
-        setVisibleTopLayer(fallback.dimensions.height - 1);
-        setLoadState('ready');
-        setError(caught instanceof Error ? caught.message : 'Could not load the default schematic.');
-      }
-    };
-
-    void loadDefaultSchematic();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (!model) return;
@@ -1293,6 +1263,7 @@ function App() {
     setIsEditingSchematicName(false);
     setSchematicDocument(nextDocument);
     setSchematicExtension(nextExtension);
+    setExportFormat(defaultExportFormat);
     setHasEditChanges(false);
     setVisibleBottomLayer(0);
     setVisibleTopLayer(nextModel.dimensions.height - 1);
@@ -1316,6 +1287,56 @@ function App() {
     setEditNotice('');
     setLoadState('ready');
   };
+
+  const createNewSchematic = () => {
+    setLoadState('loading');
+    setError('');
+    applySchematic(createStarterModel(), null, defaultExportFormat, 'new');
+    setAppView('edit');
+  };
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadDefaultSchematic = async () => {
+      setLoadState('loading');
+      setError('');
+
+      try {
+        const response = await fetch(defaultSchematicUrl);
+        if (!response.ok) {
+          throw new Error(`Could not load ${defaultSchematicFileName}.`);
+        }
+
+        const buffer = await response.arrayBuffer();
+        const parsed = parseSchematicDocument(buffer, { fileName: defaultSchematicFileName });
+        const defaultModel = { ...parsed.model, name: defaultSchematicName };
+        const defaultDocument = renameSchematicDocument(parsed.nbt, parsed.model.source, defaultSchematicName);
+        if (isCancelled) return;
+        applySchematic(defaultModel, defaultDocument, fileExtension(defaultSchematicFileName), 'default');
+      } catch (caught) {
+        if (isCancelled) return;
+
+        const fallback = createSampleModel();
+        setModel(fallback);
+        setSchematicName(fallback.name);
+        setSchematicOrigin('uploaded');
+        setSchematicDocument(null);
+        setSchematicExtension(defaultExportFormat);
+        setExportFormat(defaultExportFormat);
+        setVisibleBottomLayer(0);
+        setVisibleTopLayer(fallback.dimensions.height - 1);
+        setLoadState('ready');
+        setError(caught instanceof Error ? caught.message : 'Could not load the default schematic.');
+      }
+    };
+
+    void loadDefaultSchematic();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   const handleFile = async (file: File) => {
     setLoadState('loading');
@@ -1343,11 +1364,15 @@ function App() {
   const exportRenamedSchematic = () => {
     if (!model) return;
 
-    const nextName = schematicName.trim();
+    const nextName = schematicName.trim() || model.name;
     try {
-      const exportDocument = hasEditChanges || !schematicDocument
-        ? createSpongeSchematicDocument({ ...model, name: nextName }, nextName)
-        : renameSchematicDocument(schematicDocument, model.source, nextName);
+      const exportDocument = !hasEditChanges && schematicDocument && exportFormat === schematicExtension
+        ? renameSchematicDocument(schematicDocument, model.source, nextName)
+        : exportFormat === '.litematic'
+          ? createLitematicSchematicDocument({ ...model, name: nextName }, nextName)
+          : exportFormat === '.schematic'
+            ? createLegacySchematicDocument({ ...model, name: nextName }, nextName)
+            : createSpongeSchematicDocument({ ...model, name: nextName }, nextName);
       const bytes = writeNbt(exportDocument);
       const arrayBuffer = new ArrayBuffer(bytes.byteLength);
       new Uint8Array(arrayBuffer).set(bytes);
@@ -1355,7 +1380,7 @@ function App() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${safeFileBaseName(nextName)}${hasEditChanges ? '.schem' : schematicExtension}`;
+      link.download = `${safeFileBaseName(nextName)}${exportFormat}`;
       link.click();
       URL.revokeObjectURL(url);
       setModel((current) => (current ? { ...current, name: nextName } : current));
@@ -1993,6 +2018,7 @@ function App() {
   };
 
   const openThumbnailDebug = () => {
+    if (!THUMBNAIL_DEBUG_ENABLED) return;
     setThumbnailDebugSearch('');
     setAppView('thumbnail-debug');
   };
@@ -2015,6 +2041,8 @@ function App() {
     if (!view) return;
     viewerRef.current?.applyCameraPosition(view.position);
   };
+
+  const thumbnailDebugActive = THUMBNAIL_DEBUG_ENABLED && appView === 'thumbnail-debug';
 
   const setDefaultCameraView = (id: string) => {
     setSavedCameraViews((current) => current.map((view) => ({
@@ -2173,6 +2201,28 @@ function App() {
         <div className="topbar-right">
           <button
             type="button"
+            className="topbar-secondary"
+            onClick={createNewSchematic}
+            title="Create a new schematic"
+          >
+            <Plus size={16} />
+            <span>New</span>
+          </button>
+          <label className="topbar-format-picker">
+            <span>Format</span>
+            <select
+              value={exportFormat}
+              onChange={(event) => setExportFormat(event.target.value as SchematicExportFormat)}
+              aria-label="Export format"
+              title="Choose export format"
+            >
+              <option value=".litematic">Litematic (.litematic)</option>
+              <option value=".schem">Sponge (.schem)</option>
+              <option value=".schematic">Legacy (.schematic)</option>
+            </select>
+          </label>
+          <button
+            type="button"
             className={`topbar-icon-btn${isDarkTheme ? ' is-on' : ''}`}
             onClick={toggleTheme}
             title={isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'}
@@ -2193,7 +2243,7 @@ function App() {
         </div>
       </header>
 
-      <div className={`workspace${leftRailCollapsed ? ' is-left-rail-collapsed' : ''}${appView === 'shopping' ? ' is-shopping' : ''}${appView === 'resource' ? ' is-resource' : ''}${appView === 'thumbnail-debug' ? ' is-thumbnail-debug' : ''}`}>
+      <div className={`workspace${leftRailCollapsed ? ' is-left-rail-collapsed' : ''}${appView === 'shopping' ? ' is-shopping' : ''}${appView === 'resource' ? ' is-resource' : ''}${thumbnailDebugActive ? ' is-thumbnail-debug' : ''}`}>
         <button
           type="button"
           className="rail-toggle"
@@ -2273,18 +2323,20 @@ function App() {
               <ShoppingCart size={19} />
               <span>Shopping List</span>
             </button>
-            <button
-              type="button"
-              role="tab"
-              className={appView === 'thumbnail-debug' ? 'is-active' : ''}
-              onClick={openThumbnailDebug}
-              aria-selected={appView === 'thumbnail-debug'}
-              aria-label="Thumbnail Debug"
-              title="Thumbnail Debug"
-            >
-              <SlidersHorizontal size={19} />
-              <span>Thumbnail Debug</span>
-            </button>
+            {THUMBNAIL_DEBUG_ENABLED ? (
+              <button
+                type="button"
+                role="tab"
+                className={thumbnailDebugActive ? 'is-active' : ''}
+                onClick={openThumbnailDebug}
+                aria-selected={thumbnailDebugActive}
+                aria-label="Thumbnail Debug"
+                title="Thumbnail Debug"
+              >
+                <SlidersHorizontal size={19} />
+                <span>Thumbnail Debug</span>
+              </button>
+            ) : null}
           </div>
 
           <div
@@ -2300,7 +2352,7 @@ function App() {
             }}
           >
             <FileUp size={22} />
-            <p>Drag &amp; drop a schematic file here to get started</p>
+            <p>Import an existing schematic any time.</p>
             <span className="or">or</span>
             <button type="button" className="rail-browse" onClick={(event) => { event.stopPropagation(); inputRef.current?.click(); }}>
               <span>Browse Files</span>
@@ -2323,10 +2375,10 @@ function App() {
         </aside>
 
         <section
-          className={`viewport-panel${appView === 'shopping' || appView === 'resource' || appView === 'thumbnail-debug' ? ' shopping-viewport' : ''}${appView === 'resource' ? ' resource-viewport' : ''}${appView === 'thumbnail-debug' ? ' thumbnail-debug-viewport' : ''}${selectedBlock && !textureViewActive && appView !== 'shopping' && appView !== 'resource' && appView !== 'thumbnail-debug' ? ' has-selection-modal' : ''}`}
-          aria-label={appView === 'resource' ? 'Resource Calculator' : appView === 'shopping' ? 'Shopping list' : appView === 'thumbnail-debug' ? 'Thumbnail debug' : 'Schematic 3D viewport'}
+          className={`viewport-panel${appView === 'shopping' || appView === 'resource' || thumbnailDebugActive ? ' shopping-viewport' : ''}${appView === 'resource' ? ' resource-viewport' : ''}${thumbnailDebugActive ? ' thumbnail-debug-viewport' : ''}${selectedBlock && !textureViewActive && appView !== 'shopping' && appView !== 'resource' && !thumbnailDebugActive ? ' has-selection-modal' : ''}`}
+          aria-label={appView === 'resource' ? 'Resource Calculator' : appView === 'shopping' ? 'Shopping list' : thumbnailDebugActive ? 'Thumbnail debug' : 'Schematic 3D viewport'}
         >
-          {appView === 'thumbnail-debug' ? (
+          {thumbnailDebugActive ? (
             <section className="thumbnail-debug-board" aria-label="Thumbnail debug catalog">
               <div className="thumbnail-debug-header">
                 <div className="shopping-title-block">
