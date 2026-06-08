@@ -4671,7 +4671,7 @@ function CuboidCornerControls({
                 title={`Decrease ${title} ${axis.toUpperCase()}`}
                 aria-label={`Decrease ${title} ${axis.toUpperCase()}`}
               >
-                -
+                <span aria-hidden="true">-</span>
               </button>
               <strong>{worldCoordinate}</strong>
               <button
@@ -4681,7 +4681,7 @@ function CuboidCornerControls({
                 title={`Increase ${title} ${axis.toUpperCase()}`}
                 aria-label={`Increase ${title} ${axis.toUpperCase()}`}
               >
-                +
+                <span aria-hidden="true">+</span>
               </button>
             </div>
           </div>
