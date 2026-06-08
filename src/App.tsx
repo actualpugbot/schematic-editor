@@ -18,7 +18,6 @@ import {
   FileUp,
   Focus,
   Grid2X2,
-  Hammer,
   ImageIcon,
   Layers,
   List,
@@ -794,9 +793,6 @@ function App() {
 
     return { steps, groups: [...byCategory.values()] };
   }, [recipeBreakdown, activeMaterials]);
-  const recipeTreeByMaterialId = useMemo(() => (
-    new Map(recipeBreakdown.trees.map((tree) => [tree.id, tree]))
-  ), [recipeBreakdown]);
   const visibleMaterials = activeMaterials;
   const visibleMaterialsLabel = activeMaterialsLabel;
   const shoppingScope = useMemo(() => (
@@ -3942,7 +3938,6 @@ function App() {
                   const isExpanded = expandedMaterialIds.has(material.id);
                   const isSelected = material.id === selectedMaterialId;
                   const breakdownId = `material-breakdown-${material.id}`;
-                  const recipeTree = recipeTreeByMaterialId.get(normalizeRecipeItemId(material.id));
 
                   return (
                     <div
@@ -3989,9 +3984,6 @@ function App() {
                           className="material-breakdown"
                         >
                           <MaterialBreakdown materialId={material.id} count={material.count} />
-                          {recipeTree && (
-                            <RecipeTree node={recipeTree} />
-                          )}
                         </div>
                       )}
                     </div>
@@ -4722,6 +4714,9 @@ function FilteredMaterialSummary({
               <BlockPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
               <span>{material.label}</span>
               <strong>{material.count.toLocaleString()}</strong>
+              <div className="filtered-material-breakdown">
+                <MaterialBreakdown materialId={material.id} count={material.count} />
+              </div>
             </div>
           ))}
         </div>
@@ -6262,89 +6257,22 @@ function formatBlockName(id: string): string {
 
 function MaterialBreakdown({ materialId, count }: { materialId: string; count: number }) {
   const breakdown = storageBreakdown(materialId, count);
-  const label = `${count.toLocaleString()} items: ${breakdown.stacks.toLocaleString()} stacks of ${breakdown.stackSize.toLocaleString()} plus ${breakdown.remainder.toLocaleString()} items, ${breakdown.shulkerBoxes} shulker boxes`;
+  const stackItemsLabel = `${breakdown.stacks.toLocaleString()} + ${breakdown.remainder.toLocaleString()}`;
+  const shulkerLabel = breakdown.shulkerBoxes;
+  const label = `${count.toLocaleString()} items: ${stackItemsLabel}; ${shulkerLabel}`;
 
   return (
     <span className="material-breakdown-count" aria-label={label}>
-      <span className="material-breakdown-part">
-        <span className="material-breakdown-icon" data-tooltip="Stacks">
-          <Layers size={17} strokeWidth={2.6} aria-hidden="true" />
-        </span>
-        <strong>{breakdown.stacks.toLocaleString()}</strong>
+      <span className="material-breakdown-group">
+        <Layers size={13} strokeWidth={2.2} aria-hidden="true" />
+        <strong>{stackItemsLabel}</strong>
       </span>
-      <span className="material-breakdown-plus" aria-hidden="true">+</span>
-      <strong>{breakdown.remainder.toLocaleString()}</strong>
-      <span className="material-breakdown-separator" aria-hidden="true" />
-      <span className="material-breakdown-part">
-        <span className="material-breakdown-icon" data-tooltip="Shulker Boxes">
-          <ShulkerIcon />
-        </span>
-        <strong>{breakdown.shulkerBoxes}</strong>
+      <span className="material-breakdown-divider" aria-hidden="true" />
+      <span className="material-breakdown-group">
+        <Box size={13} strokeWidth={2.2} aria-hidden="true" />
+        <small>{shulkerLabel}</small>
       </span>
     </span>
-  );
-}
-
-function RecipeTree({ node }: { node: BreakdownNode }) {
-  if (node.isRaw || node.children.length === 0) {
-    return (
-      <div className="recipe-tree is-leaf">
-        <span>Counted as raw</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="recipe-tree" aria-label={`${formatBlockName(node.id)} recipe tree`}>
-      <div className="recipe-tree-heading">
-        <Hammer size={14} aria-hidden="true" />
-        <span>{node.recipeUsed ? recipeTypeLabel(node.recipeUsed.type) : 'Recipe'}</span>
-        {node.surplus ? <strong>+{formatQuantity(node.surplus)} surplus</strong> : null}
-      </div>
-      <div className="recipe-tree-children">
-        {node.children.map((child) => (
-          <RecipeTreeRow node={child} key={`${child.id}:${child.count}`} depth={0} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function RecipeTreeRow({ node, depth }: { node: BreakdownNode; depth: number }) {
-  const stateKey = recipeItemStateKey(node.id);
-  const preview = createVoxelBlock(0, 0, 0, stateKey);
-
-  return (
-    <div className="recipe-tree-row-wrap">
-      <div className="recipe-tree-row" style={{ '--recipe-depth': depth } as CSSProperties}>
-        <BlockPreview stateKey={stateKey} color={preview.color} />
-        <span>{formatBlockName(node.id)}</span>
-        <strong>{formatQuantity(node.count)}</strong>
-        <small>{node.isRaw ? 'Raw' : node.recipeUsed ? recipeTypeLabel(node.recipeUsed.type) : 'Recipe'}</small>
-      </div>
-      {!node.isRaw && node.children.length > 0 && (
-        <div className="recipe-tree-branch">
-          {node.children.map((child) => (
-            <RecipeTreeRow node={child} key={`${child.id}:${child.count}:${depth}`} depth={depth + 1} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ShulkerIcon() {
-  return (
-    <svg className="shulker-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 2.8 21 8v9.1l-9 5.1-9-5.1V8l9-5.2Z" />
-      <path d="M3.6 8.3 12 13.1l8.4-4.8" />
-      <path d="M12 13.1v8.3" />
-      <path d="m3.2 12.4 4.2 2.4v1.5" />
-      <path d="m7.4 14.8 4.6 2.6 4.6-2.6" />
-      <path d="M12 17.4v1.7" />
-      <path d="m16.6 14.8 4.2-2.4" />
-      <path d="M16.6 14.8v1.5" />
-    </svg>
   );
 }
 
@@ -6359,6 +6287,7 @@ function storageBreakdown(materialId: string, count: number): {
   stacks: number;
   remainder: number;
   shulkerBoxes: string;
+  shulkerBoxesLabel: string;
 } {
   const stackSize = itemStackSize(materialId);
   const stacks = Math.floor(count / stackSize);
@@ -6370,6 +6299,7 @@ function storageBreakdown(materialId: string, count: number): {
     stacks,
     remainder,
     shulkerBoxes: formatShulkerBoxes(shulkerBoxes),
+    shulkerBoxesLabel: shulkerBoxes === 1 ? 'shulker box' : 'shulker boxes',
   };
 }
 

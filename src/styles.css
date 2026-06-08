@@ -1264,6 +1264,10 @@ html[data-theme='dark'] .featured-builder::before {
 .material-row.is-selected { background: var(--accent-tint); }
 
 .material-pick {
+  --material-count-badge-bg: color-mix(in srgb, var(--accent-tint) 58%, var(--surface) 42%);
+  --material-count-badge-border: color-mix(in srgb, var(--line) 72%, white 28%);
+  --material-count-badge-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  --material-count-badge-color: var(--ink-soft);
   flex: 1; min-width: 0;
   display: grid; grid-template-columns: 34px minmax(0, 1fr) auto 18px; align-items: center; gap: 10px;
   border: none; background: transparent; text-align: left;
@@ -1274,9 +1278,35 @@ html[data-theme='dark'] .featured-builder::before {
   font-size: 13.5px; font-weight: 500; color: var(--ink);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.material-pick > strong {
-  font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--ink-soft);
-  text-align: right;
+.material-pick > strong,
+.filtered-material-row > strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  min-height: 28px;
+  padding: 4px 10px 3px;
+  border-radius: var(--r-pill);
+  background: var(--material-count-badge-bg);
+  border: 1px solid var(--material-count-badge-border);
+  box-shadow: var(--material-count-badge-shadow);
+  font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; color: var(--material-count-badge-color);
+  text-align: center;
+  line-height: 1;
+}
+
+html[data-theme='dark'] .material-pick {
+  --material-count-badge-bg:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--accent-tint-strong) 58%, var(--surface) 42%),
+      color-mix(in srgb, #162331 82%, var(--surface-sunken) 18%)
+    );
+  --material-count-badge-border: color-mix(in srgb, var(--line-strong) 74%, #537cad 26%);
+  --material-count-badge-shadow:
+    inset 0 1px 0 rgba(233, 242, 255, 0.14),
+    inset 0 -1px 0 rgba(5, 10, 16, 0.24);
+  --material-count-badge-color: color-mix(in srgb, #e8f2ff 78%, var(--ink-soft) 22%);
 }
 .material-disclosure {
   color: var(--faint); transition: transform 0.18s; flex: none;
@@ -1327,20 +1357,49 @@ html[data-theme='dark'] .featured-builder::before {
 
 /* recipe breakdown chips */
 .material-breakdown {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 5px;
-  grid-column: 1 / -1; padding: 6px 0 2px 48px;
+  display: flex;
+  justify-content: center;
+  grid-column: 1 / -1;
+  padding: 0px 0 10px 0px;
 }
-.material-breakdown-part { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--muted); }
-.material-breakdown-icon { display: grid; place-items: center; width: 18px; height: 18px; flex: none; }
-.material-breakdown-count { font-family: var(--font-mono); font-weight: 600; color: var(--ink-soft); }
-.material-breakdown-plus, .material-breakdown-separator { color: var(--faint); }
-
-/* recipe tree */
-.recipe-tree { padding: 10px 0 4px; }
-.recipe-tree-children { padding-left: calc(14px + var(--recipe-depth, 0) * 2px); border-left: 1px solid var(--line); margin-left: 8px; }
-.recipe-tree-row, .recipe-tree-row-wrap { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12.5px; }
-.recipe-tree-heading { font-weight: 600; color: var(--ink-soft); }
-.recipe-tree-branch { color: var(--faint); }
+.material-breakdown > .material-breakdown-count {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.material-breakdown-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-faint);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  color: var(--ink-soft);
+}
+.material-breakdown-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.material-breakdown-group svg {
+  color: var(--muted);
+  flex: none;
+}
+.material-breakdown-count strong,
+.material-breakdown-count small {
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+.material-breakdown-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--line);
+}
 
 /* summary metric cards */
 .summary-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -1575,13 +1634,51 @@ html[data-theme='dark'] .featured-builder::before {
 .filtered-materials-head span, .filtered-material-more { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
 .filtered-material-list { display: flex; flex-direction: column; gap: 6px; }
 .filtered-material-row {
+  --material-count-badge-bg: color-mix(in srgb, var(--accent-tint) 58%, var(--surface) 42%);
+  --material-count-badge-border: color-mix(in srgb, var(--line) 72%, white 28%);
+  --material-count-badge-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  --material-count-badge-color: var(--ink-soft);
   display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 9px;
   min-height: 36px; padding: 5px 8px; border: 1px solid var(--line); border-radius: var(--r-sm);
   background: var(--surface-soft);
 }
 .filtered-material-row .block-preview { width: 28px; height: 28px; }
-.filtered-material-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
-.filtered-material-row strong { font-family: var(--font-mono); font-size: 12px; color: var(--ink); }
+.filtered-material-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
+.filtered-material-breakdown {
+  grid-column: 2 / -1;
+}
+.filtered-material-breakdown .material-breakdown {
+  padding: 0;
+}
+.filtered-material-breakdown .material-breakdown-count {
+  padding: 5px 7px;
+  gap: 8px;
+}
+.filtered-material-breakdown .material-breakdown-count strong,
+.filtered-material-breakdown .material-breakdown-count small {
+  font-size: 10.5px;
+}
+.filtered-material-breakdown .material-breakdown-group {
+  gap: 5px;
+}
+.filtered-material-breakdown .material-breakdown-group svg {
+  width: 12px;
+  height: 12px;
+}
+
+html[data-theme='dark'] .filtered-material-row {
+  --material-count-badge-bg:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--accent-tint-strong) 58%, var(--surface) 42%),
+      color-mix(in srgb, #162331 82%, var(--surface-sunken) 18%)
+    );
+  --material-count-badge-border: color-mix(in srgb, var(--line-strong) 74%, #537cad 26%);
+  --material-count-badge-shadow:
+    inset 0 1px 0 rgba(233, 242, 255, 0.14),
+    inset 0 -1px 0 rgba(5, 10, 16, 0.24);
+  --material-count-badge-color: color-mix(in srgb, #e8f2ff 78%, var(--ink-soft) 22%);
+}
 
 /* ============================================================================
    SHOPPING BOARD
