@@ -1625,8 +1625,8 @@ html[data-theme='dark'] .material-pick {
 .cuboid-axis-header,
 .cuboid-corner-group {
   display: grid;
-  grid-template-columns: 28px repeat(3, minmax(0, 1fr));
-  gap: 8px 10px;
+  grid-template-columns: 26px repeat(3, minmax(84px, 1fr));
+  gap: 8px 6px;
 }
 .cuboid-axis-header {
   align-items: center;
@@ -1651,8 +1651,8 @@ html[data-theme='dark'] .material-pick {
   justify-content: center;
   margin: 0;
   justify-self: start;
-  min-width: 28px;
-  min-height: 28px;
+  min-width: 26px;
+  min-height: 26px;
   padding: 5px 10px;
   border-radius: var(--r-pill);
   font-family: var(--font-body);
@@ -1677,11 +1677,11 @@ html[data-theme='dark'] .material-pick {
 }
 .cuboid-axis-buttons {
   display: grid;
-  grid-template-columns: 32px minmax(3ch, 1fr) 32px;
+  grid-template-columns: 23px minmax(38px, 1fr) 23px;
   align-items: center;
-  min-height: 38px;
+  min-height: 36px;
   border: 1px solid color-mix(in srgb, var(--line) 82%, white 18%);
-  border-radius: 11px;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--surface) 72%, white 28%);
   overflow: hidden;
 }
@@ -1690,7 +1690,7 @@ html[data-theme='dark'] .material-pick {
   display: grid;
   place-items: center;
   min-width: 0;
-  min-height: 38px;
+  min-height: 36px;
 }
 .cuboid-axis-buttons button {
   border: none;
@@ -1698,7 +1698,7 @@ html[data-theme='dark'] .material-pick {
   color: var(--ink-soft);
   padding: 0;
   font-family: var(--font-body);
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   line-height: 1;
   transition: background-color 0.14s ease, color 0.14s ease;
@@ -1721,13 +1721,13 @@ html[data-theme='dark'] .material-pick {
   color: var(--line-strong);
 }
 .cuboid-axis-buttons strong {
-  min-width: 3ch;
-  padding-inline: 12px;
+  min-width: 38px;
+  padding-inline: 4px;
   font-family: var(--font-body);
-  font-size: 17px;
+  font-size: 16px;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   text-align: center;
   color: var(--ink);
   background: color-mix(in srgb, var(--surface) 86%, white 14%);
@@ -1736,11 +1736,11 @@ html[data-theme='dark'] .material-pick {
 @media (max-width: 480px) {
   .cuboid-axis-header,
   .cuboid-corner-group {
-    grid-template-columns: 24px repeat(3, minmax(0, 1fr));
-    gap: 8px 8px;
+    grid-template-columns: 24px repeat(3, minmax(78px, 1fr));
+    gap: 8px 5px;
   }
   .cuboid-axis-buttons {
-    grid-template-columns: 30px minmax(3ch, 1fr) 30px;
+    grid-template-columns: 22px minmax(34px, 1fr) 22px;
   }
 }
 
