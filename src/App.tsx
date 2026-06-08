@@ -13,8 +13,6 @@ import {
   Cuboid,
   Download,
   Eraser,
-  Eye,
-  EyeOff,
   FileUp,
   Focus,
   Grid2X2,
@@ -52,6 +50,7 @@ import {
   textureAdjustmentKey,
 } from './components/Viewer3D';
 import { FeaturedBuilder } from './components/FeaturedBuilder';
+import { MaterialList, type MaterialListItem } from './components/MaterialList';
 import { ShoppingCelebration } from './components/ShoppingCelebration';
 import {
   createBlockThumbnail,
@@ -566,6 +565,8 @@ function App() {
   const [selectedBlock, setSelectedBlock] = useState<VoxelBlock | null>(null);
   const [expandedMaterialIds, setExpandedMaterialIds] = useState<Set<string>>(() => new Set());
   const [materialSearch, setMaterialSearch] = useState('');
+  const [selectionMaterialSearch, setSelectionMaterialSearch] = useState('');
+  const [layerMaterialSearch, setLayerMaterialSearch] = useState('');
   const [thumbnailDebugSearch, setThumbnailDebugSearch] = useState('');
   const [thumbnailDisplayAdjustments, setThumbnailDisplayAdjustments] = useState<ThumbnailDisplayAdjustmentMap>(
     defaultBlockPreviewAdjustments,
@@ -718,9 +719,8 @@ function App() {
     return summarizeMaterials(model.blocks.filter((block) =>
       block.y >= visibleBottomLayer
       && block.y <= visibleTopLayer
-      && !hiddenMaterialIds.has(materialIdForBlock(block))
     ));
-  }, [hiddenMaterialIds, model, visibleBottomLayer, visibleTopLayer]);
+  }, [model, visibleBottomLayer, visibleTopLayer]);
 
   const activeMaterials = materialsScope === 'cuboid'
     ? cuboidMaterials
@@ -831,20 +831,16 @@ function App() {
     ? Math.round((completedShoppingItems / totalShoppingItems) * 100)
     : 0;
   const filteredMaterials = useMemo(() => {
-    const query = materialSearch.trim().toLocaleLowerCase();
-    if (!query) return visibleMaterials;
-
-    return visibleMaterials.filter((material) => {
-      const label = material.label.toLocaleLowerCase();
-      const id = material.id.toLocaleLowerCase();
-      return label.includes(query) || id.includes(query);
-    });
+    return filterMaterials(visibleMaterials, materialSearch);
   }, [materialSearch, visibleMaterials]);
+  const filteredCuboidMaterials = useMemo(() => (
+    filterMaterials(cuboidMaterials, selectionMaterialSearch)
+  ), [cuboidMaterials, selectionMaterialSearch]);
+  const filteredLayerMaterials = useMemo(() => (
+    filterMaterials(layerMaterials, layerMaterialSearch)
+  ), [layerMaterials, layerMaterialSearch]);
 
   const cuboidDimensions = cuboidBounds ? dimensionsForBounds(cuboidBounds) : null;
-  const cuboidVolume = cuboidDimensions
-    ? cuboidDimensions.width * cuboidDimensions.height * cuboidDimensions.length
-    : 0;
 
   const playerHeadOptions = useMemo(() => uniquePlayerHeadTextures(model), [model]);
   const selectedBlockKey = selectedBlock ? blockPositionKey(selectedBlock) : null;
@@ -3763,6 +3759,16 @@ function App() {
               {cuboidBounds && cuboidDimensions ? (
                 <>
                   <div className="cuboid-corner-editor" aria-label="Selected area corner coordinates">
+                    <div className="cuboid-corner-editor-head">
+                      <p>Selection bounds</p>
+                      <Box size={16} strokeWidth={2.1} aria-hidden="true" />
+                    </div>
+                    <div className="cuboid-axis-header" aria-hidden="true">
+                      <span className="cuboid-axis-header-spacer" />
+                      {(['X', 'Y', 'Z'] as const).map((axis) => (
+                        <span key={axis}>{axis}</span>
+                      ))}
+                    </div>
                     <CuboidCornerControls
                       title="Corner A"
                       corner="a"
@@ -3778,20 +3784,6 @@ function App() {
                       onStep={stepCuboidCorner}
                     />
                   </div>
-                  <dl className="summary-metrics selection-metrics">
-                    <div>
-                      <dt>Dimensions</dt>
-                      <dd>{cuboidDimensions.width} x {cuboidDimensions.height} x {cuboidDimensions.length}</dd>
-                    </div>
-                    <div>
-                      <dt>Selected Blocks</dt>
-                      <dd>{cuboidVolume.toLocaleString()}</dd>
-                    </div>
-                    <div>
-                      <dt>Non-air Blocks</dt>
-                      <dd>{cuboidMaterials.reduce((sum, material) => sum + material.count, 0).toLocaleString()}</dd>
-                    </div>
-                  </dl>
                 </>
               ) : (
                 <p className="panel-empty">
@@ -3802,11 +3794,37 @@ function App() {
                       : 'Create a selected area, then left-click Corner A and right-click Corner B in the viewport.'}
                 </p>
               )}
-              <FilteredMaterialSummary
-                title="Selected Materials"
-                materials={cuboidMaterials}
-                emptyText={cuboidBounds ? 'No non-air blocks in this selection.' : 'Select an area to preview its materials.'}
-              />
+              <section className="filtered-materials" aria-label="Selected Materials">
+                <div className="filtered-materials-head">
+                  <h3>Selected Materials</h3>
+                  <span>
+                    {selectionMaterialSearch.trim()
+                      ? `${filteredCuboidMaterials.length.toLocaleString()} of ${cuboidMaterials.length.toLocaleString()} types`
+                      : `${cuboidMaterials.length.toLocaleString()} types`}
+                  </span>
+                </div>
+                <MaterialList
+                  ariaLabel="Selected materials list"
+                  materials={filteredCuboidMaterials}
+                  selectedMaterialId={selectedMaterialId}
+                  expandedMaterialIds={expandedMaterialIds}
+                  hiddenMaterialIds={hiddenMaterialIds}
+                  onToggleExpanded={toggleMaterialBreakdown}
+                  onToggleVisibility={toggleMaterialVisibility}
+                  renderPreview={(material) => (
+                    <BlockPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
+                  )}
+                  renderBreakdown={(material) => (
+                    <MaterialBreakdown materialId={material.id} count={material.count} />
+                  )}
+                  emptyText={cuboidBounds ? 'No non-air blocks in this selection.' : 'Select an area to preview its materials.'}
+                  searchValue={selectionMaterialSearch}
+                  onSearchChange={setSelectionMaterialSearch}
+                  searchPlaceholder="Search selected materials"
+                  searchAriaLabel="Search selected materials"
+                  emptySearchText={cuboidBounds ? (query) => `No selected materials match "${query}".` : undefined}
+                />
+              </section>
             </section>
 
             <section
@@ -3872,11 +3890,37 @@ function App() {
               <div className="mode-row">
                 <span>{currentLayerBlockCount.toLocaleString()} blocks</span>
               </div>
-              <FilteredMaterialSummary
-                title="Visible Layer Materials"
-                materials={layerMaterials}
-                emptyText="No visible non-air blocks in this layer range."
-              />
+              <section className="filtered-materials" aria-label="Visible Layer Materials">
+                <div className="filtered-materials-head">
+                  <h3>Visible Layer Materials</h3>
+                  <span>
+                    {layerMaterialSearch.trim()
+                      ? `${filteredLayerMaterials.length.toLocaleString()} of ${layerMaterials.length.toLocaleString()} types`
+                      : `${layerMaterials.length.toLocaleString()} types`}
+                  </span>
+                </div>
+                <MaterialList
+                  ariaLabel="Visible layer materials list"
+                  materials={filteredLayerMaterials}
+                  selectedMaterialId={selectedMaterialId}
+                  expandedMaterialIds={expandedMaterialIds}
+                  hiddenMaterialIds={hiddenMaterialIds}
+                  onToggleExpanded={toggleMaterialBreakdown}
+                  onToggleVisibility={toggleMaterialVisibility}
+                  renderPreview={(material) => (
+                    <BlockPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
+                  )}
+                  renderBreakdown={(material) => (
+                    <MaterialBreakdown materialId={material.id} count={material.count} />
+                  )}
+                  emptyText="No visible non-air blocks in this layer range."
+                  searchValue={layerMaterialSearch}
+                  onSearchChange={setLayerMaterialSearch}
+                  searchPlaceholder="Search visible layer materials"
+                  searchAriaLabel="Search visible layer materials"
+                  emptySearchText={(query) => `No visible layer materials match "${query}".`}
+                />
+              </section>
             </section>
 
             <section
@@ -3923,82 +3967,36 @@ function App() {
                   Selected Area
                 </button>
               </div>
-              <label className="material-search">
-                <Search size={16} aria-hidden="true" />
-                <input
-                  type="search"
-                  value={materialSearch}
-                  onChange={(event) => setMaterialSearch(event.target.value)}
-                  placeholder="Search materials"
-                  aria-label="Search materials"
-                />
-              </label>
-              <div className="material-stack">
-                {filteredMaterials.map((material) => {
-                  const isExpanded = expandedMaterialIds.has(material.id);
-                  const isSelected = material.id === selectedMaterialId;
-                  const breakdownId = `material-breakdown-${material.id}`;
-
-                  return (
-                    <div
-                      className="material-item"
-                      key={material.id}
-                      ref={(node) => {
-                        if (node) {
-                          materialItemRefs.current.set(material.id, node);
-                        } else {
-                          materialItemRefs.current.delete(material.id);
-                        }
-                      }}
-                    >
-                      <div className={`material-row${isExpanded ? ' is-expanded' : ''}${isSelected ? ' is-selected' : ''}`}>
-                        <button
-                          className="material-pick"
-                          type="button"
-                          aria-expanded={isExpanded}
-                          aria-controls={breakdownId}
-                          onClick={() => toggleMaterialBreakdown(material.id)}
-                        >
-                          <BlockPreview
-                            stateKey={material.stateKey}
-                            color={material.color}
-                            layers={material.thumbnailLayers}
-                          />
-                          <span>{material.label}</span>
-                          <strong>{material.count.toLocaleString()}</strong>
-                          <ChevronDown className="material-disclosure" size={15} aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          className="material-visibility"
-                          aria-label={hiddenMaterialIds.has(material.id) ? `Show ${material.label}` : `Hide ${material.label}`}
-                          title={hiddenMaterialIds.has(material.id) ? 'Show block' : 'Hide block'}
-                          onClick={() => toggleMaterialVisibility(material.id)}
-                        >
-                          {hiddenMaterialIds.has(material.id) ? <EyeOff size={16} /> : <Eye size={16} />}
-                        </button>
-                      </div>
-                      {isExpanded && (
-                        <div
-                          id={breakdownId}
-                          className="material-breakdown"
-                        >
-                          <MaterialBreakdown materialId={material.id} count={material.count} />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {filteredMaterials.length === 0 && (
-                  <p className="material-empty">
-                    {materialsScope === 'cuboid' && !cuboidBounds
-                      ? 'Select an area to list materials for that region.'
-                      : materialSearch.trim()
-                        ? `No materials match "${materialSearch.trim()}".`
-                        : 'No non-air blocks in this area.'}
-                  </p>
+              <MaterialList
+                ariaLabel="Materials list"
+                materials={filteredMaterials}
+                selectedMaterialId={selectedMaterialId}
+                expandedMaterialIds={expandedMaterialIds}
+                hiddenMaterialIds={hiddenMaterialIds}
+                onToggleExpanded={toggleMaterialBreakdown}
+                onToggleVisibility={toggleMaterialVisibility}
+                renderPreview={(material) => (
+                  <BlockPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
                 )}
-              </div>
+                renderBreakdown={(material) => (
+                  <MaterialBreakdown materialId={material.id} count={material.count} />
+                )}
+                emptyText={materialsScope === 'cuboid' && !cuboidBounds
+                  ? 'Select an area to list materials for that region.'
+                  : 'No non-air blocks in this area.'}
+                searchValue={materialSearch}
+                onSearchChange={setMaterialSearch}
+                searchPlaceholder="Search materials"
+                searchAriaLabel="Search materials"
+                emptySearchText={materialsScope === 'cuboid' && !cuboidBounds ? undefined : (query) => `No materials match "${query}".`}
+                onItemRef={(id, node) => {
+                  if (node) {
+                    materialItemRefs.current.set(id, node);
+                  } else {
+                    materialItemRefs.current.delete(id);
+                  }
+                }}
+              />
             </section>
               </>
             ) : (
@@ -4654,7 +4652,9 @@ function CuboidCornerControls({
 }) {
   return (
     <section className="cuboid-corner-group" aria-label={title}>
-      <h3>{title}</h3>
+      <h3 className={`cuboid-corner-badge cuboid-corner-badge-${corner}`}>
+        {corner.toUpperCase()}
+      </h3>
       {(['x', 'y', 'z'] as const).map((axis) => {
         const coordinate = point ? point[axis] : 0;
         const worldCoordinate = originCoordinate(model, axis) + coordinate;
@@ -4663,18 +4663,7 @@ function CuboidCornerControls({
 
         return (
           <div className="cuboid-axis-stepper" key={`${corner}-${axis}`}>
-            <span>{axis.toUpperCase()}</span>
-            <strong>{worldCoordinate}</strong>
             <div className="cuboid-axis-buttons">
-              <button
-                type="button"
-                onClick={() => onStep(corner, axis, 1)}
-                disabled={coordinate >= maxAllowed}
-                title={`Increase ${title} ${axis.toUpperCase()}`}
-                aria-label={`Increase ${title} ${axis.toUpperCase()}`}
-              >
-                <ChevronUp size={14} />
-              </button>
               <button
                 type="button"
                 onClick={() => onStep(corner, axis, -1)}
@@ -4682,7 +4671,17 @@ function CuboidCornerControls({
                 title={`Decrease ${title} ${axis.toUpperCase()}`}
                 aria-label={`Decrease ${title} ${axis.toUpperCase()}`}
               >
-                <ChevronDown size={14} />
+                -
+              </button>
+              <strong>{worldCoordinate}</strong>
+              <button
+                type="button"
+                onClick={() => onStep(corner, axis, 1)}
+                disabled={coordinate >= maxAllowed}
+                title={`Increase ${title} ${axis.toUpperCase()}`}
+                aria-label={`Increase ${title} ${axis.toUpperCase()}`}
+              >
+                +
               </button>
             </div>
           </div>
@@ -4692,43 +4691,19 @@ function CuboidCornerControls({
   );
 }
 
-function FilteredMaterialSummary({
-  title,
-  materials,
-  emptyText,
-}: {
-  title: string;
-  materials: MaterialSummary[];
-  emptyText: string;
-}) {
-  return (
-    <section className="filtered-materials" aria-label={title}>
-      <div className="filtered-materials-head">
-        <h3>{title}</h3>
-        <span>{materials.length.toLocaleString()} types</span>
-      </div>
-      {materials.length > 0 ? (
-        <div className="filtered-material-list">
-          {materials.map((material) => (
-            <div className="filtered-material-row" key={material.id}>
-              <BlockPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
-              <span>{material.label}</span>
-              <strong>{material.count.toLocaleString()}</strong>
-              <div className="filtered-material-breakdown">
-                <MaterialBreakdown materialId={material.id} count={material.count} />
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="panel-empty">{emptyText}</p>
-      )}
-    </section>
-  );
-}
-
 function materialIdForBlock(block: VoxelBlock): string {
   return materialIdForStateKey(block.stateKey);
+}
+
+function filterMaterials<T extends MaterialListItem>(materials: T[], search: string): T[] {
+  const query = search.trim().toLocaleLowerCase();
+  if (!query) return materials;
+
+  return materials.filter((material) => {
+    const label = material.label.toLocaleLowerCase();
+    const id = material.id.toLocaleLowerCase();
+    return label.includes(query) || id.includes(query);
+  });
 }
 
 function materialIdForStateKey(stateKey: string): string {
