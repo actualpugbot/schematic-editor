@@ -24,6 +24,9 @@ import {
   Moon,
   Move3d,
   Orbit,
+  Palette,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pencil,
   Plus,
   Replace,
@@ -294,6 +297,8 @@ const selectionStoragePrefix = 'schematic-editor-selections';
 const cameraStoragePrefix = 'schematic-editor-cameras';
 const emptyBuildBlock = 'minecraft:air';
 const shulkerInventorySlots = 27;
+const initialShulkerBoxRenderCount = 12;
+const shulkerBoxRenderBatchSize = 18;
 const maxStackSize = 64;
 const defaultHotbarBlocks = [
   'minecraft:stone',
@@ -558,7 +563,37 @@ const blockstateFiles = import.meta.glob('/public/minecraft-assets/assets/minecr
   import: 'default',
 });
 
+const scrollbarVisibilityDurationMs = 900;
+
+function useTransientScrollbarVisibility() {
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+
+    const root = document.documentElement;
+    let hideTimer: ReturnType<typeof window.setTimeout> | undefined;
+
+    const showScrollbars = () => {
+      root.dataset.scrollbarsVisible = 'true';
+      if (hideTimer !== undefined) window.clearTimeout(hideTimer);
+      hideTimer = window.setTimeout(() => {
+        delete root.dataset.scrollbarsVisible;
+        hideTimer = undefined;
+      }, scrollbarVisibilityDurationMs);
+    };
+
+    window.addEventListener('scroll', showScrollbars, { capture: true, passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', showScrollbars, { capture: true });
+      if (hideTimer !== undefined) window.clearTimeout(hideTimer);
+      delete root.dataset.scrollbarsVisible;
+    };
+  }, []);
+}
+
 function App() {
+  useTransientScrollbarVisibility();
+
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window === 'undefined') return 'light';
     const savedTheme = window.localStorage.getItem(themeStorageKey);
@@ -613,6 +648,7 @@ function App() {
   const [shoppingSearch, setShoppingSearch] = useState('');
   const [shoppingLayout, setShoppingLayout] = useState<ShoppingLayout>('grid');
   const [shulkerViewMode, setShulkerViewMode] = useState<ShulkerViewMode>('box');
+  const [visibleShulkerBoxCount, setVisibleShulkerBoxCount] = useState(initialShulkerBoxRenderCount);
   const [checkedPlanSteps, setCheckedPlanSteps] = useState<Set<string>>(() => new Set());
   const [checkedShoppingItems, setCheckedShoppingItems] = useState<Set<string>>(() => new Set());
   const [playerHeadSelections, setPlayerHeadSelections] = useState<Record<string, string>>({});
@@ -769,9 +805,7 @@ function App() {
 
   const activeMaterials = materialsScope === 'cuboid'
     ? cuboidMaterials
-    : inspectorTab === 'layers'
-      ? layerMaterials
-      : materials;
+    : materials;
   const recipeBreakdown = useMemo(() => explodeMaterials(activeMaterials, {
     rawOverrides: new Set(),
     recipeChoice: new Map(),
@@ -857,6 +891,9 @@ function App() {
   const shulkerBoxes = useMemo(() => (
     packMaterialsIntoShulkerBoxes(activeMaterials, shulkerViewMode)
   ), [activeMaterials, shulkerViewMode]);
+  const visibleShulkerBoxes = useMemo(() => (
+    shulkerBoxes.slice(0, visibleShulkerBoxCount)
+  ), [shulkerBoxes, visibleShulkerBoxCount]);
   const shulkerTotalSlots = shulkerBoxes.length * shulkerInventorySlots;
   const shulkerUsedSlots = useMemo(() => (
     shulkerBoxes.reduce((sum, box) => sum + box.usedSlots, 0)
@@ -1186,6 +1223,25 @@ function App() {
     if (THUMBNAIL_DEBUG_ENABLED || appView !== 'thumbnail-debug') return;
     setAppView('inspect');
   }, [appView]);
+
+  useEffect(() => {
+    if (appView !== 'shulker') {
+      setVisibleShulkerBoxCount(initialShulkerBoxRenderCount);
+      return;
+    }
+
+    setVisibleShulkerBoxCount(Math.min(initialShulkerBoxRenderCount, shulkerBoxes.length));
+  }, [appView, shulkerBoxes]);
+
+  useEffect(() => {
+    if (appView !== 'shulker' || visibleShulkerBoxCount >= shulkerBoxes.length) return;
+
+    const batchTimer = window.setTimeout(() => {
+      setVisibleShulkerBoxCount((count) => Math.min(count + shulkerBoxRenderBatchSize, shulkerBoxes.length));
+    }, 50);
+
+    return () => window.clearTimeout(batchTimer);
+  }, [appView, shulkerBoxes.length, visibleShulkerBoxCount]);
 
   useEffect(() => {
     if (materialsScope === 'cuboid' && !cuboidBounds) {
@@ -2460,15 +2516,6 @@ function App() {
           >
             {controlRailSide === 'right' ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
           </button>
-          <label className="topbar-color-picker" title="Stage background color">
-            <span>Stage</span>
-            <input
-              type="color"
-              value={stageBackgroundColor}
-              onChange={(event) => setStageBackgroundColor(event.target.value)}
-              aria-label="Stage background color"
-            />
-          </label>
           <div
             className={`topbar-export${isExportMenuOpen ? ' is-open' : ''}`}
             ref={exportMenuRef}
@@ -2528,17 +2575,21 @@ function App() {
       </header>
 
       <div className={`workspace${leftRailCollapsed ? ' is-left-rail-collapsed' : ''}${controlRailSide === 'left' ? ' is-control-rail-left' : ''}${appView === 'shopping' || appView === 'shulker' ? ' is-shopping' : ''}${appView === 'resource' ? ' is-resource' : ''}${thumbnailDebugActive ? ' is-thumbnail-debug' : ''}`}>
-        <button
-          type="button"
-          className="rail-toggle"
-          onClick={() => setLeftRailCollapsed((value) => !value)}
-          aria-label={leftRailCollapsed ? 'Expand navigation rail' : 'Collapse navigation rail'}
-          aria-expanded={!leftRailCollapsed}
-          title={leftRailCollapsed ? 'Expand rail' : 'Collapse rail'}
-        >
-          {leftRailCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
-        </button>
         <aside className="left-rail" aria-label="Primary navigation">
+          <div className="rail-head">
+            <span className="rail-head-title">Tools</span>
+            <button
+              type="button"
+              className="rail-collapse-button"
+              onClick={() => setLeftRailCollapsed((value) => !value)}
+              aria-label={leftRailCollapsed ? 'Expand navigation rail' : 'Collapse navigation rail'}
+              aria-expanded={!leftRailCollapsed}
+              title={leftRailCollapsed ? 'Expand rail' : 'Collapse rail'}
+            >
+              {leftRailCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+            </button>
+          </div>
+
           <div className="rail-cluster" role="tablist" aria-label="Workspace mode">
             <button
               type="button"
@@ -3234,7 +3285,7 @@ function App() {
               </div>
 
               <div className="shulker-list" aria-live="polite">
-                {shulkerBoxes.map((box) => (
+                {visibleShulkerBoxes.map((box) => (
                   <section className="shulker-card" key={box.id} aria-label={box.label}>
                     <div className="shulker-card-head">
                       <div className="shulker-card-title">
@@ -3271,6 +3322,11 @@ function App() {
                     </div>
                   </section>
                 ))}
+                {visibleShulkerBoxCount < shulkerBoxes.length && (
+                  <p className="shulker-loading-more" role="status">
+                    Loading {Math.min(visibleShulkerBoxCount, shulkerBoxes.length).toLocaleString()} of {shulkerBoxes.length.toLocaleString()} boxes
+                  </p>
+                )}
                 {shulkerBoxes.length === 0 && (
                   <p className="material-empty">
                     {materialsScope === 'cuboid' && !cuboidBounds
@@ -3419,24 +3475,33 @@ function App() {
                           const isChecked = checkedShoppingItems.has(itemKey);
 
                           return (
-                            <button
-                              type="button"
+                            <div
                               key={itemKey}
-                              className={`shopping-row${isChecked ? ' is-checked' : ''}`}
-                              onClick={() => toggleShoppingItem(material)}
-                              aria-pressed={isChecked}
+                              className={`shopping-item material-item${isChecked ? ' is-checked' : ''}`}
                             >
-                              <BlockPreview
-                                stateKey={material.stateKey}
-                                color={material.color}
-                                layers={material.thumbnailLayers}
-                              />
-                              <span className="shopping-row-label">
-                                <strong>{material.label}</strong>
-                              </span>
-                              <span className="shopping-row-count">{material.count.toLocaleString()}</span>
-                              <MaterialBreakdown materialId={material.id} count={material.count} />
-                            </button>
+                              <div className="material-row shopping-material-row">
+                                <button
+                                  type="button"
+                                  className="material-pick shopping-pick"
+                                  onClick={() => toggleShoppingItem(material)}
+                                  aria-pressed={isChecked}
+                                >
+                                  <BlockPreview
+                                    stateKey={material.stateKey}
+                                    color={material.color}
+                                    layers={material.thumbnailLayers}
+                                  />
+                                  <span className="material-name">{material.label}</span>
+                                  <span className="material-actions">
+                                    <strong className="material-count-badge">{material.count.toLocaleString()}</strong>
+                                    <Check className="shopping-checkmark" size={15} aria-hidden="true" />
+                                  </span>
+                                </button>
+                              </div>
+                              <div className="material-breakdown shopping-breakdown">
+                                <MaterialBreakdown materialId={material.id} count={material.count} />
+                              </div>
+                            </div>
                           );
                         })}
                       </div>
@@ -3758,6 +3823,19 @@ function App() {
                 <span>Fit</span>
               </button>
             </div>
+          )}
+
+          {!textureViewActive && model && (
+            <label className="viewport-stage-color" title="Stage background color">
+              <Palette size={16} aria-hidden="true" />
+              <span>Stage</span>
+              <input
+                type="color"
+                value={stageBackgroundColor}
+                onChange={(event) => setStageBackgroundColor(event.target.value)}
+                aria-label="Stage background color"
+              />
+            </label>
           )}
 
           {textureViewActive ? (
