@@ -92,12 +92,13 @@ type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 type DraggedFileKind = 'none' | 'unsupported-file' | 'unknown-file' | 'schematic-file';
 type InspectorTab = 'selection' | 'materials' | 'layers';
 type EditPanelTab = 'tools' | 'rotate' | 'replace';
-type AppView = 'inspect' | 'edit' | 'texture' | 'shopping' | 'resource' | 'thumbnail-debug';
+type AppView = 'inspect' | 'edit' | 'texture' | 'shopping' | 'shulker' | 'resource' | 'thumbnail-debug';
 type EditTool = 'select' | 'build';
 type Theme = 'light' | 'dark';
 type SchematicOrigin = 'default' | 'uploaded' | 'new';
 type MaterialsScope = 'build' | 'cuboid';
 type ShoppingLayout = 'grid' | 'list';
+type ShulkerViewMode = 'box' | 'color' | 'type';
 type ThumbnailLoadState = 'idle' | 'loading' | 'ready' | 'failed';
 type CuboidCornerId = 'a' | 'b';
 type Direction = 'up' | 'down' | 'north' | 'south' | 'west' | 'east';
@@ -197,6 +198,21 @@ interface ShoppingMaterialGroup {
   materials: MaterialSummary[];
 }
 
+interface ShulkerStack {
+  material: MaterialSummary;
+  count: number;
+}
+
+interface ShulkerBoxPlan {
+  id: string;
+  label: string;
+  groupLabel: string;
+  color: string;
+  slots: Array<ShulkerStack | null>;
+  itemCount: number;
+  usedSlots: number;
+}
+
 interface ThumbnailDisplayAdjustment {
   scale: number;
   rotateX: number;
@@ -274,6 +290,8 @@ const shoppingListStoragePrefix = 'schematic-editor-shopping-list';
 const selectionStoragePrefix = 'schematic-editor-selections';
 const cameraStoragePrefix = 'schematic-editor-cameras';
 const emptyBuildBlock = 'minecraft:air';
+const shulkerInventorySlots = 27;
+const maxStackSize = 64;
 const defaultHotbarBlocks = [
   'minecraft:stone',
   'minecraft:oak_planks',
@@ -577,6 +595,7 @@ function App() {
   const integerCrafting = true;
   const [shoppingSearch, setShoppingSearch] = useState('');
   const [shoppingLayout, setShoppingLayout] = useState<ShoppingLayout>('grid');
+  const [shulkerViewMode, setShulkerViewMode] = useState<ShulkerViewMode>('box');
   const [checkedPlanSteps, setCheckedPlanSteps] = useState<Set<string>>(() => new Set());
   const [checkedShoppingItems, setCheckedShoppingItems] = useState<Set<string>>(() => new Set());
   const [playerHeadSelections, setPlayerHeadSelections] = useState<Record<string, string>>({});
@@ -815,6 +834,13 @@ function App() {
     });
   }, [activeMaterials, shoppingSearch]);
   const shoppingGroups = useMemo(() => groupShoppingMaterials(shoppingMaterials), [shoppingMaterials]);
+  const shulkerBoxes = useMemo(() => (
+    packMaterialsIntoShulkerBoxes(activeMaterials, shulkerViewMode)
+  ), [activeMaterials, shulkerViewMode]);
+  const shulkerTotalSlots = shulkerBoxes.length * shulkerInventorySlots;
+  const shulkerUsedSlots = useMemo(() => (
+    shulkerBoxes.reduce((sum, box) => sum + box.usedSlots, 0)
+  ), [shulkerBoxes]);
   const checkedShoppingMaterialCount = useMemo(() => (
     activeMaterials.filter((material) => checkedShoppingItems.has(shoppingItemKey(shoppingScope, material))).length
   ), [activeMaterials, checkedShoppingItems, shoppingScope]);
@@ -2054,6 +2080,11 @@ function App() {
     setAppView('shopping');
   };
 
+  const openShulkerView = () => {
+    if (!model) return;
+    setAppView('shulker');
+  };
+
   const openResourceCalculator = () => {
     if (!model) return;
     setShoppingSearch('');
@@ -2318,7 +2349,7 @@ function App() {
         </div>
       </header>
 
-      <div className={`workspace${leftRailCollapsed ? ' is-left-rail-collapsed' : ''}${appView === 'shopping' ? ' is-shopping' : ''}${appView === 'resource' ? ' is-resource' : ''}${thumbnailDebugActive ? ' is-thumbnail-debug' : ''}`}>
+      <div className={`workspace${leftRailCollapsed ? ' is-left-rail-collapsed' : ''}${appView === 'shopping' || appView === 'shulker' ? ' is-shopping' : ''}${appView === 'resource' ? ' is-resource' : ''}${thumbnailDebugActive ? ' is-thumbnail-debug' : ''}`}>
         <button
           type="button"
           className="rail-toggle"
@@ -2398,6 +2429,19 @@ function App() {
               <ShoppingCart size={19} />
               <span>Shopping List</span>
             </button>
+            <button
+              type="button"
+              role="tab"
+              className={appView === 'shulker' ? 'is-active' : ''}
+              onClick={openShulkerView}
+              aria-selected={appView === 'shulker'}
+              aria-label="Shulker Box View"
+              title="Shulker Box View"
+              disabled={!model}
+            >
+              <Box size={19} />
+              <span>Shulker Box View</span>
+            </button>
             {THUMBNAIL_DEBUG_ENABLED ? (
               <button
                 type="button"
@@ -2450,8 +2494,8 @@ function App() {
         </aside>
 
         <section
-          className={`viewport-panel${appView === 'shopping' || appView === 'resource' || thumbnailDebugActive ? ' shopping-viewport' : ''}${appView === 'resource' ? ' resource-viewport' : ''}${thumbnailDebugActive ? ' thumbnail-debug-viewport' : ''}${selectedBlock && !textureViewActive && appView !== 'shopping' && appView !== 'resource' && !thumbnailDebugActive ? ' has-selection-modal' : ''}`}
-          aria-label={appView === 'resource' ? 'Resource Calculator' : appView === 'shopping' ? 'Shopping list' : thumbnailDebugActive ? 'Thumbnail debug' : 'Schematic 3D viewport'}
+          className={`viewport-panel${appView === 'shopping' || appView === 'shulker' || appView === 'resource' || thumbnailDebugActive ? ' shopping-viewport' : ''}${appView === 'resource' ? ' resource-viewport' : ''}${appView === 'shulker' ? ' shulker-viewport' : ''}${thumbnailDebugActive ? ' thumbnail-debug-viewport' : ''}${selectedBlock && !textureViewActive && appView !== 'shopping' && appView !== 'shulker' && appView !== 'resource' && !thumbnailDebugActive ? ' has-selection-modal' : ''}`}
+          aria-label={appView === 'resource' ? 'Resource Calculator' : appView === 'shulker' ? 'Shulker Box View' : appView === 'shopping' ? 'Shopping list' : thumbnailDebugActive ? 'Thumbnail debug' : 'Schematic 3D viewport'}
         >
           {thumbnailDebugActive ? (
             <section className="thumbnail-debug-board" aria-label="Thumbnail debug catalog">
@@ -2925,6 +2969,144 @@ function App() {
                     {craftPlan.steps.length === 0 && <p className="material-empty">Nothing to craft.</p>}
                   </div>
                 </aside>
+              </div>
+            </section>
+          ) : appView === 'shulker' && model ? (
+            <section className="shopping-board shulker-board" aria-label="Shulker Box View">
+              <div className="shopping-header">
+                <div className="shopping-title-block">
+                  <p className="eyebrow">Shulker Box View</p>
+                  <h2>{schematicName}</h2>
+                </div>
+                <div className="shopping-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => openInspectorPanel('materials')}
+                  >
+                    <Cuboid size={16} />
+                    Materials
+                  </button>
+                </div>
+              </div>
+
+              <div className="shopping-toolbar shulker-toolbar">
+                <div className="segmented-control shopping-scope" role="group" aria-label="Shulker box scope">
+                  <button
+                    type="button"
+                    className={materialsScope === 'build' ? 'is-active' : ''}
+                    onClick={() => setMaterialsScope('build')}
+                  >
+                    Entire Build
+                  </button>
+                  <button
+                    type="button"
+                    className={materialsScope === 'cuboid' ? 'is-active' : ''}
+                    onClick={() => {
+                      if (cuboidBounds) {
+                        setMaterialsScope('cuboid');
+                      } else {
+                        beginCuboidSelection();
+                        setAppView('inspect');
+                        setInspectorTab('selection');
+                      }
+                    }}
+                  >
+                    Selected Area
+                  </button>
+                </div>
+                <div className="segmented-control shulker-mode-toggle" role="group" aria-label="Organize shulker boxes">
+                  <button
+                    type="button"
+                    className={shulkerViewMode === 'box' ? 'is-active' : ''}
+                    onClick={() => setShulkerViewMode('box')}
+                    aria-pressed={shulkerViewMode === 'box'}
+                  >
+                    By Box
+                  </button>
+                  <button
+                    type="button"
+                    className={shulkerViewMode === 'color' ? 'is-active' : ''}
+                    onClick={() => setShulkerViewMode('color')}
+                    aria-pressed={shulkerViewMode === 'color'}
+                  >
+                    By Color
+                  </button>
+                  <button
+                    type="button"
+                    className={shulkerViewMode === 'type' ? 'is-active' : ''}
+                    onClick={() => setShulkerViewMode('type')}
+                    aria-pressed={shulkerViewMode === 'type'}
+                  >
+                    By Item Type
+                  </button>
+                </div>
+              </div>
+
+              <div className="shopping-progress shulker-summary" aria-label="Shulker box summary">
+                <div>
+                  <span>Shulker Boxes</span>
+                  <strong>{shulkerBoxes.length.toLocaleString()}</strong>
+                </div>
+                <div>
+                  <span>Stacks</span>
+                  <strong>{shulkerUsedSlots.toLocaleString()}</strong>
+                </div>
+                <div>
+                  <span>Slots</span>
+                  <strong>{shulkerUsedSlots.toLocaleString()} / {shulkerTotalSlots.toLocaleString()}</strong>
+                </div>
+                <div>
+                  <span>Items</span>
+                  <strong>{totalShoppingItems.toLocaleString()}</strong>
+                </div>
+              </div>
+
+              <div className="shulker-list" aria-live="polite">
+                {shulkerBoxes.map((box) => (
+                  <section className="shulker-card" key={box.id} aria-label={box.label}>
+                    <div className="shulker-card-head">
+                      <div className="shulker-card-title">
+                        <BlockPreview stateKey={shulkerBoxStateKey(box.color)} color={shulkerColorHex(box.color)} />
+                        <div>
+                          <h3>{box.label}</h3>
+                          <span>{box.groupLabel} · {box.itemCount.toLocaleString()} items · {box.usedSlots} / {shulkerInventorySlots} slots</span>
+                        </div>
+                      </div>
+                      <span className="shulker-pill">{box.usedSlots === shulkerInventorySlots ? 'Full' : `${shulkerInventorySlots - box.usedSlots} open`}</span>
+                    </div>
+                    <div className="shulker-grid" role="grid" aria-label={`${box.label} inventory`}>
+                      {box.slots.map((slot, index) => (
+                        <div
+                          className={`shulker-slot${slot ? ' has-item' : ''}`}
+                          key={`${box.id}-slot-${index}`}
+                          role="gridcell"
+                          aria-label={slot ? `${slot.material.label}, ${slot.count}` : 'Empty slot'}
+                          title={slot ? `${slot.material.label}: ${slot.count}` : 'Empty slot'}
+                        >
+                          {slot && (
+                            <>
+                              <BlockPreview
+                                stateKey={slot.material.stateKey}
+                                color={slot.material.color}
+                                layers={slot.material.thumbnailLayers}
+                                size={42}
+                              />
+                              <strong>{slot.count}</strong>
+                            </>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                ))}
+                {shulkerBoxes.length === 0 && (
+                  <p className="material-empty">
+                    {materialsScope === 'cuboid' && !cuboidBounds
+                      ? 'Select an area to pack shulker boxes for that region.'
+                      : 'No non-air blocks to pack into shulker boxes.'}
+                  </p>
+                )}
               </div>
             </section>
           ) : appView === 'shopping' && model ? (
@@ -5463,6 +5645,217 @@ function parseShoppingStorage(rawItems: string): string[] {
     return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
   } catch {
     return [];
+  }
+}
+
+function packMaterialsIntoShulkerBoxes(materials: MaterialSummary[], mode: ShulkerViewMode): ShulkerBoxPlan[] {
+  const groups = shulkerMaterialGroups(materials, mode);
+  const boxes: ShulkerBoxPlan[] = [];
+
+  groups.forEach((group, groupIndex) => {
+    let currentSlots: ShulkerBoxPlan['slots'] = [];
+    let boxInGroup = 1;
+
+    const flushBox = () => {
+      if (currentSlots.length === 0) return;
+
+      const slots = [...currentSlots];
+      while (slots.length < shulkerInventorySlots) slots.push(null);
+
+      const boxNumber = boxes.length + 1;
+      const itemCount = slots.reduce((sum, slot) => sum + (slot?.count ?? 0), 0);
+      boxes.push({
+        id: `${group.id}-${boxInGroup}`,
+        label: mode === 'box' ? `Shulker Box ${boxNumber}` : `${group.label} Box ${boxInGroup}`,
+        groupLabel: group.label,
+        color: group.color ?? shulkerColorForIndex(groupIndex),
+        slots,
+        itemCount,
+        usedSlots: currentSlots.length,
+      });
+      currentSlots = [];
+      boxInGroup += 1;
+    };
+
+    for (const material of group.materials) {
+      const stackSize = materialStackSize(material.id);
+      let remaining = material.count;
+      while (remaining > 0) {
+        if (currentSlots.length === shulkerInventorySlots) flushBox();
+
+        const count = Math.min(stackSize, remaining);
+        currentSlots.push({ material, count });
+        remaining -= count;
+      }
+    }
+
+    flushBox();
+  });
+
+  return boxes;
+}
+
+function shulkerMaterialGroups(
+  materials: MaterialSummary[],
+  mode: ShulkerViewMode,
+): Array<{ id: string; label: string; color?: string; materials: MaterialSummary[] }> {
+  if (mode === 'box') {
+    return [{ id: 'all', label: 'All Materials', color: 'purple', materials }];
+  }
+
+  const groups = new Map<string, { id: string; label: string; color?: string; materials: MaterialSummary[] }>();
+  for (const material of materials) {
+    const group = mode === 'color' ? shulkerColorGroupForMaterial(material) : shulkerTypeGroupForMaterial(material);
+    const current = groups.get(group.id) ?? { ...group, materials: [] };
+    current.materials.push(material);
+    groups.set(group.id, current);
+  }
+
+  const order = mode === 'color'
+    ? colorGroupOrder.map((group) => group.id)
+    : ['wood', 'stone', 'glass', 'redstone', 'nature', 'utility', 'decorative', 'other'];
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      materials: [...group.materials].sort((a, b) => (
+        mode === 'color'
+          ? compareMaterialsByColor(a, b)
+          : b.count - a.count || a.label.localeCompare(b.label)
+      )),
+    }))
+    .sort((a, b) => {
+      const orderDelta = order.indexOf(a.id) - order.indexOf(b.id);
+      return orderDelta || a.label.localeCompare(b.label);
+    });
+}
+
+function shulkerColorGroupForMaterial(material: MaterialSummary): { id: ColorGroupId; label: string; color: string } {
+  const id = colorNameFromBlock(baseBlockId(material.id)) ?? colorGroupForColor(material.color);
+  const label = colorGroupOrder.find((group) => group.id === id)?.label ?? formatBlockName(id);
+  return { id, label, color: shulkerColorForGroup(id) };
+}
+
+function shulkerTypeGroupForMaterial(material: MaterialSummary): { id: string; label: string; color: string } {
+  const category = shoppingCategoryForMaterial(material.id);
+  return { ...category, color: shulkerColorForType(category.id) };
+}
+
+function compareMaterialsByColor(a: MaterialSummary, b: MaterialSummary): number {
+  const aHsl = rgbToHsl(a.color);
+  const bHsl = rgbToHsl(b.color);
+  return aHsl.hue - bHsl.hue
+    || bHsl.saturation - aHsl.saturation
+    || aHsl.lightness - bHsl.lightness
+    || a.label.localeCompare(b.label);
+}
+
+function materialStackSize(materialId: string): number {
+  const id = stripBlockStateProperties(materialId).replace(/^minecraft:/, '');
+  if (/(_bucket|boat|chest_boat|raft|chest_raft|minecart)$/.test(id)) return 1;
+  if (/(sword|pickaxe|axe|shovel|hoe|helmet|chestplate|leggings|boots|elytra|shield|bow|crossbow|trident|saddle|horse_armor)$/.test(id)) return 1;
+  if (/^(bed|banner|cake|suspicious_stew|mushroom_stew|rabbit_stew|honey_bottle|potion|splash_potion|lingering_potion)$/.test(id)) return 1;
+  if (/(sign|hanging_sign|ender_pearl|snowball|egg)$/.test(id)) return 16;
+  return maxStackSize;
+}
+
+function shulkerColorForGroup(group: ColorGroupId): string {
+  switch (group) {
+    case 'white':
+      return 'white';
+    case 'gray':
+      return 'gray';
+    case 'black':
+      return 'black';
+    case 'brown':
+      return 'brown';
+    case 'red':
+      return 'red';
+    case 'orange':
+      return 'orange';
+    case 'yellow':
+      return 'yellow';
+    case 'green':
+      return 'green';
+    case 'cyan':
+      return 'cyan';
+    case 'blue':
+      return 'blue';
+    case 'purple':
+      return 'purple';
+    case 'pink':
+      return 'pink';
+    default:
+      return 'purple';
+  }
+}
+
+function shulkerColorForType(typeId: string): string {
+  switch (typeId) {
+    case 'wood':
+      return 'brown';
+    case 'stone':
+      return 'gray';
+    case 'glass':
+      return 'light_blue';
+    case 'redstone':
+      return 'red';
+    case 'nature':
+      return 'green';
+    case 'utility':
+      return 'orange';
+    case 'decorative':
+      return 'magenta';
+    default:
+      return 'purple';
+  }
+}
+
+function shulkerColorForIndex(index: number): string {
+  const colors = ['purple', 'blue', 'cyan', 'green', 'yellow', 'orange', 'red', 'pink', 'magenta', 'light_gray', 'gray', 'brown'] as const;
+  return colors[index % colors.length];
+}
+
+function shulkerBoxStateKey(color: string): string {
+  return color === 'natural' ? 'minecraft:shulker_box' : `minecraft:${color}_shulker_box`;
+}
+
+function shulkerColorHex(color: string): number {
+  switch (color) {
+    case 'white':
+      return 0xf3f4f0;
+    case 'light_gray':
+      return 0x9d9d97;
+    case 'gray':
+      return 0x474f52;
+    case 'black':
+      return 0x1d1d21;
+    case 'brown':
+      return 0x835432;
+    case 'red':
+      return 0xb02e26;
+    case 'orange':
+      return 0xf9801d;
+    case 'yellow':
+      return 0xfed83d;
+    case 'green':
+      return 0x5e7c16;
+    case 'lime':
+      return 0x80c71f;
+    case 'cyan':
+      return 0x169c9c;
+    case 'light_blue':
+      return 0x3ab3da;
+    case 'blue':
+      return 0x3c44aa;
+    case 'purple':
+      return 0x8932b8;
+    case 'magenta':
+      return 0xc74ebd;
+    case 'pink':
+      return 0xf38baa;
+    default:
+      return 0x8e44ad;
   }
 }
 
