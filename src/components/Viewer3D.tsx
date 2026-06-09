@@ -150,6 +150,7 @@ const horizontalFaces = new Set<ModelFaceName>(['north', 'south', 'west', 'east'
 const cuboidOverlayPadding = 0.018;
 const cornerLabelOffset = 0.86;
 const defaultSchematicRotationY = -Math.PI / 2;
+const meshBuildYieldInterval = 180;
 const labelProjectionVector = new THREE.Vector3();
 const rotationControlProjectionVector = new THREE.Vector3();
 
@@ -651,23 +652,34 @@ export function Viewer3D(props: InternalViewerProps) {
     const group = modelGroupRef.current;
     if (!group) return;
 
-    clearGroup(group, false);
-
-    if (!props.model) return;
+    if (!props.model) {
+      clearGroup(group, false);
+      return;
+    }
 
     let cancelled = false;
+    const abortController = new AbortController();
 
-    void createBlockMeshes(filteredBlocks, props.playerHeadSelections, props.textureAdjustments ?? {}).then((meshes) => {
-      if (cancelled) return;
+    void createBlockMeshes(
+      filteredBlocks,
+      props.playerHeadSelections,
+      props.textureAdjustments ?? {},
+      abortController.signal,
+    ).then((meshes) => {
+      if (cancelled || abortController.signal.aborted) return;
       clearGroup(group, false);
       for (const mesh of meshes) {
         group.add(mesh);
       }
       centerGroup(group, props.model!.dimensions);
+    }).catch((error: unknown) => {
+      if (isAbortError(error)) return;
+      console.error('Could not build schematic mesh.', error);
     });
 
     return () => {
       cancelled = true;
+      abortController.abort();
     };
   }, [filteredBlocks, props.model, props.playerHeadSelections, props.textureAdjustments]);
 
@@ -1006,7 +1018,10 @@ async function createBlockMeshes(
   blocks: VoxelBlock[],
   playerHeadSelections: Record<string, string>,
   textureAdjustments: TextureAdjustmentMap = {},
+  signal?: AbortSignal,
 ): Promise<THREE.InstancedMesh[]> {
+  throwIfAborted(signal);
+
   const groups = new Map<
     string,
     {
@@ -1018,13 +1033,16 @@ async function createBlockMeshes(
   >();
   const states = Array.from(new Set(blocks.map((block) => renderStateKeyForBlock(block, playerHeadSelections))));
   const resolvedStates = await Promise.all(states.map(async (state) => [state, await resolveBlockParts(state)] as const));
+  throwIfAborted(signal);
   const partsByState = new Map(resolvedStates);
   const occludingFacesByBlock = new Map<string, Set<ModelFaceName>>();
   const boundaryFacesByBlock = new Map<string, Set<ModelFaceName>>();
   const translucentBoundaryFacesByBlock = new Map<string, Set<ModelFaceName>>();
   const partsByBlock = new Map<string, ResolvedBlockPart[]>();
 
-  for (const block of blocks) {
+  for (let index = 0; index < blocks.length; index += 1) {
+    if (index > 0 && index % meshBuildYieldInterval === 0) await yieldToMainThread(signal);
+    const block = blocks[index];
     const parts = partsByState.get(renderStateKeyForBlock(block, playerHeadSelections)) ?? [];
     partsByBlock.set(blockPositionKey(block), parts);
     occludingFacesByBlock.set(blockPositionKey(block), occludingFacesForParts(parts));
@@ -1032,7 +1050,9 @@ async function createBlockMeshes(
     translucentBoundaryFacesByBlock.set(blockPositionKey(block), boundaryFacesForParts(parts, true));
   }
 
-  for (const block of blocks) {
+  for (let index = 0; index < blocks.length; index += 1) {
+    if (index > 0 && index % meshBuildYieldInterval === 0) await yieldToMainThread(signal);
+    const block = blocks[index];
     const parts = partsByState.get(renderStateKeyForBlock(block, playerHeadSelections)) ?? [];
 
     for (const part of parts) {
@@ -1065,29 +1085,55 @@ async function createBlockMeshes(
   const matrix = new THREE.Matrix4();
   const meshes: THREE.InstancedMesh[] = [];
 
-  for (const group of groups.values()) {
-    const geometry = geometryForPart(group.part, textureAdjustments);
-    const materials = materialsForPart(group.part, group.fallbackColor, group.hiddenFaces);
-    const mesh = new THREE.InstancedMesh(geometry, materials, group.blocks.length);
-    mesh.castShadow = false;
-    mesh.receiveShadow = true;
-    mesh.renderOrder = partHasTranslucentFaces(group.part) ? 10 : 0;
+  try {
+    for (const group of groups.values()) {
+      throwIfAborted(signal);
 
-    const quaternion = new THREE.Quaternion().setFromEuler(variantEuler(group.part));
-    const scale = new THREE.Vector3(1, 1, 1);
+      const geometry = geometryForPart(group.part, textureAdjustments);
+      const materials = materialsForPart(group.part, group.fallbackColor, group.hiddenFaces);
+      const mesh = new THREE.InstancedMesh(geometry, materials, group.blocks.length);
+      mesh.castShadow = false;
+      mesh.receiveShadow = true;
+      mesh.renderOrder = partHasTranslucentFaces(group.part) ? 10 : 0;
 
-    group.blocks.forEach((block, index) => {
-      matrix.compose(new THREE.Vector3(block.x, block.y, block.z), quaternion, scale);
-      mesh.setMatrixAt(index, matrix);
-    });
+      const quaternion = new THREE.Quaternion().setFromEuler(variantEuler(group.part));
+      const scale = new THREE.Vector3(1, 1, 1);
 
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.userData.blocks = group.blocks;
-    mesh.userData.part = group.part;
-    meshes.push(mesh);
+      for (let index = 0; index < group.blocks.length; index += 1) {
+        if (index > 0 && index % meshBuildYieldInterval === 0) await yieldToMainThread(signal);
+        const block = group.blocks[index];
+        matrix.compose(new THREE.Vector3(block.x, block.y, block.z), quaternion, scale);
+        mesh.setMatrixAt(index, matrix);
+      }
+
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.userData.blocks = group.blocks;
+      mesh.userData.part = group.part;
+      meshes.push(mesh);
+    }
+  } catch (error) {
+    meshes.length = 0;
+    throw error;
   }
 
   return meshes;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  throw new DOMException('Mesh build aborted.', 'AbortError');
+}
+
+async function yieldToMainThread(signal?: AbortSignal): Promise<void> {
+  throwIfAborted(signal);
+  await new Promise<void>((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
+  throwIfAborted(signal);
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
 }
 
 function blockPositionKey(block: VoxelBlock): string {

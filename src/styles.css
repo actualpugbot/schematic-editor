@@ -1393,8 +1393,6 @@ html[data-theme='dark'] .material-pick {
 .material-visibility:hover { background: var(--surface-sunken); color: var(--ink); }
 .material-visibility:disabled { opacity: 0.3; cursor: not-allowed; }
 
-.material-shopping-link { height: 34px; padding: 0 12px; }
-
 .material-count, .material-raw {
   font-family: var(--font-mono); font-size: 13px; font-weight: 500; text-align: right; min-width: 56px;
 }

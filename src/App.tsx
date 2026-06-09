@@ -593,6 +593,9 @@ function App() {
   const [error, setError] = useState('');
   const [visibleBottomLayer, setVisibleBottomLayer] = useState(0);
   const [visibleTopLayer, setVisibleTopLayer] = useState(model?.dimensions.height ? model.dimensions.height - 1 : 0);
+  const [singleVisibleLayer, setSingleVisibleLayer] = useState(0);
+  const [renderedVisibleBottomLayer, setRenderedVisibleBottomLayer] = useState(0);
+  const [renderedVisibleTopLayer, setRenderedVisibleTopLayer] = useState(model?.dimensions.height ? model.dimensions.height - 1 : 0);
   const [showGrid, setShowGrid] = useState(true);
   const [selectedBlock, setSelectedBlock] = useState<VoxelBlock | null>(null);
   const [expandedMaterialIds, setExpandedMaterialIds] = useState<Set<string>>(() => new Set());
@@ -657,6 +660,8 @@ function App() {
   const prevShoppingProgressRef = useRef(0);
   const prevShoppingStorageRef = useRef('');
   const dragDepthRef = useRef(0);
+  const visibleLayerFrameRef = useRef<number | null>(null);
+  const pendingVisibleLayerRangeRef = useRef<{ bottomLayer: number; topLayer: number; singleLayer: number } | null>(null);
   const visibleBottomWorldY = model ? model.origin.y + visibleBottomLayer : visibleBottomLayer;
   const visibleTopWorldY = model ? model.origin.y + visibleTopLayer : visibleTopLayer;
   const selectedBlockWorldX = selectedBlock && model ? model.origin.x + selectedBlock.x : null;
@@ -669,6 +674,9 @@ function App() {
   useEffect(() => () => {
     if (thumbnailAdjustmentsCopiedTimeoutRef.current !== null) {
       window.clearTimeout(thumbnailAdjustmentsCopiedTimeoutRef.current);
+    }
+    if (visibleLayerFrameRef.current !== null) {
+      window.cancelAnimationFrame(visibleLayerFrameRef.current);
     }
   }, []);
 
@@ -717,11 +725,11 @@ function App() {
   const currentLayerBlockCount = useMemo(() => {
     if (!model) return 0;
     return model.blocks.filter((block) =>
-      block.y >= visibleBottomLayer
-      && block.y <= visibleTopLayer
+      block.y >= renderedVisibleBottomLayer
+      && block.y <= renderedVisibleTopLayer
       && !hiddenMaterialIds.has(materialIdForBlock(block))
     ).length;
-  }, [hiddenMaterialIds, model, visibleBottomLayer, visibleTopLayer]);
+  }, [hiddenMaterialIds, model, renderedVisibleBottomLayer, renderedVisibleTopLayer]);
 
   const materials = useMemo<MaterialSummary[]>(() => {
     if (!model) return [];
@@ -754,21 +762,16 @@ function App() {
   const layerMaterials = useMemo<MaterialSummary[]>(() => {
     if (!model) return [];
     return summarizeMaterials(model.blocks.filter((block) =>
-      block.y >= visibleBottomLayer
-      && block.y <= visibleTopLayer
+      block.y >= renderedVisibleBottomLayer
+      && block.y <= renderedVisibleTopLayer
     ));
-  }, [model, visibleBottomLayer, visibleTopLayer]);
+  }, [model, renderedVisibleBottomLayer, renderedVisibleTopLayer]);
 
   const activeMaterials = materialsScope === 'cuboid'
     ? cuboidMaterials
     : inspectorTab === 'layers'
       ? layerMaterials
       : materials;
-  const activeMaterialsLabel = materialsScope === 'cuboid'
-    ? 'Selected Area'
-    : inspectorTab === 'layers'
-      ? 'Visible Layers'
-      : 'Entire Build';
   const recipeBreakdown = useMemo(() => explodeMaterials(activeMaterials, {
     rawOverrides: new Set(),
     recipeChoice: new Map(),
@@ -831,7 +834,6 @@ function App() {
     return { steps, groups: [...byCategory.values()] };
   }, [recipeBreakdown, activeMaterials]);
   const visibleMaterials = activeMaterials;
-  const visibleMaterialsLabel = activeMaterialsLabel;
   const shoppingScope = useMemo(() => (
     model ? shoppingScopeKey(model, materialsScope, cuboidBounds) : 'none'
   ), [cuboidBoundsKey, materialsScope, model]);
@@ -1375,6 +1377,9 @@ function App() {
     setHasEditChanges(false);
     setVisibleBottomLayer(0);
     setVisibleTopLayer(nextModel.dimensions.height - 1);
+    setSingleVisibleLayer(0);
+    setRenderedVisibleBottomLayer(0);
+    setRenderedVisibleTopLayer(nextModel.dimensions.height - 1);
     setSelectedBlock(null);
     setExpandedMaterialIds(new Set());
     setMaterialSearch('');
@@ -1536,13 +1541,69 @@ function App() {
     if (file && isSchematicFileName(file.name)) void handleFile(file);
   };
 
-  const stepLayer = (delta: number) => {
-    if (!model) return;
-    setVisibleTopLayer((current) => clamp(current + delta, visibleBottomLayer, model.dimensions.height - 1));
+  const commitLayerRange = (bottomLayer = visibleBottomLayer, topLayer = visibleTopLayer) => {
+    setRenderedVisibleBottomLayer(bottomLayer);
+    setRenderedVisibleTopLayer(topLayer);
   };
 
-  const topLayerPercent = model && model.dimensions.height > 1 ? (visibleTopLayer / (model.dimensions.height - 1)) * 100 : 100;
-  const bottomLayerPercent = model && model.dimensions.height > 1 ? (visibleBottomLayer / (model.dimensions.height - 1)) * 100 : 0;
+  const cancelScheduledVisibleLayerRange = () => {
+    pendingVisibleLayerRangeRef.current = null;
+    if (visibleLayerFrameRef.current !== null) {
+      window.cancelAnimationFrame(visibleLayerFrameRef.current);
+      visibleLayerFrameRef.current = null;
+    }
+  };
+
+  const setVisibleLayerRange = (
+    bottomLayer: number,
+    topLayer: number,
+    singleLayer = singleVisibleLayer,
+    options: { commit?: boolean; immediate?: boolean } = {},
+  ) => {
+    if (options.immediate) {
+      cancelScheduledVisibleLayerRange();
+      setSingleVisibleLayer(singleLayer);
+      setVisibleBottomLayer(bottomLayer);
+      setVisibleTopLayer(topLayer);
+      if (options.commit) commitLayerRange(bottomLayer, topLayer);
+      return;
+    }
+
+    pendingVisibleLayerRangeRef.current = { bottomLayer, topLayer, singleLayer };
+    if (visibleLayerFrameRef.current !== null) return;
+
+    visibleLayerFrameRef.current = window.requestAnimationFrame(() => {
+      visibleLayerFrameRef.current = null;
+      const pending = pendingVisibleLayerRangeRef.current;
+      pendingVisibleLayerRangeRef.current = null;
+      if (!pending) return;
+      setSingleVisibleLayer(pending.singleLayer);
+      setVisibleBottomLayer(pending.bottomLayer);
+      setVisibleTopLayer(pending.topLayer);
+    });
+  };
+
+  const stepLayer = (delta: number) => {
+    if (!model) return;
+    const nextLayer = clamp(singleVisibleLayer + delta, 0, model.dimensions.height - 1);
+    setVisibleLayerRange(nextLayer, nextLayer, nextLayer, { commit: true, immediate: true });
+  };
+
+  const singleLayerPercent = model && model.dimensions.height > 1 ? (singleVisibleLayer / (model.dimensions.height - 1)) * 100 : 0;
+
+  const showSingleLayer = (layer: number, shouldCommit = false) => {
+    if (!model) return;
+    const nextLayer = clamp(layer, 0, model.dimensions.height - 1);
+    setVisibleLayerRange(nextLayer, nextLayer, nextLayer, { commit: shouldCommit, immediate: shouldCommit });
+  };
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      commitLayerRange();
+    }, 140);
+
+    return () => window.clearTimeout(timeout);
+  }, [visibleBottomLayer, visibleTopLayer]);
 
   const toggleMaterialVisibility = (id: string) => {
     setHiddenMaterialIds((current) => {
@@ -3648,7 +3709,10 @@ function App() {
               <div className="stepper" aria-label="Visible layer">
                 <button
                   type="button"
-                  onClick={() => setVisibleBottomLayer((current) => Math.max(0, current - 1))}
+                  onClick={() => {
+                    const nextBottomLayer = Math.max(0, visibleBottomLayer - 1);
+                    setVisibleLayerRange(nextBottomLayer, visibleTopLayer, singleVisibleLayer, { commit: true, immediate: true });
+                  }}
                   disabled={visibleBottomLayer <= 0}
                   title="Lower bottom layer"
                   aria-label="Lower bottom layer"
@@ -3658,8 +3722,7 @@ function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    setVisibleBottomLayer(0);
-                    setVisibleTopLayer(model.dimensions.height - 1);
+                    setVisibleLayerRange(0, model.dimensions.height - 1, singleVisibleLayer, { commit: true, immediate: true });
                   }}
                   title="Show all layers"
                   style={{ width: 'auto', padding: '0 12px', gap: 6, display: 'inline-flex', alignItems: 'center' }}
@@ -3671,7 +3734,10 @@ function App() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setVisibleTopLayer((current) => Math.min(model.dimensions.height - 1, current + 1))}
+                  onClick={() => {
+                    const nextTopLayer = Math.min(model.dimensions.height - 1, visibleTopLayer + 1);
+                    setVisibleLayerRange(visibleBottomLayer, nextTopLayer, singleVisibleLayer, { commit: true, immediate: true });
+                  }}
                   disabled={visibleTopLayer >= model.dimensions.height - 1}
                   title="Raise top layer"
                   aria-label="Raise top layer"
@@ -3754,8 +3820,8 @@ function App() {
               model={displayedModel}
               cameraMode={cameraMode}
               spectatorSpeed={spectatorSpeed}
-              visibleBottomLayer={visibleBottomLayer}
-              visibleTopLayer={visibleTopLayer}
+              visibleBottomLayer={renderedVisibleBottomLayer}
+              visibleTopLayer={renderedVisibleTopLayer}
               autoRotate={false}
               showGrid={showGrid}
               theme={theme}
@@ -4173,8 +4239,26 @@ function App() {
                     value={visibleBottomLayer}
                     onChange={(event) => {
                       const next = Number(event.target.value);
-                      setVisibleBottomLayer(Math.min(next, visibleTopLayer));
+                      setVisibleLayerRange(Math.min(next, visibleTopLayer), visibleTopLayer);
                     }}
+                    onPointerUp={(event) => setVisibleLayerRange(
+                      Math.min(Number(event.currentTarget.value), visibleTopLayer),
+                      visibleTopLayer,
+                      singleVisibleLayer,
+                      { commit: true, immediate: true },
+                    )}
+                    onKeyUp={(event) => setVisibleLayerRange(
+                      Math.min(Number(event.currentTarget.value), visibleTopLayer),
+                      visibleTopLayer,
+                      singleVisibleLayer,
+                      { commit: true, immediate: true },
+                    )}
+                    onBlur={(event) => setVisibleLayerRange(
+                      Math.min(Number(event.currentTarget.value), visibleTopLayer),
+                      visibleTopLayer,
+                      singleVisibleLayer,
+                      { commit: true, immediate: true },
+                    )}
                     aria-label="Bottom visible layer"
                   />
                 </label>
@@ -4187,20 +4271,41 @@ function App() {
                     value={visibleTopLayer}
                     onChange={(event) => {
                       const next = Number(event.target.value);
-                      setVisibleTopLayer(Math.max(next, visibleBottomLayer));
+                      setVisibleLayerRange(visibleBottomLayer, Math.max(next, visibleBottomLayer));
                     }}
+                    onPointerUp={(event) => setVisibleLayerRange(
+                      visibleBottomLayer,
+                      Math.max(Number(event.currentTarget.value), visibleBottomLayer),
+                      singleVisibleLayer,
+                      { commit: true, immediate: true },
+                    )}
+                    onKeyUp={(event) => setVisibleLayerRange(
+                      visibleBottomLayer,
+                      Math.max(Number(event.currentTarget.value), visibleBottomLayer),
+                      singleVisibleLayer,
+                      { commit: true, immediate: true },
+                    )}
+                    onBlur={(event) => setVisibleLayerRange(
+                      visibleBottomLayer,
+                      Math.max(Number(event.currentTarget.value), visibleBottomLayer),
+                      singleVisibleLayer,
+                      { commit: true, immediate: true },
+                    )}
                     aria-label="Top visible layer"
                   />
                 </label>
               </div>
-              <div className="slider-wrap layer-range-preview" style={{ '--layer-min': `${bottomLayerPercent}%`, '--layer-progress': `${topLayerPercent}%` } as CSSProperties}>
+              <div className="slider-wrap" style={{ '--layer-progress': `${singleLayerPercent}%` } as CSSProperties}>
                 <input
                   type="range"
                   min="0"
                   max={Math.max(0, model.dimensions.height - 1)}
-                  value={visibleTopLayer}
-                  onChange={(event) => setVisibleTopLayer(Math.max(Number(event.target.value), visibleBottomLayer))}
-                  aria-label="Top visible layer quick adjustment"
+                  value={singleVisibleLayer}
+                  onChange={(event) => showSingleLayer(Number(event.target.value))}
+                  onPointerUp={(event) => showSingleLayer(Number(event.currentTarget.value), true)}
+                  onKeyUp={(event) => showSingleLayer(Number(event.currentTarget.value), true)}
+                  onBlur={(event) => showSingleLayer(Number(event.currentTarget.value), true)}
+                  aria-label="Single visible layer"
                 />
               </div>
 
@@ -4244,24 +4349,6 @@ function App() {
               className={`material-list material-list-panel inspector-panel${inspectorTab === 'materials' ? ' is-active' : ''}`}
               ref={materialPanelRef}
             >
-              <div className="section-heading compact">
-                <div>
-                  <h2>
-                    {materialSearch.trim()
-                      ? `${filteredMaterials.length.toLocaleString()} of ${visibleMaterials.length.toLocaleString()} materials`
-                      : `${visibleMaterials.length.toLocaleString()} materials`}
-                  </h2>
-                  <p className="eyebrow">{visibleMaterialsLabel}</p>
-                </div>
-                <button
-                  type="button"
-                  className="secondary-button material-shopping-link"
-                  onClick={openShoppingList}
-                >
-                  <ClipboardList size={16} />
-                  Shopping List
-                </button>
-              </div>
               <div className="segmented-control" role="group" aria-label="Materials scope">
                 <button
                   type="button"
