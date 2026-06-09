@@ -2492,19 +2492,6 @@ function App() {
               <Search size={19} />
               <span>Inspect</span>
             </button>
-            <button
-              type="button"
-              role="tab"
-              className={appView === 'edit' ? 'is-active' : ''}
-              onClick={() => activateEditTool('select')}
-              aria-selected={appView === 'edit'}
-              aria-label="Edit"
-              title="Edit"
-              disabled={!model}
-            >
-              <Pencil size={19} />
-              <span>Edit</span>
-            </button>
             {UV_VIEW_ENABLED && (
               <button
                 type="button"
