@@ -87,9 +87,11 @@ export function MaterialList({
                   onClick={() => onToggleExpanded(material.id)}
                 >
                   {renderPreview(material)}
-                  <span>{material.label}</span>
-                  <strong>{material.count.toLocaleString()}</strong>
-                  <ChevronDown className="material-disclosure" size={15} aria-hidden="true" />
+                  <span className="material-name">{material.label}</span>
+                  <span className="material-actions">
+                    <strong className="material-count-badge">{material.count.toLocaleString()}</strong>
+                    <ChevronDown className="material-disclosure" size={15} aria-hidden="true" />
+                  </span>
                 </button>
                 <button
                   type="button"
