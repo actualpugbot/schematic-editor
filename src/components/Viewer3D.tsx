@@ -20,6 +20,7 @@ interface Viewer3DProps {
   autoRotate: boolean;
   showGrid: boolean;
   theme: 'light' | 'dark';
+  stageBackgroundColor?: string;
   selectedBlock: VoxelBlock | null;
   placementPreviewBlock: VoxelBlock | null;
   cuboidBounds?: CuboidBounds | null;
@@ -278,7 +279,7 @@ export function Viewer3D(props: InternalViewerProps) {
 
     const scene = new THREE.Scene();
     const colors = sceneThemeColors(props.theme);
-    scene.background = new THREE.Color(colors.background);
+    scene.background = new THREE.Color(props.stageBackgroundColor ?? colors.background);
     scene.fog = null;
     sceneRef.current = scene;
 
@@ -606,7 +607,7 @@ export function Viewer3D(props: InternalViewerProps) {
   useEffect(() => {
     const colors = sceneThemeColors(props.theme);
     if (sceneRef.current) {
-      sceneRef.current.background = new THREE.Color(colors.background);
+      sceneRef.current.background = new THREE.Color(props.stageBackgroundColor ?? colors.background);
     }
 
     const floorMaterial = floorRef.current?.material;
@@ -618,7 +619,7 @@ export function Viewer3D(props: InternalViewerProps) {
     if (cuboidOverlayRef.current) {
       applyCuboidOverlayColors(cuboidOverlayRef.current, props.theme);
     }
-  }, [props.theme]);
+  }, [props.stageBackgroundColor, props.theme]);
 
   useEffect(() => {
     if (!controlsRef.current) return;

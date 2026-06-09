@@ -103,6 +103,7 @@ type ThumbnailLoadState = 'idle' | 'loading' | 'ready' | 'failed';
 type CuboidCornerId = 'a' | 'b';
 type Direction = 'up' | 'down' | 'north' | 'south' | 'west' | 'east';
 type RotationDirection = 'clockwise' | 'counterclockwise';
+type ControlRailSide = 'left' | 'right';
 
 const UV_VIEW_ENABLED = false;
 const THUMBNAIL_DEBUG_ENABLED = false;
@@ -286,6 +287,8 @@ type ColorGroupId =
 const schematicFileExtensions = new Set(['.litematic', '.schem', '.schematic', '.nbt']);
 const themeStorageKey = 'schematic-editor-theme';
 const leftRailCollapsedStorageKey = 'schematic-editor-left-rail-collapsed';
+const controlRailSideStorageKey = 'schematic-editor-control-rail-side';
+const stageBackgroundColorStorageKey = 'schematic-editor-stage-background-color';
 const shoppingListStoragePrefix = 'schematic-editor-shopping-list';
 const selectionStoragePrefix = 'schematic-editor-selections';
 const cameraStoragePrefix = 'schematic-editor-cameras';
@@ -349,6 +352,7 @@ const defaultThumbnailDisplayAdjustment: ThumbnailDisplayAdjustment = {
   rotateX: 0,
   rotateY: 0,
 };
+const defaultStageBackgroundColor = '#f4f8f8';
 const thumbnailVerticalFacingBlockIds = new Set([
   'minecraft:amethyst_cluster',
   'minecraft:small_amethyst_bud',
@@ -565,6 +569,15 @@ function App() {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem(leftRailCollapsedStorageKey) === 'true';
   });
+  const [controlRailSide, setControlRailSide] = useState<ControlRailSide>(() => {
+    if (typeof window === 'undefined') return 'right';
+    return window.localStorage.getItem(controlRailSideStorageKey) === 'left' ? 'left' : 'right';
+  });
+  const [stageBackgroundColor, setStageBackgroundColor] = useState(() => {
+    if (typeof window === 'undefined') return defaultStageBackgroundColor;
+    const savedColor = window.localStorage.getItem(stageBackgroundColorStorageKey);
+    return savedColor && /^#[0-9a-f]{6}$/i.test(savedColor) ? savedColor : defaultStageBackgroundColor;
+  });
   const [model, setModel] = useState<SchematicModel | null>(null);
   const [schematicOrigin, setSchematicOrigin] = useState<SchematicOrigin>('default');
   const [appView, setAppView] = useState<AppView>('inspect');
@@ -576,6 +589,7 @@ function App() {
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [hasEditChanges, setHasEditChanges] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>('loading');
+  const [loadProgressMessage, setLoadProgressMessage] = useState('Loading featured schematic...');
   const [error, setError] = useState('');
   const [visibleBottomLayer, setVisibleBottomLayer] = useState(0);
   const [visibleTopLayer, setVisibleTopLayer] = useState(model?.dimensions.height ? model.dimensions.height - 1 : 0);
@@ -607,6 +621,7 @@ function App() {
   const [selectionAreas, setSelectionAreas] = useState<SelectionArea[]>([]);
   const [activeSelectionId, setActiveSelectionId] = useState<string | null>(null);
   const [selectionUndoStack, setSelectionUndoStack] = useState<CuboidCorners[]>([]);
+  const [editUndoStack, setEditUndoStack] = useState<SchematicModel[]>([]);
   const [savedCameraViews, setSavedCameraViews] = useState<SavedCameraView[]>([]);
   const [materialsScope, setMaterialsScope] = useState<MaterialsScope>('build');
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit');
@@ -711,7 +726,10 @@ function App() {
   const materials = useMemo<MaterialSummary[]>(() => {
     if (!model) return [];
 
-    return summarizeMaterials(model.blocks);
+    return [
+      ...summarizeMaterials(model.blocks),
+      ...summarizeExtraMaterials(model.extraMaterials),
+    ].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
   }, [model]);
 
   const cuboidBounds = useMemo(() => {
@@ -1273,6 +1291,14 @@ function App() {
   }, [leftRailCollapsed]);
 
   useEffect(() => {
+    window.localStorage.setItem(controlRailSideStorageKey, controlRailSide);
+  }, [controlRailSide]);
+
+  useEffect(() => {
+    window.localStorage.setItem(stageBackgroundColorStorageKey, stageBackgroundColor);
+  }, [stageBackgroundColor]);
+
+  useEffect(() => {
     if (!isEditingSchematicName) return;
 
     const frame = window.requestAnimationFrame(() => {
@@ -1325,6 +1351,19 @@ function App() {
     return () => window.cancelAnimationFrame(frame);
   }, [filteredMaterials, materialSearch, selectedMaterialId]);
 
+  const beginSchematicLoad = (message: string) => {
+    setLoadState('loading');
+    setLoadProgressMessage(message);
+    setError('');
+    setModel(null);
+    setSelectedBlock(null);
+    setCuboidCorners(emptyCuboidCorners());
+    setSelectionAreas([]);
+    setActiveSelectionId(null);
+    setSelectionUndoStack([]);
+    setMaterialsScope('build');
+  };
+
   const applySchematic = (nextModel: SchematicModel, nextDocument: NbtDocument | null, nextExtension: string, nextOrigin: SchematicOrigin = 'uploaded') => {
     setModel(nextModel);
     setSchematicOrigin(nextOrigin);
@@ -1345,6 +1384,7 @@ function App() {
     setSelectionAreas([]);
     setActiveSelectionId(null);
     setSelectionUndoStack([]);
+    setEditUndoStack([]);
     setSavedCameraViews([]);
     setMaterialsScope('build');
     setEditTool('select');
@@ -1354,12 +1394,12 @@ function App() {
     setReplaceFromBlock(nextModel.blocks[0]?.stateKey ?? '');
     setReplaceToBlock(emptyBuildBlock);
     setEditNotice('');
+    setLoadProgressMessage('Schematic ready.');
     setLoadState('ready');
   };
 
   const createNewSchematic = () => {
-    setLoadState('loading');
-    setError('');
+    beginSchematicLoad('Creating an empty build platform...');
     applySchematic(createStarterModel(), null, defaultExportFormat, 'new');
     setAppView('edit');
   };
@@ -1368,17 +1408,20 @@ function App() {
     let isCancelled = false;
 
     const loadDefaultSchematic = async () => {
-      setLoadState('loading');
-      setError('');
+      beginSchematicLoad('Loading featured schematic...');
 
       try {
+        setLoadProgressMessage(`Fetching ${defaultSchematicFileName}...`);
         const response = await fetch(defaultSchematicUrl);
         if (!response.ok) {
           throw new Error(`Could not load ${defaultSchematicFileName}.`);
         }
 
+        setLoadProgressMessage('Reading schematic data...');
         const buffer = await response.arrayBuffer();
+        setLoadProgressMessage('Parsing blocks and materials...');
         const parsed = parseSchematicDocument(buffer, { fileName: defaultSchematicFileName });
+        setLoadProgressMessage('Preparing the 3D stage...');
         const defaultModel = { ...parsed.model, name: defaultSchematicName };
         const defaultDocument = renameSchematicDocument(parsed.nbt, parsed.model.source, defaultSchematicName);
         if (isCancelled) return;
@@ -1387,15 +1430,7 @@ function App() {
         if (isCancelled) return;
 
         const fallback = createSampleModel();
-        setModel(fallback);
-        setSchematicName(fallback.name);
-        setSchematicOrigin('uploaded');
-        setSchematicDocument(null);
-        setSchematicExtension(defaultExportFormat);
-        setExportFormat(defaultExportFormat);
-        setVisibleBottomLayer(0);
-        setVisibleTopLayer(fallback.dimensions.height - 1);
-        setLoadState('ready');
+        applySchematic(fallback, null, defaultExportFormat, 'uploaded');
         setError(caught instanceof Error ? caught.message : 'Could not load the default schematic.');
       }
     };
@@ -1408,15 +1443,18 @@ function App() {
   }, []);
 
   const handleFile = async (file: File) => {
-    setLoadState('loading');
-    setError('');
+    beginSchematicLoad(`Opening ${file.name}...`);
 
     try {
+      setLoadProgressMessage('Reading file from your device...');
       const buffer = await file.arrayBuffer();
+      setLoadProgressMessage('Parsing schematic data...');
       const parsed = parseSchematicDocument(buffer, { fileName: file.name });
+      setLoadProgressMessage('Building materials and 3D geometry...');
       applySchematic(parsed.model, parsed.nbt, fileExtension(file.name), 'uploaded');
     } catch (caught) {
       setLoadState('error');
+      setLoadProgressMessage('Could not load schematic.');
       setError(caught instanceof Error ? caught.message : 'Could not read this schematic file.');
     }
   };
@@ -1716,27 +1754,47 @@ function App() {
   };
 
   const updateModelBlocks = (updater: (blocks: VoxelBlock[], currentModel: SchematicModel) => VoxelBlock[]) => {
-    setModel((current) => {
-      if (!current) return current;
+    if (!model) return;
 
-      const selectedKey = selectedBlock ? blockPositionKey(selectedBlock) : null;
-      const blocks = updater(current.blocks, current)
-        .filter((block) => blockInsideModel(block, current))
-        .sort(compareBlocks);
-      const nextModel = finalizeSchematicModel({
-        ...current,
-        source: 'Sponge .schem',
-        blocks,
-        paletteSize: new Set(blocks.map((block) => block.stateKey)).size,
-        warnings: current.warnings,
-      });
-      if (selectedKey) {
-        setSelectedBlock(blocks.find((block) => blockPositionKey(block) === selectedKey) ?? null);
-      }
+    const selectedKey = selectedBlock ? blockPositionKey(selectedBlock) : null;
+    const blocks = updater(model.blocks, model)
+      .filter((block) => blockInsideModel(block, model))
+      .sort(compareBlocks);
+    const nextModel = finalizeSchematicModel({
+      ...model,
+      source: 'Sponge .schem',
+      blocks,
+      paletteSize: new Set(blocks.map((block) => block.stateKey)).size,
+      warnings: model.warnings,
+    });
+    if (selectedKey) {
+      setSelectedBlock(blocks.find((block) => blockPositionKey(block) === selectedKey) ?? null);
+    }
+    setEditUndoStack((stack) => [model, ...stack].slice(0, 24));
+    setHasEditChanges(true);
+    setSchematicExtension('.schem');
+    setModel(nextModel);
+  };
+
+  const undoLastEdit = () => {
+    setEditUndoStack((current) => {
+      const [previous, ...rest] = current;
+      if (!previous) return current;
+      setModel(previous);
+      setSelectedBlock(null);
       setHasEditChanges(true);
       setSchematicExtension('.schem');
-      return nextModel;
+      setEditNotice('Undid last schematic edit.');
+      return rest;
     });
+  };
+
+  const undoLastChange = () => {
+    if (editUndoStack.length > 0) {
+      undoLastEdit();
+      return;
+    }
+    undoCuboidSelection();
   };
 
   const setBlockAt = (x: number, y: number, z: number, stateKey: string) => {
@@ -1852,6 +1910,46 @@ function App() {
       blockPositionKey(block) === selectedKey ? rotateVoxelBlock(block, block, direction) : block
     )));
     setEditNotice(`${formatBlockName(selectedBlock.name)} rotated ${rotationLabel(direction)}.`);
+  };
+
+  const shiftSelectedArea = (direction: Direction) => {
+    if (!model || !cuboidBounds) {
+      setEditNotice('Select an area before moving it.');
+      return;
+    }
+
+    const offset = directionOffset(direction);
+    const shiftedBounds = translateBounds(cuboidBounds, offset);
+    if (!boundsInsideModel(shiftedBounds, model)) {
+      setEditNotice(`Selected area cannot move ${directionLabel(direction).toLocaleLowerCase()} outside the schematic bounds.`);
+      return;
+    }
+
+    const sourceBlocks = model.blocks.filter((block) => blockInBounds(block, cuboidBounds));
+    const sourceKeys = keysForBounds(cuboidBounds);
+    const targetKeys = new Set(Array.from(sourceKeys, (key) => pointKey(translatePoint(pointFromKey(key), offset))));
+    const shiftedBlocks = sourceBlocks.map((block) => createVoxelBlock(
+      block.x + offset.x,
+      block.y + offset.y,
+      block.z + offset.z,
+      block.stateKey,
+    ));
+
+    updateModelBlocks((blocks) => [
+      ...blocks.filter((block) => !sourceKeys.has(blockPositionKey(block)) && !targetKeys.has(blockPositionKey(block))),
+      ...shiftedBlocks,
+    ]);
+    commitCuboidCorners({
+      a: cuboidCorners.a ? translatePoint(cuboidCorners.a, offset) : boundsMinPoint(shiftedBounds),
+      b: cuboidCorners.b ? translatePoint(cuboidCorners.b, offset) : boundsMaxPoint(shiftedBounds),
+    });
+    setSelectedBlock((current) => {
+      if (!current || !sourceKeys.has(blockPositionKey(current))) return null;
+      const nextPoint = translatePoint(current, offset);
+      return shiftedBlocks.find((block) => blockPositionKey(block) === pointKey(nextPoint)) ?? null;
+    });
+    setMaterialsScope('cuboid');
+    setEditNotice(`${sourceBlocks.length.toLocaleString()} block${sourceBlocks.length === 1 ? '' : 's'} moved ${directionLabel(direction).toLocaleLowerCase()}.`);
   };
 
   const chooseBuildBlock = (stateKey: string) => {
@@ -2185,25 +2283,25 @@ function App() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (appView !== 'edit' || (event.key !== 'Delete' && event.key !== 'Backspace')) return;
+      if (isAppEditableElement(event.target)) return;
 
-      const target = event.target as HTMLElement | null;
-      const tagName = target?.tagName;
-      if (
-        target?.isContentEditable
-        || tagName === 'INPUT'
-        || tagName === 'TEXTAREA'
-        || tagName === 'SELECT'
-      ) {
+      const key = event.key.toLocaleLowerCase();
+      if ((event.ctrlKey || event.metaKey) && key === 'z' && !event.shiftKey) {
+        if (editUndoStack.length > 0 || selectionUndoStack.length > 0) {
+          event.preventDefault();
+          undoLastChange();
+        }
         return;
       }
 
-      if (deleteSelection()) event.preventDefault();
+      if (appView === 'edit' && (event.key === 'Delete' || event.key === 'Backspace')) {
+        if (deleteSelection()) event.preventDefault();
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [appView, deleteSelection]);
+  }, [appView, deleteSelection, editUndoStack.length, selectionUndoStack.length, undoLastChange]);
 
   return (
     <ThumbnailDisplayAdjustmentsContext.Provider value={thumbnailDisplayAdjustments}>
@@ -2291,6 +2389,25 @@ function App() {
           >
             {isDarkTheme ? <Sun size={18} /> : <Moon size={18} />}
           </button>
+          <button
+            type="button"
+            className={`topbar-icon-btn${controlRailSide === 'left' ? ' is-on' : ''}`}
+            onClick={() => setControlRailSide((side) => (side === 'right' ? 'left' : 'right'))}
+            title={controlRailSide === 'right' ? 'Move controls to left side' : 'Move controls to right side'}
+            aria-pressed={controlRailSide === 'left'}
+            aria-label={controlRailSide === 'right' ? 'Move controls to left side' : 'Move controls to right side'}
+          >
+            {controlRailSide === 'right' ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+          </button>
+          <label className="topbar-color-picker" title="Stage background color">
+            <span>Stage</span>
+            <input
+              type="color"
+              value={stageBackgroundColor}
+              onChange={(event) => setStageBackgroundColor(event.target.value)}
+              aria-label="Stage background color"
+            />
+          </label>
           <div
             className={`topbar-export${isExportMenuOpen ? ' is-open' : ''}`}
             ref={exportMenuRef}
@@ -2349,7 +2466,7 @@ function App() {
         </div>
       </header>
 
-      <div className={`workspace${leftRailCollapsed ? ' is-left-rail-collapsed' : ''}${appView === 'shopping' || appView === 'shulker' ? ' is-shopping' : ''}${appView === 'resource' ? ' is-resource' : ''}${thumbnailDebugActive ? ' is-thumbnail-debug' : ''}`}>
+      <div className={`workspace${leftRailCollapsed ? ' is-left-rail-collapsed' : ''}${controlRailSide === 'left' ? ' is-control-rail-left' : ''}${appView === 'shopping' || appView === 'shulker' ? ' is-shopping' : ''}${appView === 'resource' ? ' is-resource' : ''}${thumbnailDebugActive ? ' is-thumbnail-debug' : ''}`}>
         <button
           type="button"
           className="rail-toggle"
@@ -2497,7 +2614,13 @@ function App() {
           className={`viewport-panel${appView === 'shopping' || appView === 'shulker' || appView === 'resource' || thumbnailDebugActive ? ' shopping-viewport' : ''}${appView === 'resource' ? ' resource-viewport' : ''}${appView === 'shulker' ? ' shulker-viewport' : ''}${thumbnailDebugActive ? ' thumbnail-debug-viewport' : ''}${selectedBlock && !textureViewActive && appView !== 'shopping' && appView !== 'shulker' && appView !== 'resource' && !thumbnailDebugActive ? ' has-selection-modal' : ''}`}
           aria-label={appView === 'resource' ? 'Resource Calculator' : appView === 'shulker' ? 'Shulker Box View' : appView === 'shopping' ? 'Shopping list' : thumbnailDebugActive ? 'Thumbnail debug' : 'Schematic 3D viewport'}
         >
-          {thumbnailDebugActive ? (
+          {loadState === 'loading' ? (
+            <div className="load-progress" role="status" aria-live="polite">
+              <div className="load-spinner" aria-hidden="true" />
+              <strong>Loading schematic</strong>
+              <span>{loadProgressMessage}</span>
+            </div>
+          ) : thumbnailDebugActive ? (
             <section className="thumbnail-debug-board" aria-label="Thumbnail debug catalog">
               <div className="thumbnail-debug-header">
                 <div className="shopping-title-block">
@@ -3597,6 +3720,7 @@ function App() {
                   autoRotate={false}
                   showGrid={false}
                   theme={theme}
+                  stageBackgroundColor={stageBackgroundColor}
                   hiddenMaterialIds={displayedHiddenMaterialIds}
                   playerHeadSelections={playerHeadSelections}
                   selectedBlock={null}
@@ -3621,6 +3745,7 @@ function App() {
                   autoRotate={false}
                   showGrid={false}
                   theme={theme}
+                  stageBackgroundColor={stageBackgroundColor}
                   hiddenMaterialIds={displayedHiddenMaterialIds}
                   playerHeadSelections={playerHeadSelections}
                   selectedBlock={null}
@@ -3647,6 +3772,7 @@ function App() {
               autoRotate={false}
               showGrid={showGrid}
               theme={theme}
+              stageBackgroundColor={stageBackgroundColor}
               hiddenMaterialIds={hiddenMaterialIds}
               playerHeadSelections={playerHeadSelections}
               selectedBlock={selectedBlock}
@@ -3965,6 +4091,28 @@ function App() {
                       model={model}
                       onStep={stepCuboidCorner}
                     />
+                    <div className="cuboid-move-panel" aria-label="Move selected area">
+                      <div className="cuboid-corner-editor-head">
+                        <p>Move selected area</p>
+                        <Move3d size={16} strokeWidth={2.1} aria-hidden="true" />
+                      </div>
+                      <div className="cuboid-move-grid">
+                        {(['up', 'down', 'north', 'south', 'west', 'east'] as Direction[]).map((direction) => {
+                          const canMove = Boolean(cuboidBounds && boundsInsideModel(translateBounds(cuboidBounds, directionOffset(direction)), model));
+
+                          return (
+                            <button
+                              type="button"
+                              key={direction}
+                              onClick={() => shiftSelectedArea(direction)}
+                              disabled={!canMove}
+                            >
+                              {directionLabel(direction)}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                 </>
               ) : (
@@ -4347,6 +4495,31 @@ function App() {
                       <RotateCw size={16} />
                       90 Right
                     </button>
+                  </div>
+                  <div className="edit-transform-move">
+                    <div className="section-heading compact">
+                      <div>
+                        <h2>Move</h2>
+                        <p className="eyebrow">Selected area</p>
+                      </div>
+                      <Move3d size={18} />
+                    </div>
+                    <div className="cuboid-move-grid">
+                      {(['up', 'down', 'north', 'south', 'west', 'east'] as Direction[]).map((direction) => {
+                        const canMove = Boolean(cuboidBounds && boundsInsideModel(translateBounds(cuboidBounds, directionOffset(direction)), model));
+
+                        return (
+                          <button
+                            type="button"
+                            key={direction}
+                            onClick={() => shiftSelectedArea(direction)}
+                            disabled={!canMove}
+                          >
+                            {directionLabel(direction)}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                   {editNotice && <p className="edit-notice">{editNotice}</p>}
                 </section>
@@ -4888,6 +5061,15 @@ function filterMaterials<T extends MaterialListItem>(materials: T[], search: str
   });
 }
 
+function isAppEditableElement(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tagName = target.tagName;
+  return target.isContentEditable
+    || tagName === 'INPUT'
+    || tagName === 'TEXTAREA'
+    || tagName === 'SELECT';
+}
+
 function materialIdForStateKey(stateKey: string): string {
   const id = stripBlockStateProperties(stateKey);
   const path = id.replace(/^minecraft:/, '');
@@ -5404,6 +5586,26 @@ function summarizeMaterials(blocks: VoxelBlock[]): MaterialSummary[] {
   }
 
   return Array.from(counts.values()).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+
+function summarizeExtraMaterials(extraMaterials: SchematicModel['extraMaterials']): MaterialSummary[] {
+  if (!extraMaterials?.length) return [];
+
+  return extraMaterials
+    .filter((material) => material.count > 0)
+    .map((material) => {
+      const stateKey = material.stateKey ?? recipeItemStateKey(material.id);
+      const preview = createVoxelBlock(0, 0, 0, stateKey);
+
+      return {
+        id: material.id,
+        label: formatBlockName(material.id),
+        count: material.count,
+        color: preview.color,
+        stateKey,
+        thumbnailLayers: materialThumbnailLayers(stateKey),
+      };
+    });
 }
 
 function materialEntriesForBlock(block: VoxelBlock): Array<{ id: string; quantity: number; stateKey: string }> {
@@ -6367,6 +6569,25 @@ function boundsInsideModel(bounds: CuboidBounds, model: SchematicModel): boolean
     && bounds.minZ >= 0
     && bounds.maxZ < model.dimensions.length
   );
+}
+
+function translatePoint(point: CuboidPoint, offset: CuboidPoint): CuboidPoint {
+  return {
+    x: point.x + offset.x,
+    y: point.y + offset.y,
+    z: point.z + offset.z,
+  };
+}
+
+function translateBounds(bounds: CuboidBounds, offset: CuboidPoint): CuboidBounds {
+  return {
+    minX: bounds.minX + offset.x,
+    minY: bounds.minY + offset.y,
+    minZ: bounds.minZ + offset.z,
+    maxX: bounds.maxX + offset.x,
+    maxY: bounds.maxY + offset.y,
+    maxZ: bounds.maxZ + offset.z,
+  };
 }
 
 function compareBlocks(a: VoxelBlock, b: VoxelBlock): number {

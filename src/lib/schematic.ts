@@ -48,6 +48,12 @@ export interface DecoratedPotDecorations {
   front?: string;
 }
 
+export interface SchematicExtraMaterial {
+  id: string;
+  count: number;
+  stateKey?: string;
+}
+
 export interface SchematicModel {
   name: string;
   source: 'Sponge .schem' | 'Legacy .schematic' | 'Litematica .litematic' | 'Sample';
@@ -57,6 +63,7 @@ export interface SchematicModel {
   paletteSize: number;
   layerCounts: number[];
   warnings: string[];
+  extraMaterials?: SchematicExtraMaterial[];
 }
 
 export type SchematicExportFormat = '.litematic' | '.schem' | '.schematic';
@@ -530,6 +537,7 @@ function parseSpongeSchematic(schematic: NbtCompound, fileName = 'Uploaded schem
     blocks,
     paletteSize,
     warnings,
+    extraMaterials: readPaintingExtraMaterials(asList(schematic.Entities)),
   });
 }
 
@@ -603,6 +611,7 @@ function parseLegacySchematic(schematic: NbtCompound, fileName = 'Uploaded schem
     blocks,
     paletteSize: new Set(blocks.map((block) => block.name)).size,
     warnings,
+    extraMaterials: readPaintingExtraMaterials(asList(schematic.Entities)),
   });
 }
 
@@ -770,6 +779,7 @@ function parseLitematic(root: NbtCompound, fileName = 'Uploaded litematic'): Sch
   const blocksWithWorldCoords: VoxelBlock[] = [];
   const warnings: string[] = [];
   const paletteNames = new Set<string>();
+  const extraMaterialCounts = new Map<string, SchematicExtraMaterial>();
   let minX = Number.POSITIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
   let minZ = Number.POSITIVE_INFINITY;
@@ -809,6 +819,7 @@ function parseLitematic(root: NbtCompound, fileName = 'Uploaded litematic'): Sch
     const paletteEntries = palette.map(readLitematicPaletteEntry);
     const playerHeadTextures = readLitematicPlayerHeadTextures(rawRegion);
     const decoratedPotDecorations = readLitematicDecoratedPotDecorations(rawRegion);
+    mergeExtraMaterials(extraMaterialCounts, readPaintingExtraMaterials(asList(rawRegion.Entities)));
     const totalBlocks = dimensions.width * dimensions.height * dimensions.length;
     const bitsPerEntry = Math.max(2, Math.ceil(Math.log2(Math.max(1, paletteEntries.length))));
     const blockIds = decodePackedLongArray(blockStates, totalBlocks, bitsPerEntry);
@@ -868,6 +879,7 @@ function parseLitematic(root: NbtCompound, fileName = 'Uploaded litematic'): Sch
     blocks,
     paletteSize: paletteNames.size,
     warnings,
+    extraMaterials: Array.from(extraMaterialCounts.values()),
   });
 }
 
@@ -884,6 +896,37 @@ function finalizeModel(model: Omit<SchematicModel, 'layerCounts'>): SchematicMod
     ...model,
     layerCounts,
   };
+}
+
+function readPaintingExtraMaterials(entities: unknown[] | null): SchematicExtraMaterial[] {
+  if (!entities) return [];
+
+  let count = 0;
+  for (const entity of entities) {
+    if (!isCompound(entity)) continue;
+    const id = normalizeEntityId(asString(entity.id ?? entity.Id));
+    if (id === 'minecraft:painting') count += 1;
+  }
+
+  return count > 0 ? [{ id: 'minecraft:painting', count, stateKey: 'minecraft:painting' }] : [];
+}
+
+function mergeExtraMaterials(target: Map<string, SchematicExtraMaterial>, materials: SchematicExtraMaterial[]) {
+  for (const material of materials) {
+    const current = target.get(material.id);
+    if (current) {
+      current.count += material.count;
+    } else {
+      target.set(material.id, { ...material });
+    }
+  }
+}
+
+function normalizeEntityId(id: string): string {
+  const normalized = id.trim().toLocaleLowerCase();
+  if (!normalized) return '';
+  if (normalized === 'painting') return 'minecraft:painting';
+  return normalized.includes(':') ? normalized : `minecraft:${normalized}`;
 }
 
 function unwrapSchematic(root: NbtCompound): NbtCompound {
