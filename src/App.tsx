@@ -297,8 +297,8 @@ const selectionStoragePrefix = 'schematic-editor-selections';
 const cameraStoragePrefix = 'schematic-editor-cameras';
 const emptyBuildBlock = 'minecraft:air';
 const shulkerInventorySlots = 27;
-const initialShulkerBoxRenderCount = 6;
-const shulkerBoxRenderBatchSize = 12;
+const initialShulkerBoxRenderCount = 12;
+const shulkerBoxRenderBatchSize = 18;
 const maxStackSize = 64;
 const defaultHotbarBlocks = [
   'minecraft:stone',
@@ -3357,7 +3357,7 @@ function App() {
                   <section className="shulker-card" key={box.id} aria-label={box.label}>
                     <div className="shulker-card-head">
                       <div className="shulker-card-title">
-                        <InventoryPreview stateKey={shulkerBoxStateKey(box.color)} color={shulkerColorHex(box.color)} />
+                        <BlockPreview stateKey={shulkerBoxStateKey(box.color)} color={shulkerColorHex(box.color)} />
                         <div>
                           <h3>{box.label}</h3>
                           <span>{box.groupLabel} · {box.itemCount.toLocaleString()} items · {box.usedSlots} / {shulkerInventorySlots} slots</span>
@@ -3376,12 +3376,12 @@ function App() {
                         >
                           {slot && (
                             <>
-                              <InventoryPreview
-                                stateKey={slot.material.stateKey}
-                                color={slot.material.color}
-                                layers={slot.material.thumbnailLayers}
-                                size={42}
-                              />
+                                <MaterialPreview
+                                  stateKey={slot.material.stateKey}
+                                  color={slot.material.color}
+                                  layers={slot.material.thumbnailLayers}
+                                  size={42}
+                                />
                               <strong>{slot.count}</strong>
                             </>
                           )}
@@ -4903,36 +4903,6 @@ function MaterialPreview(props: {
 }) {
   const forceSpriteStateKey = alwaysMaterialSpriteStateKey(props.stateKey);
   return <BlockPreview {...props} fallbackToSprite forceSpriteStateKey={forceSpriteStateKey} />;
-}
-
-function InventoryPreview(props: {
-  stateKey: string;
-  color: number;
-  layers?: BlockThumbnailLayer[];
-  size?: number;
-}) {
-  const spriteStateKey = alwaysMaterialSpriteStateKey(props.stateKey) ?? props.stateKey;
-  const spriteUrl = materialSpriteUrlForStateKey(spriteStateKey);
-
-  if (spriteUrl) {
-    return (
-      <span
-        className="block-preview"
-        data-shape="sprite"
-        data-state="ready"
-        aria-hidden="true"
-        style={{
-          '--block-thumbnail': `url("${spriteUrl}")`,
-          '--block-preview-size': props.size ? `${props.size}px` : undefined,
-          '--block-preview-scale': '1',
-          '--block-preview-rotate-x': '0deg',
-          '--block-preview-rotate-y': '0deg',
-        } as CSSProperties}
-      />
-    );
-  }
-
-  return <MaterialPreview {...props} />;
 }
 
 function thumbnailDisplayAdjustmentKey(stateKey: string): string {
