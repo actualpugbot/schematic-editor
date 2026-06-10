@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   Box,
   BoxSelect,
@@ -297,8 +297,8 @@ const selectionStoragePrefix = 'schematic-editor-selections';
 const cameraStoragePrefix = 'schematic-editor-cameras';
 const emptyBuildBlock = 'minecraft:air';
 const shulkerInventorySlots = 27;
-const initialShulkerBoxRenderCount = 12;
-const shulkerBoxRenderBatchSize = 18;
+const initialShulkerBoxRenderCount = 6;
+const shulkerBoxRenderBatchSize = 6;
 const maxStackSize = 64;
 const defaultHotbarBlocks = [
   'minecraft:stone',
@@ -392,6 +392,38 @@ const thumbnailVerticalFacingBlockIds = new Set([
 ]);
 const defaultBlockPreviewAdjustments = thumbnailDisplayAdjustmentsJson as unknown as ThumbnailDisplayAdjustmentMap;
 const ThumbnailDisplayAdjustmentsContext = createContext<ThumbnailDisplayAdjustmentMap>(defaultBlockPreviewAdjustments);
+const blockPreviewVisibilityRootMargin = '420px';
+const blockPreviewVisibilityCallbacks = new Map<Element, () => void>();
+let blockPreviewVisibilityObserver: IntersectionObserver | null = null;
+
+function observeBlockPreviewVisibility(element: Element, onVisible: () => void): () => void {
+  if (typeof IntersectionObserver === 'undefined') {
+    onVisible();
+    return () => {};
+  }
+
+  if (!blockPreviewVisibilityObserver) {
+    blockPreviewVisibilityObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const callback = blockPreviewVisibilityCallbacks.get(entry.target);
+        if (!callback) continue;
+        blockPreviewVisibilityCallbacks.delete(entry.target);
+        blockPreviewVisibilityObserver?.unobserve(entry.target);
+        callback();
+      }
+    }, { rootMargin: blockPreviewVisibilityRootMargin });
+  }
+
+  blockPreviewVisibilityCallbacks.set(element, onVisible);
+  blockPreviewVisibilityObserver.observe(element);
+
+  return () => {
+    blockPreviewVisibilityCallbacks.delete(element);
+    blockPreviewVisibilityObserver?.unobserve(element);
+  };
+}
+
 const woodTypeOrder = [
   'oak',
   'spruce',
@@ -2349,6 +2381,7 @@ function App() {
 
   const openShulkerView = () => {
     if (!model) return;
+    setVisibleShulkerBoxCount(0);
     setAppView('shulker');
   };
 
@@ -4772,17 +4805,7 @@ function App() {
   );
 }
 
-function BlockPreview({
-  stateKey,
-  color,
-  layers,
-  size,
-  rotateX,
-  rotateY,
-  adjustmentKey,
-  fallbackToSprite = false,
-  forceSpriteStateKey = null,
-}: {
+interface BlockPreviewProps {
   stateKey: string;
   color: number;
   layers?: BlockThumbnailLayer[];
@@ -4792,11 +4815,26 @@ function BlockPreview({
   adjustmentKey?: string;
   fallbackToSprite?: boolean;
   forceSpriteStateKey?: string | null;
-}) {
+}
+
+const BlockPreview = memo(function BlockPreview({
+  stateKey,
+  color,
+  layers,
+  size,
+  rotateX,
+  rotateY,
+  adjustmentKey,
+  fallbackToSprite = false,
+  forceSpriteStateKey = null,
+}: BlockPreviewProps) {
   const thumbnailDisplayAdjustments = useContext(ThumbnailDisplayAdjustmentsContext);
   const defaultAdjustment = thumbnailDisplayAdjustments[adjustmentKey ?? thumbnailDisplayAdjustmentKey(stateKey)]
     ?? defaultThumbnailDisplayAdjustment;
-  const previewRequest = resolveThumbnailPreviewRequest(stateKey, layers, defaultAdjustment);
+  const previewRequest = useMemo(
+    () => resolveThumbnailPreviewRequest(stateKey, layers, defaultAdjustment),
+    [defaultAdjustment, layers, stateKey],
+  );
   const forcedSpriteUrl = forceSpriteStateKey ? materialSpriteUrlForStateKey(forceSpriteStateKey) : null;
   const fallbackSpriteUrl = fallbackToSprite ? materialSpriteUrlForStateKey(stateKey) : null;
   const previewRef = useRef<HTMLSpanElement | null>(null);
@@ -4815,20 +4853,7 @@ function BlockPreview({
     const preview = previewRef.current;
     if (!preview) return;
 
-    if (typeof IntersectionObserver === 'undefined') {
-      setIsVisible(true);
-      return;
-    }
-
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        setIsVisible(true);
-        observer.disconnect();
-      }
-    }, { rootMargin: '900px' });
-
-    observer.observe(preview);
-    return () => observer.disconnect();
+    return observeBlockPreviewVisibility(preview, () => setIsVisible(true));
   }, [forcedSpriteUrl]);
 
   useEffect(() => {
@@ -4893,9 +4918,9 @@ function BlockPreview({
       )}
     </span>
   );
-}
+});
 
-function MaterialPreview(props: {
+const MaterialPreview = memo(function MaterialPreview(props: {
   stateKey: string;
   color: number;
   layers?: BlockThumbnailLayer[];
@@ -4903,7 +4928,7 @@ function MaterialPreview(props: {
 }) {
   const forceSpriteStateKey = alwaysMaterialSpriteStateKey(props.stateKey);
   return <BlockPreview {...props} fallbackToSprite forceSpriteStateKey={forceSpriteStateKey} />;
-}
+});
 
 function thumbnailDisplayAdjustmentKey(stateKey: string): string {
   return stateKey;
