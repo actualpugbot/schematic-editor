@@ -13,6 +13,7 @@ import {
   Cuboid,
   Download,
   Eraser,
+  ExternalLink,
   FileUp,
   Focus,
   Grid2X2,
@@ -855,6 +856,7 @@ function App() {
   const activeMaterials = materialsScope === 'cuboid'
     ? cuboidMaterials
     : materials;
+  const resourceCalculatorUrl = useMemo(() => resourceCalculatorUrlForMaterials(activeMaterials), [activeMaterials]);
   const recipeBreakdown = useMemo(() => explodeMaterials(activeMaterials, {
     rawOverrides: new Set(),
     recipeChoice: new Map(),
@@ -3134,6 +3136,16 @@ function App() {
                   <h2>{schematicName}</h2>
                 </div>
                 <div className="shopping-actions">
+                  <a
+                    className="primary-button resource-calculator-link"
+                    href={resourceCalculatorUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={`Open ${activeMaterials.length.toLocaleString()} material types in ResourceCalculator.com`}
+                  >
+                    <ExternalLink size={16} />
+                    Open in ResourceCalculator
+                  </a>
                   <div className="segmented-control shopping-scope" role="group" aria-label="Crafting plan scope">
                     <button
                       type="button"
@@ -6035,6 +6047,52 @@ function recipeItemStateKey(id: string): string {
 
 function shoppingItemKey(scopeKey: string, material: MaterialSummary): string {
   return `${scopeKey}:${material.id}:${material.count}`;
+}
+
+const resourceCalculatorBaseUrl = 'https://resourcecalculator.com/minecraft/#';
+const resourceCalculatorNameOverrides: Record<string, string> = {
+  bamboo_block: 'Block of Bamboo',
+  stripped_bamboo_block: 'Block of Stripped Bamboo',
+  coal_block: 'Block of Coal',
+  iron_block: 'Block of Iron',
+  gold_block: 'Block of Gold',
+  redstone_block: 'Block of Redstone',
+  emerald_block: 'Block of Emerald',
+  lapis_block: 'Block of Lapis Lazuli',
+  diamond_block: 'Block of Diamond',
+  netherite_block: 'Block of Netherite',
+  quartz_block: 'Block of Quartz',
+  amethyst_block: 'Block of Amethyst',
+  copper_block: 'Block of Copper',
+  raw_iron_block: 'Block of Raw Iron',
+  raw_copper_block: 'Block of Raw Copper',
+  raw_gold_block: 'Block of Raw Gold',
+  resin_block: 'Block of Resin',
+};
+
+function resourceCalculatorUrlForMaterials(materials: MaterialSummary[]): string {
+  const counts = new Map<string, number>();
+  const params = new URLSearchParams();
+
+  for (const material of materials) {
+    if (!Number.isFinite(material.count) || material.count <= 0) continue;
+
+    const key = resourceCalculatorSimpleName(material.id);
+    if (key) counts.set(key, (counts.get(key) ?? 0) + Math.ceil(material.count));
+  }
+
+  for (const [key, count] of counts) {
+    params.set(key, count.toString());
+  }
+
+  return `${resourceCalculatorBaseUrl}${params.toString()}`;
+}
+
+function resourceCalculatorSimpleName(materialId: string): string {
+  const id = normalizeRecipeItemId(materialId);
+  const displayName = resourceCalculatorNameOverrides[id] ?? formatBlockName(id);
+
+  return displayName.toLocaleLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 function shoppingScopeKey(model: SchematicModel, scope: MaterialsScope, bounds: CuboidBounds | null): string {
