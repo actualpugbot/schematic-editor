@@ -3569,17 +3569,17 @@ function App() {
                                     layers={material.thumbnailLayers}
                                   />
                                   <span className="material-name">{material.label}</span>
-                                  <span className="material-actions">
+                                  <span className="material-actions shopping-item-actions">
+                                    {shouldShowCompactMaterialBreakdown(material.id, material.count) && (
+                                      <span className="material-breakdown shopping-breakdown">
+                                        <MaterialBreakdown materialId={material.id} count={material.count} compact />
+                                      </span>
+                                    )}
                                     <strong className="material-count-badge">{material.count.toLocaleString()}</strong>
                                     <Check className="shopping-checkmark" size={15} aria-hidden="true" />
                                   </span>
                                 </span>
                               </span>
-                              {shouldShowCompactMaterialBreakdown(material.id, material.count) && (
-                                <span className="material-breakdown shopping-breakdown">
-                                  <MaterialBreakdown materialId={material.id} count={material.count} compact />
-                                </span>
-                              )}
                             </button>
                           );
                         })}

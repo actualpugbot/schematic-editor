@@ -2056,6 +2056,9 @@ html[data-theme='dark'] .material-pick {
   padding: 8px 12px;
 }
 .shopping-pick:hover { background: transparent; }
+.shopping-item-actions {
+  min-width: max-content;
+}
 .shopping-pick::after {
   content: '';
   position: absolute;
@@ -2098,8 +2101,10 @@ html[data-theme='dark'] .material-pick {
   transform: scale(1.04);
 }
 .shopping-breakdown {
+  display: inline-flex;
   justify-content: flex-start;
-  padding: 0 12px 10px 60px;
+  grid-column: auto;
+  padding: 0;
 }
 .shopping-breakdown .material-breakdown-count {
   background: var(--surface-soft);
