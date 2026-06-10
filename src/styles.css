@@ -1380,8 +1380,11 @@ html[data-theme='dark'] .featured-builder::before {
   border: none; background: transparent; text-align: left;
   min-height: 54px;
   padding: 8px 6px; border-radius: var(--r-xs);
+  user-select: text;
 }
 .material-pick:hover { background: var(--surface-soft); }
+.material-pick.is-static { cursor: default; }
+.material-pick.is-static:hover { background: transparent; }
 .material-name {
   min-width: 0;
   font-size: 13.5px; font-weight: 500; color: var(--ink);

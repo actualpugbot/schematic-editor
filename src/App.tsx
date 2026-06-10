@@ -4349,6 +4349,7 @@ function App() {
                   selectedMaterialId={selectedMaterialId}
                   expandedMaterialIds={expandedMaterialIds}
                   hiddenMaterialIds={hiddenMaterialIds}
+                  hasBreakdown={(material) => shouldShowCompactMaterialBreakdown(material.id, material.count)}
                   onToggleExpanded={toggleMaterialBreakdown}
                   onToggleVisibility={toggleMaterialVisibility}
                   renderPreview={(material) => (
@@ -4484,6 +4485,7 @@ function App() {
                   selectedMaterialId={selectedMaterialId}
                   expandedMaterialIds={expandedMaterialIds}
                   hiddenMaterialIds={hiddenMaterialIds}
+                  hasBreakdown={(material) => shouldShowCompactMaterialBreakdown(material.id, material.count)}
                   onToggleExpanded={toggleMaterialBreakdown}
                   onToggleVisibility={toggleMaterialVisibility}
                   renderPreview={(material) => (
@@ -4534,6 +4536,7 @@ function App() {
                 selectedMaterialId={selectedMaterialId}
                 expandedMaterialIds={expandedMaterialIds}
                 hiddenMaterialIds={hiddenMaterialIds}
+                hasBreakdown={(material) => shouldShowCompactMaterialBreakdown(material.id, material.count)}
                 onToggleExpanded={toggleMaterialBreakdown}
                 onToggleVisibility={toggleMaterialVisibility}
                 renderPreview={(material) => (
@@ -7098,10 +7101,10 @@ function formatBlockName(id: string): string {
     .join(' ');
 }
 
-function MaterialBreakdown({ materialId, count, compact = false }: { materialId: string; count: number; compact?: boolean }) {
+function MaterialBreakdown({ materialId, count }: { materialId: string; count: number; compact?: boolean }) {
   const breakdown = storageBreakdown(materialId, count);
-  const showStackBreakdown = !compact || count > breakdown.stackSize;
-  const showShulkerBreakdown = !compact || count > halfShulkerBoxItemCount(breakdown.stackSize);
+  const showStackBreakdown = hasStackBreakdown(breakdown.stackSize, count);
+  const showShulkerBreakdown = hasShulkerBreakdown(breakdown.stackSize, count);
   const labelParts = [];
 
   if (showStackBreakdown) {
@@ -7137,7 +7140,15 @@ function MaterialBreakdown({ materialId, count, compact = false }: { materialId:
 
 function shouldShowCompactMaterialBreakdown(materialId: string, count: number): boolean {
   const stackSize = itemStackSize(materialId);
-  return count > stackSize || count > halfShulkerBoxItemCount(stackSize);
+  return hasStackBreakdown(stackSize, count) || hasShulkerBreakdown(stackSize, count);
+}
+
+function hasStackBreakdown(stackSize: number, count: number): boolean {
+  return count > stackSize;
+}
+
+function hasShulkerBreakdown(stackSize: number, count: number): boolean {
+  return count > halfShulkerBoxItemCount(stackSize);
 }
 
 function halfShulkerBoxItemCount(stackSize: number): number {

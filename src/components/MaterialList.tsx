@@ -1,5 +1,5 @@
 import { ChevronDown, Eye, EyeOff, Search } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 
 import type { BlockThumbnailLayer } from '../lib/blockThumbnails';
 
@@ -18,6 +18,7 @@ interface MaterialListProps {
   selectedMaterialId?: string | null;
   expandedMaterialIds: Set<string>;
   hiddenMaterialIds: Set<string>;
+  hasBreakdown: (material: MaterialListItem) => boolean;
   onToggleExpanded: (id: string) => void;
   onToggleVisibility: (id: string) => void;
   renderPreview: (material: MaterialListItem) => ReactNode;
@@ -37,6 +38,7 @@ export function MaterialList({
   selectedMaterialId,
   expandedMaterialIds,
   hiddenMaterialIds,
+  hasBreakdown,
   onToggleExpanded,
   onToggleVisibility,
   renderPreview,
@@ -50,6 +52,11 @@ export function MaterialList({
   onItemRef,
 }: MaterialListProps) {
   const query = searchValue?.trim() ?? '';
+  const handleExpandableKeyDown = (event: KeyboardEvent<HTMLDivElement>, id: string) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    onToggleExpanded(id);
+  };
 
   return (
     <>
@@ -67,7 +74,9 @@ export function MaterialList({
       )}
       <div className="material-stack" aria-label={ariaLabel}>
         {materials.map((material) => {
-          const isExpanded = expandedMaterialIds.has(material.id);
+          const breakdownContent = renderBreakdown(material);
+          const canExpand = hasBreakdown(material);
+          const isExpanded = canExpand && expandedMaterialIds.has(material.id);
           const isSelected = material.id === selectedMaterialId;
           const isHidden = hiddenMaterialIds.has(material.id);
           const breakdownId = `material-breakdown-${material.id}`;
@@ -79,20 +88,22 @@ export function MaterialList({
               ref={(node) => onItemRef?.(material.id, node)}
             >
               <div className={`material-row${isExpanded ? ' is-expanded' : ''}${isSelected ? ' is-selected' : ''}`}>
-                <button
-                  className="material-pick"
-                  type="button"
-                  aria-expanded={isExpanded}
-                  aria-controls={breakdownId}
-                  onClick={() => onToggleExpanded(material.id)}
+                <div
+                  className={`material-pick${canExpand ? '' : ' is-static'}`}
+                  role={canExpand ? 'button' : undefined}
+                  tabIndex={canExpand ? 0 : undefined}
+                  aria-expanded={canExpand ? isExpanded : undefined}
+                  aria-controls={canExpand ? breakdownId : undefined}
+                  onClick={canExpand ? () => onToggleExpanded(material.id) : undefined}
+                  onKeyDown={canExpand ? (event) => handleExpandableKeyDown(event, material.id) : undefined}
                 >
                   {renderPreview(material)}
                   <span className="material-name">{material.label}</span>
                   <span className="material-actions">
+                    {canExpand && <ChevronDown className="material-disclosure" size={15} aria-hidden="true" />}
                     <strong className="material-count-badge">{material.count.toLocaleString()}</strong>
-                    <ChevronDown className="material-disclosure" size={15} aria-hidden="true" />
                   </span>
-                </button>
+                </div>
                 <button
                   type="button"
                   className="material-visibility"
@@ -105,7 +116,7 @@ export function MaterialList({
               </div>
               {isExpanded && (
                 <div id={breakdownId} className="material-breakdown">
-                  {renderBreakdown(material)}
+                  {breakdownContent}
                 </div>
               )}
             </div>
