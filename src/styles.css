@@ -74,7 +74,7 @@
 
   --font-display: "Bricolage Grotesque", "Hanken Grotesk", system-ui, sans-serif;
   --font-body: "Hanken Grotesk", system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+  --font-mono: "B612 Mono", ui-monospace, "SFMono-Regular", monospace;
 
   font-family: var(--font-body);
   background: var(--paper);
