@@ -662,6 +662,7 @@ function App() {
   const integerCrafting = true;
   const [shoppingSearch, setShoppingSearch] = useState('');
   const [shoppingLayout, setShoppingLayout] = useState<ShoppingLayout>('grid');
+  const [collapsedShoppingGroups, setCollapsedShoppingGroups] = useState<Set<string>>(() => new Set());
   const [shulkerViewMode, setShulkerViewMode] = useState<ShulkerViewMode>('box');
   const [visibleShulkerBoxCount, setVisibleShulkerBoxCount] = useState(initialShulkerBoxRenderCount);
   const [checkedPlanSteps, setCheckedPlanSteps] = useState<Set<string>>(() => new Set());
@@ -2431,6 +2432,18 @@ function App() {
     });
   };
 
+  const toggleShoppingGroupCollapsed = (groupId: string) => {
+    setCollapsedShoppingGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  };
+
   const resetShoppingList = () => {
     setCheckedShoppingItems(new Set());
   };
@@ -3408,6 +3421,29 @@ function App() {
                 </div>
               </div>
 
+              <div
+                className="shopping-progress"
+                style={{ '--shopping-progress': `${shoppingProgressPercent}%` } as CSSProperties}
+                aria-label={`${shoppingProgressPercent}% collected`}
+              >
+                <div>
+                  <span>Total</span>
+                  <strong>{totalShoppingItems.toLocaleString()}</strong>
+                </div>
+                <div>
+                  <span>Collected</span>
+                  <strong>{completedShoppingItems.toLocaleString()}</strong>
+                </div>
+                <div>
+                  <span>Remaining</span>
+                  <strong>{remainingShoppingItems.toLocaleString()}</strong>
+                </div>
+                <div>
+                  <span>Rows</span>
+                  <strong>{checkedShoppingMaterialCount.toLocaleString()} / {activeMaterials.length.toLocaleString()}</strong>
+                </div>
+              </div>
+
               <div className="shopping-toolbar">
                 <div className="segmented-control shopping-scope" role="group" aria-label="Shopping list scope">
                   <button
@@ -3467,53 +3503,45 @@ function App() {
                 </div>
               </div>
 
-              <div
-                className="shopping-progress"
-                style={{ '--shopping-progress': `${shoppingProgressPercent}%` } as CSSProperties}
-                aria-label={`${shoppingProgressPercent}% collected`}
-              >
-                <div>
-                  <span>Total</span>
-                  <strong>{totalShoppingItems.toLocaleString()}</strong>
-                </div>
-                <div>
-                  <span>Collected</span>
-                  <strong>{completedShoppingItems.toLocaleString()}</strong>
-                </div>
-                <div>
-                  <span>Remaining</span>
-                  <strong>{remainingShoppingItems.toLocaleString()}</strong>
-                </div>
-                <div>
-                  <span>Rows</span>
-                  <strong>{checkedShoppingMaterialCount.toLocaleString()} / {activeMaterials.length.toLocaleString()}</strong>
-                </div>
-              </div>
-
               <div className={`shopping-list is-${shoppingLayout}`} aria-live="polite">
                 {shoppingGroups.map((group) => {
                   const checkedGroupItems = group.materials.filter((material) => (
                     checkedShoppingItems.has(shoppingItemKey(shoppingScope, material))
                   )).length;
                   const isGroupChecked = checkedGroupItems === group.materials.length;
+                  const isGroupCollapsed = collapsedShoppingGroups.has(group.id);
+                  const groupItemsId = `shopping-group-${group.id}`;
 
                   return (
-                    <section className="shopping-group" key={group.id} aria-label={group.label}>
+                    <section className={`shopping-group${isGroupCollapsed ? ' is-collapsed' : ''}`} key={group.id} aria-label={group.label}>
                       <div className="shopping-group-heading">
-                        <span>{group.label}</span>
-                        <div className="shopping-group-summary">
+                        <div className="shopping-group-title">
+                          <span>{group.label}</span>
                           <strong>{checkedGroupItems.toLocaleString()} / {group.materials.length.toLocaleString()}</strong>
+                        </div>
+                        <div className="shopping-group-summary">
                           <button
                             type="button"
                             className="shopping-group-toggle"
                             onClick={() => toggleShoppingGroup(group.materials)}
                             aria-pressed={isGroupChecked}
                           >
-                            {isGroupChecked ? 'Clear group' : 'Select all'}
+                            <CheckCircle2 size={15} aria-hidden="true" />
+                            {isGroupChecked ? 'Clear group' : 'Mark all complete'}
+                          </button>
+                          <button
+                            type="button"
+                            className="shopping-group-collapse"
+                            onClick={() => toggleShoppingGroupCollapsed(group.id)}
+                            aria-expanded={!isGroupCollapsed}
+                            aria-controls={groupItemsId}
+                            aria-label={`${isGroupCollapsed ? 'Expand' : 'Collapse'} ${group.label}`}
+                          >
+                            {isGroupCollapsed ? <ChevronDown size={17} /> : <ChevronUp size={17} />}
                           </button>
                         </div>
                       </div>
-                      <div className="shopping-group-items">
+                      <div className="shopping-group-items" id={groupItemsId} hidden={isGroupCollapsed}>
                         {group.materials.map((material) => {
                           const itemKey = shoppingItemKey(shoppingScope, material);
                           const isChecked = checkedShoppingItems.has(itemKey);
