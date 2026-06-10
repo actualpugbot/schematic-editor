@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   Box,
   BoxSelect,
@@ -2416,6 +2416,16 @@ function App() {
     });
   };
 
+  const handleShoppingItemPointerDown = (event: ReactPointerEvent<HTMLButtonElement>, material: MaterialSummary) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    toggleShoppingItem(material);
+  };
+
+  const handleShoppingItemClick = (event: ReactMouseEvent<HTMLButtonElement>, material: MaterialSummary) => {
+    if (event.detail !== 0) return;
+    toggleShoppingItem(material);
+  };
+
   const toggleShoppingGroup = (materials: MaterialSummary[]) => {
     const keys = materials.map((material) => shoppingItemKey(shoppingScope, material));
     setCheckedShoppingItems((current) => {
@@ -3404,14 +3414,6 @@ function App() {
                   <button
                     type="button"
                     className="secondary-button"
-                    onClick={() => openInspectorPanel('materials')}
-                  >
-                    <Cuboid size={16} />
-                    Materials
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary-button"
                     onClick={resetShoppingList}
                     disabled={checkedShoppingMaterialCount === 0}
                   >
@@ -3551,7 +3553,8 @@ function App() {
                               type="button"
                               key={itemKey}
                               className={`shopping-item material-item${isChecked ? ' is-checked' : ''}`}
-                              onClick={() => toggleShoppingItem(material)}
+                              onPointerDown={(event) => handleShoppingItemPointerDown(event, material)}
+                              onClick={(event) => handleShoppingItemClick(event, material)}
                               aria-pressed={isChecked}
                             >
                               <span className="material-row shopping-material-row">
@@ -3568,9 +3571,11 @@ function App() {
                                   </span>
                                 </span>
                               </span>
-                              <span className="material-breakdown shopping-breakdown">
-                                <MaterialBreakdown materialId={material.id} count={material.count} />
-                              </span>
+                              {shouldShowCompactMaterialBreakdown(material.id, material.count) && (
+                                <span className="material-breakdown shopping-breakdown">
+                                  <MaterialBreakdown materialId={material.id} count={material.count} compact />
+                                </span>
+                              )}
                             </button>
                           );
                         })}
@@ -7065,25 +7070,50 @@ function formatBlockName(id: string): string {
     .join(' ');
 }
 
-function MaterialBreakdown({ materialId, count }: { materialId: string; count: number }) {
+function MaterialBreakdown({ materialId, count, compact = false }: { materialId: string; count: number; compact?: boolean }) {
   const breakdown = storageBreakdown(materialId, count);
+  const showStackBreakdown = !compact || count > breakdown.stackSize;
+  const showShulkerBreakdown = !compact || count > halfShulkerBoxItemCount(breakdown.stackSize);
+  const labelParts = [];
+
+  if (showStackBreakdown) {
+    labelParts.push(`${breakdown.stacks.toLocaleString()} stacks and ${breakdown.remainder.toLocaleString()} remaining`);
+  }
+  if (showShulkerBreakdown) {
+    labelParts.push(`${breakdown.shulkerBoxes} ${breakdown.shulkerBoxesLabel}`);
+  }
+  if (labelParts.length === 0) return null;
+
   const stackItemsLabel = `${breakdown.stacks.toLocaleString()} + ${breakdown.remainder.toLocaleString()}`;
   const shulkerLabel = breakdown.shulkerBoxes;
-  const label = `${count.toLocaleString()} items: ${stackItemsLabel}; ${shulkerLabel}`;
+  const label = `${count.toLocaleString()} items: ${labelParts.join('; ')}`;
 
   return (
     <span className="material-breakdown-count" aria-label={label}>
-      <span className="material-breakdown-group">
-        <Layers size={13} strokeWidth={2.2} aria-hidden="true" />
-        <strong>{stackItemsLabel}</strong>
-      </span>
-      <span className="material-breakdown-divider" aria-hidden="true" />
-      <span className="material-breakdown-group">
-        <Box size={13} strokeWidth={2.2} aria-hidden="true" />
-        <small>{shulkerLabel}</small>
-      </span>
+      {showStackBreakdown && (
+        <span className="material-breakdown-group">
+          <Layers size={13} strokeWidth={2.2} aria-hidden="true" />
+          <strong>{stackItemsLabel}</strong>
+        </span>
+      )}
+      {showStackBreakdown && showShulkerBreakdown && <span className="material-breakdown-divider" aria-hidden="true" />}
+      {showShulkerBreakdown && (
+        <span className="material-breakdown-group">
+          <Box size={13} strokeWidth={2.2} aria-hidden="true" />
+          <small>{shulkerLabel}</small>
+        </span>
+      )}
     </span>
   );
+}
+
+function shouldShowCompactMaterialBreakdown(materialId: string, count: number): boolean {
+  const stackSize = itemStackSize(materialId);
+  return count > stackSize || count > halfShulkerBoxItemCount(stackSize);
+}
+
+function halfShulkerBoxItemCount(stackSize: number): number {
+  return (stackSize * shulkerInventorySlots) / 2;
 }
 
 function formatQuantity(value: number): string {

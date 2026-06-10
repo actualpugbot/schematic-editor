@@ -1968,9 +1968,9 @@ html[data-theme='dark'] .material-pick {
 .shopping-group.is-collapsed { padding-bottom: 16px; }
 .shopping-group-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .shopping-group.is-collapsed .shopping-group-heading { margin-bottom: 0; }
-.shopping-group-title { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.shopping-group-title { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1; }
 .shopping-group-title span { font-family: var(--font-display); font-size: 15px; font-weight: 600; }
-.shopping-group-title strong { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--muted); }
+.shopping-group-title strong { flex: none; font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--muted); }
 .shopping-group-summary { display: flex; align-items: center; gap: 8px; flex: none; }
 .shopping-group-toggle,
 .shopping-group-collapse {
@@ -2013,7 +2013,9 @@ html[data-theme='dark'] .material-pick {
 }
 .shopping-group-collapse svg { flex: none; }
 .shopping-group-items { display: flex; flex-direction: column; gap: 6px; }
+.shopping-list .shopping-group-items[hidden] { display: none; }
 .shopping-list.is-grid .shopping-group-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(286px, 1fr)); gap: 8px; }
+.shopping-list.is-grid .shopping-group-items[hidden] { display: none; }
 
 @media (max-width: 640px) {
   .shopping-group-heading { flex-direction: column; align-items: stretch; }
@@ -2050,6 +2052,8 @@ html[data-theme='dark'] .material-pick {
   background: transparent;
 }
 .shopping-pick {
+  --shopping-strike-left: calc(12px + 34px + 10px);
+  --shopping-strike-right: calc(12px + 22px + 6px);
   position: relative;
   width: 100%;
   grid-template-columns: 34px minmax(0, 1fr) auto;
@@ -2060,8 +2064,8 @@ html[data-theme='dark'] .material-pick {
 .shopping-pick::after {
   content: '';
   position: absolute;
-  left: 12px;
-  right: 12px;
+  left: var(--shopping-strike-left);
+  right: var(--shopping-strike-right);
   top: 50%;
   height: 2px;
   border-radius: var(--r-pill);
