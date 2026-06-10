@@ -3518,8 +3518,11 @@ function App() {
                     <section className={`shopping-group${isGroupCollapsed ? ' is-collapsed' : ''}`} key={group.id} aria-label={group.label}>
                       <div className="shopping-group-heading">
                         <div className="shopping-group-title">
-                          <span>{group.label}</span>
-                          <strong>{checkedGroupItems.toLocaleString()} / {group.materials.length.toLocaleString()}</strong>
+                          <span className="shopping-group-label">{group.label}</span>
+                          <span className="shopping-group-meta">
+                            <strong>{checkedGroupItems.toLocaleString()} / {group.materials.length.toLocaleString()}</strong>
+                            {isGroupChecked && <span className="shopping-group-done-chip">Done</span>}
+                          </span>
                         </div>
                         <div className="shopping-group-summary">
                           <button
