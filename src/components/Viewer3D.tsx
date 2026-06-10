@@ -111,6 +111,13 @@ interface SpectatorCameraState {
   pointerLocked: boolean;
 }
 
+interface StageBackgroundTransition {
+  from: THREE.Color;
+  to: THREE.Color;
+  start: number;
+  duration: number;
+}
+
 interface InternalViewerProps extends Viewer3DProps {
   viewerRef: MutableRefObject<Viewer3DHandle | null>;
 }
@@ -153,6 +160,7 @@ const defaultSchematicRotationY = -Math.PI / 2;
 const meshBuildYieldInterval = 180;
 const labelProjectionVector = new THREE.Vector3();
 const rotationControlProjectionVector = new THREE.Vector3();
+const stageBackgroundTransitionDurationMs = 220;
 
 export function Viewer3D(props: InternalViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -164,9 +172,11 @@ export function Viewer3D(props: InternalViewerProps) {
   const modelGroupRef = useRef<THREE.Group | null>(null);
   const gridRef = useRef<THREE.Group | null>(null);
   const floorRef = useRef<THREE.Mesh | null>(null);
+  const floorShadowRef = useRef<THREE.Mesh | null>(null);
   const selectionBoxRef = useRef<THREE.LineSegments | null>(null);
   const placementPreviewRef = useRef<THREE.LineSegments | null>(null);
   const cuboidOverlayRef = useRef<THREE.Group | null>(null);
+  const stageBackgroundTransitionRef = useRef<StageBackgroundTransition | null>(null);
   const cornerLabelRefs = useRef<Record<'a' | 'b', HTMLSpanElement | null>>({ a: null, b: null });
   const frameRef = useRef<number | null>(null);
   const spinRef = useRef<{ start: number; duration: number; from: number; to: number } | null>(null);
@@ -321,13 +331,22 @@ export function Viewer3D(props: InternalViewerProps) {
 
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(400, 400),
-      new THREE.MeshStandardMaterial({ color: colors.floor, roughness: 0.94, metalness: 0.02 }),
+      new THREE.MeshBasicMaterial({ color: colors.floor }),
     );
     floorRef.current = floor;
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.56;
-    floor.receiveShadow = true;
     scene.add(floor);
+
+    const floorShadow = new THREE.Mesh(
+      new THREE.PlaneGeometry(400, 400),
+      new THREE.ShadowMaterial({ color: 0x000000, opacity: floorShadowOpacity(props.theme) }),
+    );
+    floorShadowRef.current = floorShadow;
+    floorShadow.rotation.x = -Math.PI / 2;
+    floorShadow.position.y = -0.559;
+    floorShadow.receiveShadow = true;
+    scene.add(floorShadow);
 
     const displayGroup = new THREE.Group();
     displayGroup.rotation.y = defaultSchematicRotationY;
@@ -510,6 +529,7 @@ export function Viewer3D(props: InternalViewerProps) {
         controlsRef.current.update();
       }
 
+      updateStageBackgroundTransition(scene, time, stageBackgroundTransitionRef);
       onAxisOrientationChangeRef.current?.(projectAxisOrientation(camera));
       updateCuboidCornerLabels(
         cornerLabelRefs.current,
@@ -599,6 +619,7 @@ export function Viewer3D(props: InternalViewerProps) {
       controlsRef.current = null;
       displayGroupRef.current = null;
       floorRef.current = null;
+      floorShadowRef.current = null;
       selectionBoxRef.current = null;
       placementPreviewRef.current = null;
       cuboidOverlayRef.current = null;
@@ -608,13 +629,23 @@ export function Viewer3D(props: InternalViewerProps) {
   useEffect(() => {
     const colors = sceneThemeColors(props.theme);
     if (sceneRef.current) {
-      sceneRef.current.background = new THREE.Color(props.stageBackgroundColor ?? colors.background);
+      transitionStageBackground(
+        sceneRef.current,
+        props.stageBackgroundColor ?? colors.background,
+        stageBackgroundTransitionRef,
+      );
     }
 
     const floorMaterial = floorRef.current?.material;
-    if (floorMaterial instanceof THREE.MeshStandardMaterial) {
+    if (floorMaterial instanceof THREE.MeshBasicMaterial) {
       floorMaterial.color.setHex(colors.floor);
       floorMaterial.needsUpdate = true;
+    }
+
+    const floorShadowMaterial = floorShadowRef.current?.material;
+    if (floorShadowMaterial instanceof THREE.ShadowMaterial) {
+      floorShadowMaterial.opacity = floorShadowOpacity(props.theme);
+      floorShadowMaterial.needsUpdate = true;
     }
 
     if (cuboidOverlayRef.current) {
@@ -2445,8 +2476,60 @@ function centerGroup(group: THREE.Group, dimensions: SchematicDimensions) {
 
 function sceneThemeColors(theme: 'light' | 'dark') {
   return theme === 'dark'
-    ? { background: 0x101719, floor: 0x131d1f, grid: 0x6f8987, cuboidFill: 0x28c4bd, cuboidEdge: 0x62e4df }
-    : { background: 0xf4f8f8, floor: 0xe8eeee, grid: 0x4d5b54, cuboidFill: 0x0f7f80, cuboidEdge: 0x086f74 };
+    ? { background: 0x25303a, floor: 0x303c45, grid: 0x6f8987, cuboidFill: 0x28c4bd, cuboidEdge: 0x62e4df }
+    : { background: 0xf1f5f8, floor: 0xf1f5f8, grid: 0x4d5b54, cuboidFill: 0x0f7f80, cuboidEdge: 0x086f74 };
+}
+
+function floorShadowOpacity(theme: 'light' | 'dark') {
+  return theme === 'dark' ? 0.3 : 0.16;
+}
+
+function transitionStageBackground(
+  scene: THREE.Scene,
+  target: string | number,
+  transitionRef: MutableRefObject<StageBackgroundTransition | null>,
+  delayMs = 0,
+) {
+  const next = new THREE.Color(target);
+  const current = scene.background instanceof THREE.Color
+    ? scene.background.clone()
+    : next.clone();
+
+  if (current.equals(next)) {
+    scene.background = next;
+    transitionRef.current = null;
+    return;
+  }
+
+  transitionRef.current = {
+    from: current,
+    to: next,
+    start: performance.now() + delayMs,
+    duration: stageBackgroundTransitionDurationMs,
+  };
+}
+
+function updateStageBackgroundTransition(
+  scene: THREE.Scene,
+  time: number,
+  transitionRef: MutableRefObject<StageBackgroundTransition | null>,
+) {
+  const transition = transitionRef.current;
+  if (!transition) return;
+
+  if (time < transition.start) {
+    scene.background = transition.from.clone();
+    return;
+  }
+
+  const progress = Math.min(1, (time - transition.start) / transition.duration);
+  const eased = 1 - Math.pow(1 - progress, 3);
+  scene.background = transition.from.clone().lerp(transition.to, eased);
+
+  if (progress >= 1) {
+    scene.background = transition.to.clone();
+    transitionRef.current = null;
+  }
 }
 
 function createFootprintGrid(dimensions: SchematicDimensions, theme: 'light' | 'dark'): THREE.LineSegments {

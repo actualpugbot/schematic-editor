@@ -24,7 +24,6 @@ import {
   Moon,
   Move3d,
   Orbit,
-  Palette,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
@@ -357,7 +356,17 @@ const defaultThumbnailDisplayAdjustment: ThumbnailDisplayAdjustment = {
   rotateX: 0,
   rotateY: 0,
 };
-const defaultStageBackgroundColor = '#f4f8f8';
+const lightStageBackgroundColor = '#f1f5f8';
+const darkStageBackgroundColor = '#25303a';
+const legacyLightStageBackgroundColor = '#f4f8f8';
+
+function defaultStageBackgroundColor(theme: Theme): string {
+  return theme === 'dark' ? darkStageBackgroundColor : lightStageBackgroundColor;
+}
+
+function normalizeHexColor(color: string): string {
+  return color.trim().toLowerCase();
+}
 const thumbnailVerticalFacingBlockIds = new Set([
   'minecraft:amethyst_cluster',
   'minecraft:small_amethyst_bud',
@@ -609,9 +618,15 @@ function App() {
     return window.localStorage.getItem(controlRailSideStorageKey) === 'left' ? 'left' : 'right';
   });
   const [stageBackgroundColor, setStageBackgroundColor] = useState(() => {
-    if (typeof window === 'undefined') return defaultStageBackgroundColor;
+    if (typeof window === 'undefined') return defaultStageBackgroundColor(theme);
     const savedColor = window.localStorage.getItem(stageBackgroundColorStorageKey);
-    return savedColor && /^#[0-9a-f]{6}$/i.test(savedColor) ? savedColor : defaultStageBackgroundColor;
+    if (savedColor && /^#[0-9a-f]{6}$/i.test(savedColor)) {
+      const normalized = normalizeHexColor(savedColor);
+      return normalized === legacyLightStageBackgroundColor
+        ? defaultStageBackgroundColor(theme)
+        : normalized;
+    }
+    return defaultStageBackgroundColor(theme);
   });
   const [model, setModel] = useState<SchematicModel | null>(null);
   const [schematicOrigin, setSchematicOrigin] = useState<SchematicOrigin>('default');
@@ -1345,6 +1360,19 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
+    setStageBackgroundColor((current) => {
+      const normalized = normalizeHexColor(current);
+      if (
+        normalized === defaultStageBackgroundColor(theme === 'dark' ? 'light' : 'dark')
+        || normalized === legacyLightStageBackgroundColor
+      ) {
+        return defaultStageBackgroundColor(theme);
+      }
+      return current;
+    });
+  }, [theme]);
+
+  useEffect(() => {
     window.localStorage.setItem(leftRailCollapsedStorageKey, String(leftRailCollapsed));
   }, [leftRailCollapsed]);
 
@@ -1695,7 +1723,29 @@ function App() {
   };
 
   const toggleTheme = () => {
-    setTheme((current) => (current === 'dark' ? 'light' : 'dark'));
+    setTheme((current) => {
+      const nextTheme = current === 'dark' ? 'light' : 'dark';
+      setStageBackgroundColor((currentStageColor) => {
+        const normalized = normalizeHexColor(currentStageColor);
+        if (
+          normalized === defaultStageBackgroundColor(current)
+          || normalized === defaultStageBackgroundColor(nextTheme)
+          || normalized === legacyLightStageBackgroundColor
+        ) {
+          return defaultStageBackgroundColor(nextTheme);
+        }
+        return currentStageColor;
+      });
+      return nextTheme;
+    });
+  };
+
+  const toggleControlRailSide = () => {
+    setControlRailSide((side) => {
+      const nextSide = side === 'right' ? 'left' : 'right';
+      if (nextSide === 'left') setLeftRailCollapsed(true);
+      return nextSide;
+    });
   };
 
   const panelRefForTab = (tab: InspectorTab) => (
@@ -2497,25 +2547,6 @@ function App() {
             <Plus size={16} />
             <span>New</span>
           </button>
-          <button
-            type="button"
-            className={`topbar-icon-btn${isDarkTheme ? ' is-on' : ''}`}
-            onClick={toggleTheme}
-            title={isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'}
-            aria-pressed={isDarkTheme}
-          >
-            {isDarkTheme ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
-          <button
-            type="button"
-            className={`topbar-icon-btn${controlRailSide === 'left' ? ' is-on' : ''}`}
-            onClick={() => setControlRailSide((side) => (side === 'right' ? 'left' : 'right'))}
-            title={controlRailSide === 'right' ? 'Move controls to left side' : 'Move controls to right side'}
-            aria-pressed={controlRailSide === 'left'}
-            aria-label={controlRailSide === 'right' ? 'Move controls to left side' : 'Move controls to right side'}
-          >
-            {controlRailSide === 'right' ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
-          </button>
           <div
             className={`topbar-export${isExportMenuOpen ? ' is-open' : ''}`}
             ref={exportMenuRef}
@@ -2695,6 +2726,19 @@ function App() {
           </div>
 
           <div className="rail-spacer" />
+
+          <div className="rail-bottom-actions">
+            <button
+              type="button"
+              className={`topbar-icon-btn${isDarkTheme ? ' is-on' : ''}`}
+              onClick={toggleTheme}
+              title={isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'}
+              aria-label={isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'}
+              aria-pressed={isDarkTheme}
+            >
+              {isDarkTheme ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+          </div>
 
           <input
             ref={inputRef}
@@ -3475,17 +3519,15 @@ function App() {
                           const isChecked = checkedShoppingItems.has(itemKey);
 
                           return (
-                            <div
+                            <button
+                              type="button"
                               key={itemKey}
                               className={`shopping-item material-item${isChecked ? ' is-checked' : ''}`}
+                              onClick={() => toggleShoppingItem(material)}
+                              aria-pressed={isChecked}
                             >
-                              <div className="material-row shopping-material-row">
-                                <button
-                                  type="button"
-                                  className="material-pick shopping-pick"
-                                  onClick={() => toggleShoppingItem(material)}
-                                  aria-pressed={isChecked}
-                                >
+                              <span className="material-row shopping-material-row">
+                                <span className="material-pick shopping-pick">
                                   <BlockPreview
                                     stateKey={material.stateKey}
                                     color={material.color}
@@ -3496,12 +3538,12 @@ function App() {
                                     <strong className="material-count-badge">{material.count.toLocaleString()}</strong>
                                     <Check className="shopping-checkmark" size={15} aria-hidden="true" />
                                   </span>
-                                </button>
-                              </div>
-                              <div className="material-breakdown shopping-breakdown">
+                                </span>
+                              </span>
+                              <span className="material-breakdown shopping-breakdown">
                                 <MaterialBreakdown materialId={material.id} count={material.count} />
-                              </div>
-                            </div>
+                              </span>
+                            </button>
                           );
                         })}
                       </div>
@@ -3825,19 +3867,6 @@ function App() {
             </div>
           )}
 
-          {!textureViewActive && model && (
-            <label className="viewport-stage-color" title="Stage background color">
-              <Palette size={16} aria-hidden="true" />
-              <span>Stage</span>
-              <input
-                type="color"
-                value={stageBackgroundColor}
-                onChange={(event) => setStageBackgroundColor(event.target.value)}
-                aria-label="Stage background color"
-              />
-            </label>
-          )}
-
           {textureViewActive ? (
             <div className="texture-compare-canvases" aria-label="Texture comparison previews">
               <div className="texture-compare-pane">
@@ -4072,35 +4101,47 @@ function App() {
           <>
             {appView === 'inspect' ? (
               <>
-            <div className="inspector-tabs" role="tablist" aria-label="Inspector panels">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={inspectorTab === 'materials'}
-                className={inspectorTab === 'materials' ? 'is-active' : ''}
-                onClick={() => showPanel('materials')}
-              >
-                Materials List
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={inspectorTab === 'selection'}
-                className={inspectorTab === 'selection' ? 'is-active' : ''}
-                onClick={() => showPanel('selection')}
-              >
-                Selection
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={inspectorTab === 'layers'}
-                className={inspectorTab === 'layers' ? 'is-active' : ''}
-                onClick={() => showPanel('layers')}
-              >
-                Layer View
-              </button>
-            </div>
+                <div className="inspector-tabs" role="tablist" aria-label="Inspector panels">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={inspectorTab === 'materials'}
+                    className={inspectorTab === 'materials' ? 'is-active' : ''}
+                    onClick={() => showPanel('materials')}
+                  >
+                    Materials List
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={inspectorTab === 'selection'}
+                    className={inspectorTab === 'selection' ? 'is-active' : ''}
+                    onClick={() => showPanel('selection')}
+                  >
+                    Selection
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={inspectorTab === 'layers'}
+                    className={inspectorTab === 'layers' ? 'is-active' : ''}
+                    onClick={() => showPanel('layers')}
+                  >
+                    Layer View
+                  </button>
+                  <div className="control-rail-actions" role="presentation">
+                    <button
+                      type="button"
+                      className={`control-rail-side-toggle${controlRailSide === 'left' ? ' is-on' : ' is-left-chevron'}`}
+                      onClick={toggleControlRailSide}
+                      title={controlRailSide === 'right' ? 'Move controls to left side' : 'Move controls to right side'}
+                      aria-pressed={controlRailSide === 'left'}
+                      aria-label={controlRailSide === 'right' ? 'Move controls to left side' : 'Move controls to right side'}
+                    >
+                      {controlRailSide === 'right' ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+                    </button>
+                  </div>
+                </div>
 
             <section
               className={`selection-panel inspector-panel${inspectorTab === 'selection' ? ' is-active' : ''}`}

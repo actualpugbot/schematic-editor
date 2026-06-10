@@ -275,7 +275,7 @@ html[data-scrollbars-visible='true'] *::-webkit-scrollbar-thumb,
 
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .topbar-secondary {
-  display: inline-flex; align-items: center; gap: 7px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   height: 38px; padding: 0 14px;
   border-radius: var(--r-sm);
   border: 1px solid var(--line-strong);
@@ -284,6 +284,7 @@ html[data-scrollbars-visible='true'] *::-webkit-scrollbar-thumb,
   font-size: 13.5px; font-weight: 600;
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
+.topbar-secondary span { line-height: 1; transform: translateY(-0.5px); }
 .topbar-secondary:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-tint); }
 
 .topbar-icon-btn {
@@ -504,6 +505,11 @@ html[data-scrollbars-visible='true'] *::-webkit-scrollbar-thumb,
 
 .rail-divider { height: 1px; background: var(--line); margin: 8px 8px; }
 .rail-spacer { flex: 1; min-height: 8px; }
+.rail-bottom-actions {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 2px;
+}
 
 /* drop zone */
 .rail-dropzone {
@@ -1012,38 +1018,6 @@ html[data-theme='dark'] .featured-builder::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236c7884' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right 8px center;
 }
-.viewport-stage-color {
-  position: absolute;
-  right: 18px;
-  bottom: 18px;
-  z-index: 16;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 40px;
-  padding: 0 8px 0 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-pill);
-  background: color-mix(in srgb, var(--surface) 90%, transparent);
-  box-shadow: var(--shadow-float);
-  color: var(--ink-soft);
-  font-size: 12.5px;
-  font-weight: 700;
-  backdrop-filter: blur(12px) saturate(140%);
-}
-.viewport-stage-color svg { color: var(--muted); }
-.viewport-stage-color input {
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--r-pill);
-  background: transparent;
-}
-.viewport-stage-color input::-webkit-color-swatch-wrapper { padding: 2px; }
-.viewport-stage-color input::-webkit-color-swatch { border: none; border-radius: var(--r-pill); }
-.viewport-stage-color input::-moz-color-swatch { border: none; border-radius: var(--r-pill); }
-
 /* toggle switch */
 .switch {
   position: relative; width: 38px; height: 22px; flex: none; cursor: pointer;
@@ -1184,6 +1158,36 @@ html[data-theme='dark'] .featured-builder::before {
   grid-row: 1;
 }
 
+.control-rail-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.control-rail-side-toggle {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--muted);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.control-rail-side-toggle:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-sunken);
+  color: var(--ink);
+}
+.control-rail-side-toggle.is-on {
+  border-color: transparent;
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+.control-rail-side-toggle.is-left-chevron svg {
+  transform: translateX(-1px);
+}
+
 .load-progress {
   position: absolute;
   inset: 0;
@@ -1245,22 +1249,25 @@ html[data-theme='dark'] .featured-builder::before {
   padding: 18px;
 }
 .inspector-tabs {
-  display: flex; gap: 4px; position: sticky; top: -18px; z-index: 5;
+  display: flex; align-items: flex-start; gap: 4px; position: sticky; top: -18px; z-index: 5;
   border-bottom: 1px solid var(--line);
   margin-bottom: 16px;
-  padding-top: 18px;
   background: var(--surface);
 }
-.inspector-tabs button {
+.inspector-tabs > button {
   position: relative; padding: 0 4px 12px; border: none; background: transparent;
   font-size: 14px; font-weight: 500; color: var(--muted); margin-right: 16px;
   transition: color 0.14s;
 }
-.inspector-tabs button:hover { color: var(--ink); }
-.inspector-tabs button.is-active { color: var(--accent); font-weight: 600; }
-.inspector-tabs button.is-active::after {
+.inspector-tabs > button:hover { color: var(--ink); }
+.inspector-tabs > button.is-active { color: var(--accent); font-weight: 600; }
+.inspector-tabs > button.is-active::after {
   content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px;
   background: var(--accent); border-radius: 2px;
+}
+.inspector-tabs .control-rail-actions {
+  flex: none;
+  margin: -5px 0 0 -10px;
 }
 
 /* search */
@@ -1957,23 +1964,41 @@ html[data-theme='dark'] .material-pick {
 .shopping-list.is-grid .shopping-group-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(286px, 1fr)); gap: 8px; }
 .shopping-item {
   position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
   border: 1px solid var(--line-faint);
   border-radius: var(--r-md);
   background: var(--surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
   overflow: hidden;
-  transition: background 0.18s, border-color 0.18s;
+  transition: background 0.18s, border-color 0.18s, box-shadow 0.18s;
 }
-.shopping-item:hover { border-color: var(--line-strong); }
+.shopping-item:hover,
+.shopping-item:focus-visible {
+  background: var(--surface-soft);
+  border-color: var(--line-strong);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent);
+  outline: none;
+}
 .shopping-item.is-checked {
   background: color-mix(in srgb, var(--emerald-bg) 72%, var(--surface) 28%);
   border-color: color-mix(in srgb, var(--emerald) 18%, var(--line) 82%);
 }
-.shopping-material-row { background: transparent; }
+.shopping-material-row {
+  display: block;
+  background: transparent;
+}
 .shopping-pick {
   position: relative;
+  width: 100%;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
   min-height: 54px;
   padding: 8px 12px;
 }
+.shopping-pick:hover { background: transparent; }
 .shopping-pick::after {
   content: '';
   position: absolute;
@@ -1999,6 +2024,7 @@ html[data-theme='dark'] .material-pick {
   color: var(--muted);
 }
 .shopping-checkmark {
+  flex: none;
   width: 22px;
   height: 22px;
   padding: 4px;
