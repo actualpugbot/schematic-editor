@@ -19,7 +19,6 @@ import {
   ImageIcon,
   Layers,
   List,
-  Maximize2,
   MousePointer2,
   Moon,
   Move3d,
@@ -3831,79 +3830,6 @@ function App() {
             <span className="axis-label axis-z">Z</span>
             <span className="axis-label axis-x">X</span>
           </div>
-
-          {!textureViewActive && model && (
-            <div className="viewport-statusbar" aria-label="Viewport display controls">
-              <label className="sb-chip" title="Toggle build grid">
-                <Grid2X2 size={16} aria-hidden="true" />
-                <span>Grid</span>
-                <span className="switch">
-                  <input
-                    type="checkbox"
-                    checked={showGrid}
-                    onChange={(event) => setShowGrid(event.target.checked)}
-                    aria-label="Toggle grid"
-                  />
-                  <span className="track" />
-                  <span className="thumb" />
-                </span>
-              </label>
-
-              <span className="sb-divider" aria-hidden="true" />
-
-              <div className="stepper" aria-label="Visible layer">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextBottomLayer = Math.max(0, visibleBottomLayer - 1);
-                    setVisibleLayerRange(nextBottomLayer, visibleTopLayer, singleVisibleLayer, { commit: true, immediate: true });
-                  }}
-                  disabled={visibleBottomLayer <= 0}
-                  title="Lower bottom layer"
-                  aria-label="Lower bottom layer"
-                >
-                  <ChevronDown size={15} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setVisibleLayerRange(0, model.dimensions.height - 1, singleVisibleLayer, { commit: true, immediate: true });
-                  }}
-                  title="Show all layers"
-                  style={{ width: 'auto', padding: '0 12px', gap: 6, display: 'inline-flex', alignItems: 'center' }}
-                >
-                  <Layers size={15} />
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5, fontWeight: 600 }}>
-                    {visibleBottomWorldY}-{visibleTopWorldY}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextTopLayer = Math.min(model.dimensions.height - 1, visibleTopLayer + 1);
-                    setVisibleLayerRange(visibleBottomLayer, nextTopLayer, singleVisibleLayer, { commit: true, immediate: true });
-                  }}
-                  disabled={visibleTopLayer >= model.dimensions.height - 1}
-                  title="Raise top layer"
-                  aria-label="Raise top layer"
-                >
-                  <ChevronUp size={15} />
-                </button>
-              </div>
-
-              <span className="sb-divider" aria-hidden="true" />
-
-              <button
-                type="button"
-                className="sb-chip"
-                onClick={() => viewerRef.current?.resetCamera()}
-                title="Fit schematic to view"
-              >
-                <Maximize2 size={16} aria-hidden="true" />
-                <span>Fit</span>
-              </button>
-            </div>
-          )}
 
           {textureViewActive ? (
             <div className="texture-compare-canvases" aria-label="Texture comparison previews">
