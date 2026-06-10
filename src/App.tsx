@@ -60,6 +60,8 @@ import {
   preloadBlockThumbnails,
   type BlockThumbnailLayer,
 } from './lib/blockThumbnails';
+import { alwaysMaterialSpriteStateKey } from './lib/materialSpriteOverrides';
+import { materialSpriteUrlForStateKey } from './lib/materialSprites';
 import { parseBlockStateKey as parseMinecraftBlockStateKey, textureUrl, type ModelFaceName } from './lib/minecraftModels';
 import { writeNbt, type NbtDocument } from './lib/nbt';
 import {
@@ -3156,7 +3158,7 @@ function App() {
                           aria-pressed={checked}
                         >
                           <span className={`plan-check${checked ? ' is-on' : ''}`}>{checked && <Check size={12} strokeWidth={3} />}</span>
-                          <BlockPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
+                          <MaterialPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
                           <span className="plan-ing-meta">
                             <strong>{material.label}</strong>
                             <span>{material.count.toLocaleString()} · {Math.ceil(material.count / 64)} stacks</span>
@@ -3183,7 +3185,7 @@ function App() {
                               <div className="craft-plan-inputs">
                                 {step.inputs.map((input) => (
                                   <div className="craft-plan-chip" key={input.id}>
-                                    <BlockPreview stateKey={input.stateKey} color={input.color} layers={input.thumbnailLayers} />
+                                    <MaterialPreview stateKey={input.stateKey} color={input.color} layers={input.thumbnailLayers} />
                                     <span className="chip-label">{input.label}</span>
                                     <span className="chip-count">{input.count.toLocaleString()}</span>
                                   </div>
@@ -3205,7 +3207,7 @@ function App() {
                                 aria-pressed={checked}
                               >
                                 <span className={`plan-check${checked ? ' is-on' : ''}`}>{checked && <Check size={12} strokeWidth={3} />}</span>
-                                <BlockPreview stateKey={step.stateKey} color={step.color} layers={step.thumbnailLayers} />
+                                <MaterialPreview stateKey={step.stateKey} color={step.color} layers={step.thumbnailLayers} />
                                 <span className="plan-out-meta">
                                   <strong>{step.label}</strong>
                                   <span>{step.count.toLocaleString()} · {step.crafts.toLocaleString()} {step.crafts === 1 ? 'craft' : 'crafts'}</span>
@@ -3245,7 +3247,7 @@ function App() {
                           aria-pressed={checked}
                         >
                           <span className="queue-index">{index + 1}</span>
-                          <BlockPreview stateKey={step.stateKey} color={step.color} layers={step.thumbnailLayers} />
+                          <MaterialPreview stateKey={step.stateKey} color={step.color} layers={step.thumbnailLayers} />
                           <span className="queue-meta">
                             <strong>{recipeTypeLabel(step.method)} {step.label}</strong>
                             <span className="queue-count">{step.count.toLocaleString()} ({step.crafts.toLocaleString()} {step.crafts === 1 ? 'craft' : 'crafts'})</span>
@@ -3375,12 +3377,12 @@ function App() {
                         >
                           {slot && (
                             <>
-                              <BlockPreview
-                                stateKey={slot.material.stateKey}
-                                color={slot.material.color}
-                                layers={slot.material.thumbnailLayers}
-                                size={42}
-                              />
+                                <MaterialPreview
+                                  stateKey={slot.material.stateKey}
+                                  color={slot.material.color}
+                                  layers={slot.material.thumbnailLayers}
+                                  size={42}
+                                />
                               <strong>{slot.count}</strong>
                             </>
                           )}
@@ -3562,7 +3564,7 @@ function App() {
                             >
                               <span className="material-row shopping-material-row">
                                 <span className="material-pick shopping-pick">
-                                  <BlockPreview
+                                  <MaterialPreview
                                     stateKey={material.stateKey}
                                     color={material.color}
                                     layers={material.thumbnailLayers}
@@ -4350,7 +4352,7 @@ function App() {
                   onToggleExpanded={toggleMaterialBreakdown}
                   onToggleVisibility={toggleMaterialVisibility}
                   renderPreview={(material) => (
-                    <BlockPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
+                    <MaterialPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
                   )}
                   renderBreakdown={(material) => (
                     <MaterialBreakdown materialId={material.id} count={material.count} />
@@ -4485,7 +4487,7 @@ function App() {
                   onToggleExpanded={toggleMaterialBreakdown}
                   onToggleVisibility={toggleMaterialVisibility}
                   renderPreview={(material) => (
-                    <BlockPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
+                    <MaterialPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
                   )}
                   renderBreakdown={(material) => (
                     <MaterialBreakdown materialId={material.id} count={material.count} />
@@ -4535,7 +4537,7 @@ function App() {
                 onToggleExpanded={toggleMaterialBreakdown}
                 onToggleVisibility={toggleMaterialVisibility}
                 renderPreview={(material) => (
-                  <BlockPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
+                  <MaterialPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
                 )}
                 renderBreakdown={(material) => (
                   <MaterialBreakdown materialId={material.id} count={material.count} />
@@ -4849,6 +4851,8 @@ function BlockPreview({
   rotateX,
   rotateY,
   adjustmentKey,
+  fallbackToSprite = false,
+  forceSpriteStateKey = null,
 }: {
   stateKey: string;
   color: number;
@@ -4857,11 +4861,15 @@ function BlockPreview({
   rotateX?: number;
   rotateY?: number;
   adjustmentKey?: string;
+  fallbackToSprite?: boolean;
+  forceSpriteStateKey?: string | null;
 }) {
   const thumbnailDisplayAdjustments = useContext(ThumbnailDisplayAdjustmentsContext);
   const defaultAdjustment = thumbnailDisplayAdjustments[adjustmentKey ?? thumbnailDisplayAdjustmentKey(stateKey)]
     ?? defaultThumbnailDisplayAdjustment;
   const previewRequest = resolveThumbnailPreviewRequest(stateKey, layers, defaultAdjustment);
+  const forcedSpriteUrl = forceSpriteStateKey ? materialSpriteUrlForStateKey(forceSpriteStateKey) : null;
+  const fallbackSpriteUrl = fallbackToSprite ? materialSpriteUrlForStateKey(stateKey) : null;
   const previewRef = useRef<HTMLSpanElement | null>(null);
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(() => (
     getCachedBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers) ?? null
@@ -4874,6 +4882,7 @@ function BlockPreview({
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
+    if (forcedSpriteUrl) return;
     const preview = previewRef.current;
     if (!preview) return;
 
@@ -4891,9 +4900,10 @@ function BlockPreview({
 
     observer.observe(preview);
     return () => observer.disconnect();
-  }, []);
+  }, [forcedSpriteUrl]);
 
   useEffect(() => {
+    if (forcedSpriteUrl) return;
     const cachedThumbnail = getCachedBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers);
     if (cachedThumbnail !== undefined) {
       setThumbnailUrl(cachedThumbnail);
@@ -4921,26 +4931,31 @@ function BlockPreview({
     return () => {
       cancelled = true;
     };
-  }, [color, isVisible, previewRequest.layers, previewRequest.stateKey]);
-  const resolvedRotateX = rotateX ?? defaultAdjustment.rotateX;
-  const resolvedRotateY = rotateY ?? defaultAdjustment.rotateY;
+  }, [color, forcedSpriteUrl, isVisible, previewRequest.layers, previewRequest.stateKey]);
+  const showingForcedSprite = Boolean(forcedSpriteUrl);
+  const showingSpriteFallback = !thumbnailUrl && thumbnailState === 'failed' && Boolean(fallbackSpriteUrl);
+  const showingSprite = showingForcedSprite || showingSpriteFallback;
+  const resolvedRotateX = showingSprite ? 0 : (rotateX ?? defaultAdjustment.rotateX);
+  const resolvedRotateY = showingSprite ? 0 : (rotateY ?? defaultAdjustment.rotateY);
+  const previewUrl = forcedSpriteUrl ?? thumbnailUrl ?? (showingSpriteFallback ? fallbackSpriteUrl : null);
+  const previewState = forcedSpriteUrl || previewUrl ? 'ready' : thumbnailState;
 
   return (
     <span
       ref={previewRef}
       className="block-preview"
-      data-shape="thumbnail"
-      data-state={thumbnailState}
+      data-shape={showingSprite ? 'sprite' : 'thumbnail'}
+      data-state={previewState}
       aria-hidden="true"
       style={{
-        '--block-thumbnail': thumbnailUrl ? `url("${thumbnailUrl}")` : 'none',
+        '--block-thumbnail': previewUrl ? `url("${previewUrl}")` : 'none',
         '--block-preview-size': size ? `${size}px` : undefined,
-        '--block-preview-scale': defaultAdjustment.scale.toString(),
+        '--block-preview-scale': showingSprite ? '1' : defaultAdjustment.scale.toString(),
         '--block-preview-rotate-x': `${resolvedRotateX}deg`,
         '--block-preview-rotate-y': `${resolvedRotateY}deg`,
       } as CSSProperties}
     >
-      {thumbnailState === 'failed' && (
+      {previewState === 'failed' && (
         <>
           <span className="block-preview-face block-preview-top" />
           <span className="block-preview-face block-preview-left" />
@@ -4949,6 +4964,16 @@ function BlockPreview({
       )}
     </span>
   );
+}
+
+function MaterialPreview(props: {
+  stateKey: string;
+  color: number;
+  layers?: BlockThumbnailLayer[];
+  size?: number;
+}) {
+  const forceSpriteStateKey = alwaysMaterialSpriteStateKey(props.stateKey);
+  return <BlockPreview {...props} fallbackToSprite forceSpriteStateKey={forceSpriteStateKey} />;
 }
 
 function thumbnailDisplayAdjustmentKey(stateKey: string): string {

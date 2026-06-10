@@ -1470,6 +1470,10 @@ html[data-theme='dark'] .material-pick {
   transform-origin: center;
   transition: width 0.16s ease, height 0.16s ease, transform 0.16s ease;
 }
+.block-preview[data-shape='sprite'] {
+  transform: none;
+  transform-origin: center;
+}
 .block-preview-face { position: absolute; inset: 0; }
 
 /* recipe breakdown chips */

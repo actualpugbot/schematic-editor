@@ -36,4 +36,4 @@ The `main` branch is deployed at the site root, and the `ui_redo` branch is depl
 
 ## Minecraft Assets
 
-The app serves vanilla blockstates, block models, block textures, and block-entity textures from `public/minecraft-assets/`. These assets were copied from `~/dev/mc-datahub/workspace/versions/26.1.1/decompiled/client/assets/minecraft`.
+The app serves vanilla blockstates, block models, block textures, item textures, and block-entity textures from `public/minecraft-assets/`. Most of these assets were copied from `~/dev/mc-datahub/workspace/versions/26.1.1/decompiled/client/assets/minecraft`, and the item sprite set was sourced from `~/dev/mc-datahub/workspace/datasets/26w14a/images/item`.
