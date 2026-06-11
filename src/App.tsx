@@ -56,7 +56,9 @@ import { MaterialList, type MaterialListItem } from './components/MaterialList';
 import { ShoppingCelebration } from './components/ShoppingCelebration';
 import {
   createBlockThumbnail,
+  defaultBlockThumbnailResolution,
   getCachedBlockThumbnail,
+  highDetailBlockThumbnailResolution,
   preloadBlockThumbnails,
   type BlockThumbnailLayer,
 } from './lib/blockThumbnails';
@@ -4829,6 +4831,17 @@ interface BlockPreviewProps {
   forceSpriteStateKey?: string | null;
 }
 
+const defaultBlockPreviewRenderSize = 48;
+const highDetailBlockPreviewThreshold = 48;
+
+function preferredBlockThumbnailResolution(size: number | undefined, scale: number): number {
+  const baseSize = size ?? defaultBlockPreviewRenderSize;
+  const effectiveSize = Math.max(baseSize, baseSize * Math.max(scale, 1));
+  return effectiveSize >= highDetailBlockPreviewThreshold
+    ? highDetailBlockThumbnailResolution
+    : defaultBlockThumbnailResolution;
+}
+
 const BlockPreview = memo(function BlockPreview({
   stateKey,
   color,
@@ -4847,16 +4860,40 @@ const BlockPreview = memo(function BlockPreview({
     () => resolveThumbnailPreviewRequest(stateKey, layers, defaultAdjustment),
     [defaultAdjustment, layers, stateKey],
   );
+  const requestedThumbnailResolution = useMemo(
+    () => preferredBlockThumbnailResolution(size, defaultAdjustment.scale),
+    [defaultAdjustment.scale, size],
+  );
   const forcedSpriteUrl = forceSpriteStateKey ? materialSpriteUrlForStateKey(forceSpriteStateKey) : null;
   const fallbackSpriteUrl = fallbackToSprite ? materialSpriteUrlForStateKey(stateKey) : null;
   const previewRef = useRef<HTMLSpanElement | null>(null);
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(() => (
-    getCachedBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers) ?? null
+    getCachedBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers, {
+      resolution: requestedThumbnailResolution,
+    })
+      ?? (
+        requestedThumbnailResolution !== defaultBlockThumbnailResolution
+          ? getCachedBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers, {
+            resolution: defaultBlockThumbnailResolution,
+          })
+          : undefined
+      )
+      ?? null
   ));
   const [thumbnailState, setThumbnailState] = useState<ThumbnailLoadState>(() => {
-    const cachedThumbnail = getCachedBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers);
-    if (cachedThumbnail === undefined) return 'idle';
-    return cachedThumbnail ? 'ready' : 'failed';
+    const cachedThumbnail = getCachedBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers, {
+      resolution: requestedThumbnailResolution,
+    });
+    if (cachedThumbnail !== undefined) return cachedThumbnail ? 'ready' : 'failed';
+
+    const cachedFallbackThumbnail = requestedThumbnailResolution !== defaultBlockThumbnailResolution
+      ? getCachedBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers, {
+        resolution: defaultBlockThumbnailResolution,
+      })
+      : undefined;
+    if (cachedFallbackThumbnail !== undefined) return cachedFallbackThumbnail ? 'ready' : 'failed';
+
+    return 'idle';
   });
   const [isVisible, setIsVisible] = useState(false);
 
@@ -4870,34 +4907,54 @@ const BlockPreview = memo(function BlockPreview({
 
   useEffect(() => {
     if (forcedSpriteUrl) return;
-    const cachedThumbnail = getCachedBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers);
+    const cachedThumbnail = getCachedBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers, {
+      resolution: requestedThumbnailResolution,
+    });
+    const cachedFallbackThumbnail = requestedThumbnailResolution !== defaultBlockThumbnailResolution
+      ? getCachedBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers, {
+        resolution: defaultBlockThumbnailResolution,
+      })
+      : undefined;
+
     if (cachedThumbnail !== undefined) {
-      setThumbnailUrl(cachedThumbnail);
-      setThumbnailState(cachedThumbnail ? 'ready' : 'failed');
+      setThumbnailUrl(cachedThumbnail ?? cachedFallbackThumbnail ?? null);
+      setThumbnailState(cachedThumbnail || cachedFallbackThumbnail ? 'ready' : 'failed');
       return;
     }
 
-    if (!isVisible) return;
+    if (cachedFallbackThumbnail !== undefined) {
+      setThumbnailUrl(cachedFallbackThumbnail);
+      setThumbnailState(cachedFallbackThumbnail ? 'ready' : 'failed');
+    } else {
+      setThumbnailUrl(null);
+      setThumbnailState(isVisible ? 'loading' : 'idle');
+    }
+
+    if (!isVisible || cachedFallbackThumbnail === null) return;
 
     let cancelled = false;
-    setThumbnailUrl(null);
-    setThumbnailState('loading');
-    void createBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers)
+    if (!cachedFallbackThumbnail) {
+      setThumbnailUrl(null);
+      setThumbnailState('loading');
+    }
+    void createBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers, {
+      resolution: requestedThumbnailResolution,
+    })
       .then((url) => {
         if (cancelled) return;
-        setThumbnailUrl(url);
-        setThumbnailState(url ? 'ready' : 'failed');
+        setThumbnailUrl(url ?? cachedFallbackThumbnail ?? null);
+        setThumbnailState(url || cachedFallbackThumbnail ? 'ready' : 'failed');
       })
       .catch(() => {
         if (cancelled) return;
-        setThumbnailUrl(null);
-        setThumbnailState('failed');
+        setThumbnailUrl(cachedFallbackThumbnail ?? null);
+        setThumbnailState(cachedFallbackThumbnail ? 'ready' : 'failed');
       });
 
     return () => {
       cancelled = true;
     };
-  }, [color, forcedSpriteUrl, isVisible, previewRequest.layers, previewRequest.stateKey]);
+  }, [color, forcedSpriteUrl, isVisible, previewRequest.layers, previewRequest.stateKey, requestedThumbnailResolution]);
   const showingForcedSprite = Boolean(forcedSpriteUrl);
   const showingSpriteFallback = !thumbnailUrl && thumbnailState === 'failed' && Boolean(fallbackSpriteUrl);
   const showingSprite = showingForcedSprite || showingSpriteFallback;
