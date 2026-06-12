@@ -6,6 +6,7 @@
   "packageManager": "pnpm@10.33.0",
   "type": "module",
   "scripts": {
+    "build:block-ids": "node scripts/build-block-ids.mjs",
     "build:recipes": "node scripts/build-recipes.mjs",
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && vite build",

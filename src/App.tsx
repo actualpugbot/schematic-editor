@@ -62,12 +62,14 @@ import {
   type BlockThumbnailLayer,
 } from './lib/blockThumbnails';
 import { alwaysMaterialSpriteStateKey } from './lib/materialSpriteOverrides';
-import { materialSpriteUrlForStateKey } from './lib/materialSprites';
+import { loadMaterialSpriteLookup, materialSpriteUrlForStateKey } from './lib/materialSprites';
 import { parseBlockStateKey as parseMinecraftBlockStateKey, textureUrl, type ModelFaceName } from './lib/minecraftModels';
 import { writeNbt, type NbtDocument } from './lib/nbt';
 import {
   defaultRecipeTypePreference,
   explodeMaterials,
+  getRecipeBundle,
+  loadRecipeBundle,
   normalizeRecipeItemId,
   recipeTypeLabel,
   type BreakdownNode,
@@ -88,9 +90,7 @@ import {
   type SchematicModel,
   type VoxelBlock,
 } from './lib/schematic';
-import creativeInventoryData from './lib/data/creative_inventory.json';
-import recipeBundle from './lib/data/recipes.generated.json';
-import thumbnailDisplayAdjustmentsJson from './lib/data/thumbnail_display_adjustments.json';
+import allBlockIds from './lib/data/block_ids.generated.json';
 import defaultSchematicUrl from '../mossy_roof_house.litematic?url';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
@@ -357,13 +357,13 @@ const commonBuildBlocks = [
   'minecraft:white_wool',
   'minecraft:black_concrete',
 ];
-const creativeCategoryOrder: Array<{ id: CreativeCategoryId; label: string }> = [
-  { id: 'building_blocks', label: creativeInventoryTabLabel('building_blocks') },
-  { id: 'colored_blocks', label: creativeInventoryTabLabel('colored_blocks') },
-  { id: 'natural_blocks', label: creativeInventoryTabLabel('natural_blocks') },
-  { id: 'functional_blocks', label: creativeInventoryTabLabel('functional_blocks') },
-  { id: 'redstone_blocks', label: creativeInventoryTabLabel('redstone_blocks') },
-  { id: 'tools_and_utilities', label: creativeInventoryTabLabel('tools_and_utilities') },
+const creativeCategoryOrder: CreativeCategoryId[] = [
+  'building_blocks',
+  'colored_blocks',
+  'natural_blocks',
+  'functional_blocks',
+  'redstone_blocks',
+  'tools_and_utilities',
 ];
 const colorGroupOrder: Array<{ id: ColorGroupId; label: string }> = [
   { id: 'white', label: 'White & Light' },
@@ -417,8 +417,33 @@ const thumbnailVerticalFacingBlockIds = new Set([
   'minecraft:trial_spawner',
   'minecraft:vault',
 ]);
-const defaultBlockPreviewAdjustments = thumbnailDisplayAdjustmentsJson as unknown as ThumbnailDisplayAdjustmentMap;
-const ThumbnailDisplayAdjustmentsContext = createContext<ThumbnailDisplayAdjustmentMap>(defaultBlockPreviewAdjustments);
+type CreativeInventoryData = typeof import('./lib/data/creative_inventory.json');
+
+let creativeInventoryData: CreativeInventoryData | null = null;
+let creativeInventoryKeywordOrderCache: Record<CreativeCategoryId, string[]> | null = null;
+let loadedThumbnailDisplayAdjustments: ThumbnailDisplayAdjustmentMap = {};
+let appDataPromise: Promise<void> | null = null;
+
+// The recipe/inventory/thumbnail data is only needed after first paint, so it is
+// code-split out of the entry chunk and fetched eagerly in the background.
+function loadAppData(): Promise<void> {
+  appDataPromise ??= Promise.all([
+    import('./lib/data/creative_inventory.json').then((module) => {
+      creativeInventoryData = module.default;
+      creativeInventoryKeywordOrderCache = null;
+    }),
+    import('./lib/data/thumbnail_display_adjustments.json').then((module) => {
+      loadedThumbnailDisplayAdjustments = module.default as unknown as ThumbnailDisplayAdjustmentMap;
+    }),
+    loadRecipeBundle(),
+    loadMaterialSpriteLookup(),
+  ]).then(() => undefined);
+  return appDataPromise;
+}
+
+void loadAppData();
+
+const ThumbnailDisplayAdjustmentsContext = createContext<ThumbnailDisplayAdjustmentMap>({});
 const blockPreviewVisibilityRootMargin = '420px';
 const blockPreviewVisibilityCallbacks = new Map<Element, () => void>();
 let blockPreviewVisibilityObserver: IntersectionObserver | null = null;
@@ -626,12 +651,6 @@ const creativeUtilityOrder = [
   'structure_block',
   'jigsaw',
 ];
-const creativeInventoryKeywordOrder = createCreativeInventoryKeywordOrder();
-const blockstateFiles = import.meta.glob('/public/minecraft-assets/assets/minecraft/blockstates/*.json', {
-  query: '?url',
-  import: 'default',
-});
-
 const scrollbarVisibilityDurationMs = 900;
 
 function useTransientScrollbarVisibility() {
@@ -714,8 +733,21 @@ function App() {
   const [layerMaterialSearch, setLayerMaterialSearch] = useState('');
   const [thumbnailDebugSearch, setThumbnailDebugSearch] = useState('');
   const [thumbnailDisplayAdjustments, setThumbnailDisplayAdjustments] = useState<ThumbnailDisplayAdjustmentMap>(
-    defaultBlockPreviewAdjustments,
+    loadedThumbnailDisplayAdjustments,
   );
+  const [appDataVersion, setAppDataVersion] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadAppData().then(() => {
+      if (cancelled) return;
+      setThumbnailDisplayAdjustments(loadedThumbnailDisplayAdjustments);
+      setAppDataVersion((version) => version + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [selectedThumbnailDebugKey, setSelectedThumbnailDebugKey] = useState('');
   const [thumbnailAdjustmentsCopied, setThumbnailAdjustmentsCopied] = useState(false);
   const [hiddenMaterialIds, setHiddenMaterialIds] = useState<Set<string>>(() => new Set());
@@ -898,7 +930,7 @@ function App() {
     recipeChoice: new Map(),
     recipeTypePreference: defaultRecipeTypePreference,
     integerCrafting,
-  }), [activeMaterials, integerCrafting]);
+  }), [activeMaterials, appDataVersion, integerCrafting]);
   const rawMaterials = useMemo<MaterialSummary[]>(() => (
     recipeBreakdown.raw.map((material) => materialSummaryForRecipeItem(material, activeMaterials))
   ), [activeMaterials, recipeBreakdown]);
@@ -1059,17 +1091,11 @@ function App() {
   const canSaveSchematic = Boolean(model && schematicName.trim());
   const selectedBuildBlockPreview = useMemo(() => createVoxelBlock(0, 0, 0, selectedBuildBlock), [selectedBuildBlock]);
   const allBuildBlocks = useMemo(() => {
-    const fromAssets = Object.keys(blockstateFiles)
-      .map((path) => {
-        const fileName = path.split('/').at(-1) ?? '';
-        return fileName.endsWith('.json') ? `minecraft:${fileName.slice(0, -5)}` : '';
-      })
-      .filter(Boolean);
     const fromModel = model?.blocks.map((block) => materialIdForBlock(block)) ?? [];
-    const allBlocks = new Set([...commonBuildBlocks, ...fromModel, ...fromAssets]);
+    const allBlocks = new Set([...commonBuildBlocks, ...fromModel, ...allBlockIds]);
 
     return Array.from(allBlocks).sort(compareBlockLibraryItems);
-  }, [model]);
+  }, [appDataVersion, model]);
 
   const blockLibraryItems = useMemo<BlockLibraryItem[]>(() => (
     allBuildBlocks.map((stateKey) => {
@@ -1085,10 +1111,8 @@ function App() {
   ), [allBuildBlocks]);
   const blockLibraryStateKeys = useMemo(() => new Set(blockLibraryItems.map((item) => item.stateKey)), [blockLibraryItems]);
   const recipeThumbnailStateKeys = useMemo(() => {
-    const bundle = recipeBundle as unknown as {
-      recipes: Record<string, Array<{ inputs: Record<string, number | undefined> }>>;
-      raw: string[];
-    };
+    const bundle = getRecipeBundle();
+    if (!bundle) return [];
     const itemIds = new Set<string>();
 
     for (const [outputId, recipes] of Object.entries(bundle.recipes)) {
@@ -1105,7 +1129,7 @@ function App() {
     }
 
     return Array.from(itemIds, (id) => recipeItemStateKey(id)).sort((a, b) => a.localeCompare(b));
-  }, []);
+  }, [appDataVersion]);
   const thumbnailDebugItems = useMemo<ThumbnailDebugItem[]>(() => {
     const entries = new Map<string, ThumbnailDebugItem & { sourceSet: Set<string> }>();
     const upsertItem = (
@@ -2505,7 +2529,7 @@ function App() {
   };
 
   const resetAllThumbnailDisplayAdjustments = () => {
-    setThumbnailDisplayAdjustments(defaultBlockPreviewAdjustments);
+    setThumbnailDisplayAdjustments(loadedThumbnailDisplayAdjustments);
   };
 
   const copyThumbnailDisplayAdjustments = () => {
@@ -5764,12 +5788,12 @@ function compareBlockLibraryItems(a: string, b: string): number {
 }
 
 function groupBlocksByCreativeCategory(items: BlockLibraryItem[]): BlockLibraryGroup[] {
-  return creativeCategoryOrder.flatMap((category) => {
+  return creativeCategoryOrder.flatMap((categoryId) => {
     const categoryItems = items
-      .filter((item) => item.category === category.id)
+      .filter((item) => item.category === categoryId)
       .sort((a, b) => compareBlockLibraryItems(a.stateKey, b.stateKey));
 
-    return categoryItems.length > 0 ? [{ id: category.id, label: category.label, items: categoryItems }] : [];
+    return categoryItems.length > 0 ? [{ id: categoryId, label: creativeInventoryTabLabel(categoryId), items: categoryItems }] : [];
   });
 }
 
@@ -5784,7 +5808,7 @@ function groupBlocksByColor(items: BlockLibraryItem[]): BlockLibraryGroup[] {
 }
 
 function creativeCategoryRank(id: CreativeCategoryId): number {
-  return creativeCategoryOrder.findIndex((category) => category.id === id);
+  return creativeCategoryOrder.indexOf(id);
 }
 
 function creativeInventoryRank(stateKey: string): number {
@@ -5813,7 +5837,7 @@ function creativeInventoryRank(stateKey: string): number {
 }
 
 function creativeInventoryTabLabel(id: CreativeCategoryId): string {
-  const tab = creativeInventoryData.minecraftCreativeInventory.tabs[id];
+  const tab = creativeInventoryData?.minecraftCreativeInventory.tabs[id];
   return tab?.label ?? formatBlockName(id);
 }
 
@@ -5829,8 +5853,8 @@ function createCreativeInventoryKeywordOrder(): Record<CreativeCategoryId, strin
 }
 
 function creativeInventoryKeywordsForTab(id: CreativeCategoryId): string[] {
-  const tab = creativeInventoryData.minecraftCreativeInventory.tabs[id];
-  const organization = 'organization' in tab && Array.isArray(tab.organization) ? tab.organization : [];
+  const tab = creativeInventoryData?.minecraftCreativeInventory.tabs[id];
+  const organization = tab && 'organization' in tab && Array.isArray(tab.organization) ? tab.organization : [];
   const keywords: string[] = [];
 
   for (const group of organization) {
@@ -5843,8 +5867,16 @@ function creativeInventoryKeywordsForTab(id: CreativeCategoryId): string[] {
   return keywords.filter((keyword, index) => keyword && keywords.indexOf(keyword) === index);
 }
 
+function creativeInventoryKeywordOrderFor(category: CreativeCategoryId): string[] {
+  if (!creativeInventoryKeywordOrderCache) {
+    if (!creativeInventoryData) return [];
+    creativeInventoryKeywordOrderCache = createCreativeInventoryKeywordOrder();
+  }
+  return creativeInventoryKeywordOrderCache[category];
+}
+
 function creativeInventoryKeywordRank(category: CreativeCategoryId, id: string): number {
-  const keywords = creativeInventoryKeywordOrder[category];
+  const keywords = creativeInventoryKeywordOrderFor(category);
   const match = keywords
     .map((keyword, index) => ({ keyword, index }))
     .filter(({ keyword }) => inventoryKeywordMatchesBlockId(keyword, id))

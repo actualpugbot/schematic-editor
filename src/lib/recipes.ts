@@ -1,5 +1,3 @@
-import recipeBundle from './data/recipes.generated.json';
-
 export type RecipeType =
   | 'crafting_shaped'
   | 'crafting_shapeless'
@@ -46,9 +44,30 @@ export interface BreakdownResult {
   unresolved: string[];
 }
 
-const recipesByOutput = recipeBundle.recipes as unknown as Record<string, Recipe[]>;
-const defaultRaw = new Set<string>(recipeBundle.raw);
+export interface RecipeBundle {
+  recipes: Record<string, Recipe[]>;
+  raw: string[];
+}
+
+let recipeBundle: RecipeBundle | null = null;
+let recipeBundlePromise: Promise<RecipeBundle> | null = null;
+let recipesByOutput: Record<string, Recipe[]> = {};
+let defaultRaw = new Set<string>();
 const unresolvedKinds = new Set<string>();
+
+export function loadRecipeBundle(): Promise<RecipeBundle> {
+  recipeBundlePromise ??= import('./data/recipes.generated.json').then((module) => {
+    recipeBundle = module.default as unknown as RecipeBundle;
+    recipesByOutput = recipeBundle.recipes;
+    defaultRaw = new Set(recipeBundle.raw);
+    return recipeBundle;
+  });
+  return recipeBundlePromise;
+}
+
+export function getRecipeBundle(): RecipeBundle | null {
+  return recipeBundle;
+}
 
 export const defaultRecipeTypePreference: RecipeType[] = [
   'stonecutting',

@@ -1,7 +1,14 @@
-import materialSpriteLookupJson from './data/material_sprite_lookup.json';
-
 const assetRoot = `${import.meta.env.BASE_URL}minecraft-assets/assets/minecraft`;
-const materialSpriteLookup = materialSpriteLookupJson as Record<string, string>;
+
+let materialSpriteLookup: Record<string, string> = {};
+let materialSpriteLookupPromise: Promise<void> | null = null;
+
+export function loadMaterialSpriteLookup(): Promise<void> {
+  materialSpriteLookupPromise ??= import('./data/material_sprite_lookup.json').then((module) => {
+    materialSpriteLookup = module.default as Record<string, string>;
+  });
+  return materialSpriteLookupPromise;
+}
 
 export function materialSpriteUrlForStateKey(stateKey: string): string | null {
   const id = normalizeMaterialSpriteId(stateKey);

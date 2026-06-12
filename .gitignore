@@ -7,3 +7,4 @@ vite.config.js
 .env
 .env.*
 *.local
+.gstack/
