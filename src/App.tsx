@@ -216,6 +216,8 @@ interface ShulkerBoxPlan {
   groupLabel: string;
   color: string;
   slots: Array<ShulkerStack | null>;
+  slotKeys: Array<string | null>;
+  filledSlotKeys: string[];
   itemCount: number;
   usedSlots: number;
 }
@@ -301,8 +303,8 @@ const selectionStoragePrefix = 'schematic-editor-selections';
 const cameraStoragePrefix = 'schematic-editor-cameras';
 const emptyBuildBlock = 'minecraft:air';
 const shulkerInventorySlots = 27;
-const initialShulkerBoxRenderCount = 6;
-const shulkerBoxRenderBatchSize = 6;
+const initialShulkerBoxRenderCount = 4;
+const shulkerBoxRenderBatchSize = 4;
 const maxStackSize = 64;
 const defaultHotbarBlocks = [
   'minecraft:stone',
@@ -753,6 +755,7 @@ function App() {
   const prevShoppingStorageRef = useRef('');
   const prevShulkerProgressRef = useRef(0);
   const prevShulkerStorageRef = useRef('');
+  const shulkerLoadMoreRef = useRef<HTMLParagraphElement | null>(null);
   const dragDepthRef = useRef(0);
   const visibleLayerFrameRef = useRef<number | null>(null);
   const pendingVisibleLayerRangeRef = useRef<{ bottomLayer: number; topLayer: number; singleLayer: number } | null>(null);
@@ -955,9 +958,7 @@ function App() {
   ), [activeMaterials, model, shulkerViewMode, shoppingScope]);
   const shulkerSlotKeys = useMemo(() => (
     new Set(
-      shulkerBoxes.flatMap((box) => box.slots.flatMap((slot, index) => (
-        slot ? [shulkerSlotKey(box.id, index, slot)] : []
-      ))),
+      shulkerBoxes.flatMap((box) => box.filledSlotKeys),
     )
   ), [shulkerBoxes]);
   const visibleShulkerBoxes = useMemo(() => (
@@ -1310,11 +1311,36 @@ function App() {
   useEffect(() => {
     if (appView !== 'shulker' || visibleShulkerBoxCount >= shulkerBoxes.length) return;
 
-    const batchTimer = window.setTimeout(() => {
+    const loadMore = () => {
       setVisibleShulkerBoxCount((count) => Math.min(count + shulkerBoxRenderBatchSize, shulkerBoxes.length));
-    }, 50);
+    };
+    const sentinel = shulkerLoadMoreRef.current;
+    if (!sentinel) {
+      const batchTimer = globalThis.setTimeout(loadMore, 120);
+      return () => globalThis.clearTimeout(batchTimer);
+    }
 
-    return () => window.clearTimeout(batchTimer);
+    if (!('IntersectionObserver' in window)) {
+      const batchTimer = globalThis.setTimeout(loadMore, 120);
+      return () => globalThis.clearTimeout(batchTimer);
+    }
+
+    let frame = 0;
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(loadMore);
+    }, {
+      root: null,
+      rootMargin: '520px 0px',
+      threshold: 0.01,
+    });
+    observer.observe(sentinel);
+
+    return () => {
+      observer.disconnect();
+      window.cancelAnimationFrame(frame);
+    };
   }, [appView, shulkerBoxes.length, visibleShulkerBoxCount]);
 
   useEffect(() => {
@@ -2596,9 +2622,7 @@ function App() {
   };
 
   const toggleShulkerBoxCompletion = (box: ShulkerBoxPlan) => {
-    const keys = box.slots.flatMap((slot, index) => (
-      slot ? [shulkerSlotKey(box.id, index, slot)] : []
-    ));
+    const keys = box.filledSlotKeys;
     setCheckedShulkerSlots((current) => {
       const allChecked = keys.every((key) => current.has(key));
       const next = new Set(current);
@@ -3493,11 +3517,8 @@ function App() {
 
               <div className="shulker-list" aria-live="polite">
                 {visibleShulkerBoxes.map((box) => {
-                  const slotEntries = box.slots.flatMap((slot, index) => (
-                    slot ? [{ key: shulkerSlotKey(box.id, index, slot), slot, index }] : []
-                  ));
-                  const checkedSlotCount = slotEntries.filter(({ key }) => checkedShulkerSlots.has(key)).length;
-                  const isBoxChecked = slotEntries.length > 0 && checkedSlotCount === slotEntries.length;
+                  const checkedSlotCount = box.filledSlotKeys.filter((key) => checkedShulkerSlots.has(key)).length;
+                  const isBoxChecked = box.filledSlotKeys.length > 0 && checkedSlotCount === box.filledSlotKeys.length;
                   const isBoxCollapsed = collapsedShulkerBoxes.has(box.id);
                   const boxItemsId = `shulker-box-${box.id}`;
 
@@ -3506,11 +3527,14 @@ function App() {
                       className={`shulker-card${isBoxChecked ? ' is-complete' : ''}${isBoxCollapsed ? ' is-collapsed' : ''}`}
                       key={box.id}
                       aria-label={box.label}
-                      style={{ '--shulker-accent': shulkerColorCss(box.color) } as CSSProperties}
+                      style={{
+                        '--shulker-accent': shulkerColorCss(box.color),
+                        '--shulker-icon-color': shulkerViewMode === 'box' ? 'var(--brand-a)' : shulkerColorCss(box.color),
+                      } as CSSProperties}
                     >
                       <div className="shulker-card-head">
                         <div className="shulker-card-title">
-                          <ShulkerOutlineIcon className="shulker-card-icon" />
+                          <ShulkerBoxIcon className="shulker-card-icon" />
                           <h3>{box.label}</h3>
                         </div>
                         <div className="shulker-card-actions">
@@ -3532,66 +3556,68 @@ function App() {
                             className="shopping-group-collapse shulker-card-collapse"
                             onClick={() => toggleShulkerBoxCollapsed(box.id)}
                             aria-expanded={!isBoxCollapsed}
-                            aria-controls={boxItemsId}
+                            aria-controls={isBoxCollapsed ? undefined : boxItemsId}
                             aria-label={`${isBoxCollapsed ? 'Expand' : 'Collapse'} ${box.label}`}
                           >
                             {isBoxCollapsed ? <ChevronDown size={17} /> : <ChevronUp size={17} />}
                           </button>
                         </div>
                       </div>
-                      <div className="shulker-card-body" id={boxItemsId} aria-hidden={isBoxCollapsed}>
-                        <div className="shulker-card-body-inner">
-                          <div className="shulker-grid" role="grid" aria-label={`${box.label} inventory`}>
-                            {box.slots.map((slot, index) => {
-                              if (!slot) {
+                      {!isBoxCollapsed && (
+                        <div className="shulker-card-body" id={boxItemsId}>
+                          <div className="shulker-card-body-inner">
+                            <div className="shulker-grid" role="grid" aria-label={`${box.label} inventory`}>
+                              {box.slots.map((slot, index) => {
+                                if (!slot) {
+                                  return (
+                                    <div
+                                      className="shulker-slot"
+                                      key={`${box.id}-slot-${index}`}
+                                      role="gridcell"
+                                      aria-label="Empty slot"
+                                    />
+                                  );
+                                }
+
+                                const slotKey = box.slotKeys[index] ?? shulkerSlotKey(box.id, index, slot);
+                                const isSlotChecked = checkedShulkerSlots.has(slotKey);
+
                                 return (
-                                  <div
-                                    className="shulker-slot"
+                                  <button
+                                    type="button"
+                                    className={`shulker-slot has-item${isSlotChecked ? ' is-checked' : ''}`}
                                     key={`${box.id}-slot-${index}`}
                                     role="gridcell"
-                                    aria-label="Empty slot"
-                                  />
-                                );
-                              }
-
-                              const slotKey = shulkerSlotKey(box.id, index, slot);
-                              const isSlotChecked = checkedShulkerSlots.has(slotKey);
-
-                              return (
-                                <button
-                                  type="button"
-                                  className={`shulker-slot has-item${isSlotChecked ? ' is-checked' : ''}`}
-                                  key={`${box.id}-slot-${index}`}
-                                  role="gridcell"
-                                  aria-label={`${slot.material.label}, ${slot.count}. ${isSlotChecked ? 'Complete' : 'Not complete'}.`}
-                                  aria-pressed={isSlotChecked}
-                                  data-tooltip={slot.material.label}
-                                  onPointerDown={(event) => handleShulkerSlotPointerDown(event, box, index, slot)}
-                                  onClick={(event) => handleShulkerSlotClick(event, box, index, slot)}
-                                >
-                                  <span className="shulker-slot-frame">
-                                    <MaterialPreview
-                                      stateKey={slot.material.stateKey}
-                                      color={slot.material.color}
-                                      layers={slot.material.thumbnailLayers}
-                                      size={42}
-                                    />
-                                    <strong>{slot.count}</strong>
-                                    <span className="shulker-slot-check" aria-hidden="true">
-                                      <Check size={14} strokeWidth={3} />
+                                    aria-label={`${slot.material.label}, ${slot.count}. ${isSlotChecked ? 'Complete' : 'Not complete'}.`}
+                                    aria-pressed={isSlotChecked}
+                                    data-tooltip={slot.material.label}
+                                    onPointerDown={(event) => handleShulkerSlotPointerDown(event, box, index, slot)}
+                                    onClick={(event) => handleShulkerSlotClick(event, box, index, slot)}
+                                  >
+                                    <span className="shulker-slot-frame">
+                                      <MaterialPreview
+                                        stateKey={slot.material.stateKey}
+                                        color={slot.material.color}
+                                        layers={slot.material.thumbnailLayers}
+                                        size={42}
+                                      />
+                                      <strong>{slot.count}</strong>
+                                      <span className="shulker-slot-check" aria-hidden="true">
+                                        <Check size={14} strokeWidth={3} />
+                                      </span>
                                     </span>
-                                  </span>
-                                </button>
-                              );
-                            })}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      )}
                     </section>
                   );
                 })}
                 {visibleShulkerBoxCount < shulkerBoxes.length && (
-                  <p className="shulker-loading-more" role="status">
+                  <p className="shulker-loading-more" role="status" ref={shulkerLoadMoreRef}>
                     Loading {Math.min(visibleShulkerBoxCount, shulkerBoxes.length).toLocaleString()} of {shulkerBoxes.length.toLocaleString()} boxes
                   </p>
                 )}
@@ -4990,23 +5016,15 @@ interface BlockPreviewProps {
   forceSpriteStateKey?: string | null;
 }
 
-function ShulkerOutlineIcon({ className }: { className?: string }) {
+function ShulkerBoxIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 32 32" fill="none" aria-hidden="true">
-      <path
-        d="M6.5 12.5L16 7.5L25.5 12.5L16 17.5L6.5 12.5Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M8.5 15.5L16 19.5L23.5 15.5V24L16 28L8.5 24V15.5Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinejoin="round"
-      />
-      <path d="M16 19.5V28" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M11 11L16 13.7L21 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    <svg className={className} viewBox="0 0 148 165" fill="none" aria-hidden="true">
+      <polygon className="shulker-icon-face shulker-icon-face-top" points="5 37.8357 73.7421 5 143 37.8357 75.1607 72.7398" />
+      <polygon className="shulker-icon-face shulker-icon-face-left" points="5 78.1693 75.1607 112.944 75.1607 160 5 123.932" />
+      <polygon className="shulker-icon-face shulker-icon-face-right" points="143 78.1693 75.1607 112.944 75.1607 160 143 123.932" />
+      <polygon className="shulker-icon-face shulker-icon-lid-left" points="5 37.8357 75.1607 72.7398 75.1607 112.944 52.4617 102.085 52.4617 94.975 25.8935 81.9183 25.8935 89.5455 5 78.1693" />
+      <polygon className="shulker-icon-face shulker-icon-lid-right" points="143 37.8357 75.1607 72.7398 75.1607 112.944 96.4411 102.085 96.4411 94.975 121.075 81.9183 121.075 89.5455 143 78.1693" />
+      <path className="shulker-icon-outline" d="M143 78.1693V37.8357L73.7421 5L5 37.8357V78.1693M143 37.8357L75.1607 72.7398M143 78.1693L121.075 89.5455V81.9183L96.4411 94.975V102.085L75.1607 112.944M5 78.1693V123.932L75.1607 160L143 123.932V78.1693M75.1607 112.944L52.4617 102.085V94.975L25.8935 81.9183V89.5455L5 78.1693M75.1607 112.944V72.7398M75.1607 112.944V160M5 37.8357L75.1607 72.7398" />
     </svg>
   );
 }
@@ -6380,14 +6398,19 @@ function packMaterialsIntoShulkerBoxes(materials: MaterialSummary[], mode: Shulk
       const slots = [...currentSlots];
       while (slots.length < shulkerInventorySlots) slots.push(null);
 
+      const id = `${group.id}-${boxInGroup}`;
+      const slotKeys = slots.map((slot, index) => (slot ? shulkerSlotKey(id, index, slot) : null));
+      const filledSlotKeys = slotKeys.filter((slotKey): slotKey is string => slotKey !== null);
       const itemCount = slots.reduce((sum, slot) => sum + (slot?.count ?? 0), 0);
       groupBoxes.push({
-        id: `${group.id}-${boxInGroup}`,
+        id,
         groupLabel: group.label,
         color: group.color ?? shulkerColorForIndex(groupIndex),
         slots,
+        slotKeys,
+        filledSlotKeys,
         itemCount,
-        usedSlots: currentSlots.length,
+        usedSlots: filledSlotKeys.length,
       });
       currentSlots = [];
       boxInGroup += 1;
@@ -6440,6 +6463,7 @@ function shulkerMaterialGroups(
   return Array.from(groups.values())
     .map((group) => ({
       ...group,
+      color: shulkerColorForMaterials(group.materials, group.color ?? shulkerColorForType(group.id)),
       materials: [...group.materials].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
     }))
     .sort((a, b) => {
@@ -6506,6 +6530,29 @@ function shulkerColorForIndex(index: number): string {
   return colors[index % colors.length];
 }
 
+function shulkerColorForMaterials(materials: MaterialSummary[], fallback: string): string {
+  const total = materials.reduce((sum, material) => sum + Math.max(material.count, 0), 0);
+  if (total <= 0) return fallback;
+
+  const weighted = materials.reduce((acc, material) => {
+    const weight = Math.max(material.count, 0);
+    acc.red += ((material.color >> 16) & 0xff) * weight;
+    acc.green += ((material.color >> 8) & 0xff) * weight;
+    acc.blue += (material.color & 0xff) * weight;
+    return acc;
+  }, { red: 0, green: 0, blue: 0 });
+
+  const color = (
+    (Math.round(weighted.red / total) << 16)
+    | (Math.round(weighted.green / total) << 8)
+    | Math.round(weighted.blue / total)
+  );
+
+  const { saturation, lightness } = rgbToHsl(color);
+  if (saturation < 0.08 || lightness < 0.16 || lightness > 0.9) return fallback;
+  return `#${color.toString(16).padStart(6, '0')}`;
+}
+
 function shulkerColorHex(color: string): number {
   switch (color) {
     case 'white':
@@ -6546,6 +6593,7 @@ function shulkerColorHex(color: string): number {
 }
 
 function shulkerColorCss(color: string): string {
+  if (/^#[0-9a-f]{6}$/i.test(color)) return color;
   return `#${shulkerColorHex(color).toString(16).padStart(6, '0')}`;
 }
 

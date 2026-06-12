@@ -2133,6 +2133,7 @@ html[data-theme='dark'] .material-pick {
 .shulker-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 16px;
 }
 .shulker-card {
@@ -2147,6 +2148,9 @@ html[data-theme='dark'] .material-pick {
   content-visibility: auto;
   contain-intrinsic-size: 360px;
 }
+.shulker-card.is-collapsed {
+  contain-intrinsic-size: 76px;
+}
 .shulker-card.is-complete {
   border-color: color-mix(in srgb, var(--shulker-accent) 42%, var(--line));
   box-shadow:
@@ -2160,6 +2164,9 @@ html[data-theme='dark'] .material-pick {
   gap: 12px;
   padding: 0 2px 10px;
 }
+.shulker-card.is-collapsed .shulker-card-head {
+  padding-bottom: 0;
+}
 .shulker-card-title {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr);
@@ -2170,11 +2177,32 @@ html[data-theme='dark'] .material-pick {
 .shulker-card-icon {
   width: 38px;
   height: 38px;
-  color: color-mix(in srgb, var(--shulker-accent) 68%, var(--ink));
-  background: color-mix(in srgb, var(--shulker-accent) 14%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--shulker-accent) 22%, var(--line));
-  border-radius: 12px;
-  padding: 7px;
+  fill: none;
+  color: color-mix(in srgb, var(--shulker-icon-color, var(--shulker-accent)) 72%, var(--ink));
+  stroke: currentColor;
+  stroke-width: 10;
+  stroke-linejoin: round;
+}
+.shulker-icon-face {
+  stroke: none;
+}
+.shulker-icon-face-top {
+  fill: color-mix(in srgb, var(--shulker-icon-color, var(--shulker-accent)) 16%, var(--surface));
+}
+.shulker-icon-face-left {
+  fill: color-mix(in srgb, var(--shulker-icon-color, var(--shulker-accent)) 10%, var(--surface-sunken));
+}
+.shulker-icon-face-right {
+  fill: color-mix(in srgb, var(--brand-b) 16%, var(--surface));
+}
+.shulker-icon-lid-left {
+  fill: color-mix(in srgb, var(--shulker-icon-color, var(--shulker-accent)) 18%, var(--surface));
+}
+.shulker-icon-lid-right {
+  fill: color-mix(in srgb, var(--brand-b) 20%, var(--surface));
+}
+.shulker-icon-outline {
+  fill: none;
 }
 .shulker-card-title h3 {
   font-family: var(--font-display);
@@ -2205,13 +2233,7 @@ html[data-theme='dark'] .material-pick {
   flex: none;
 }
 .shulker-card-body {
-  display: grid;
-  grid-template-rows: 1fr;
-  transition: grid-template-rows 180ms ease, opacity 180ms ease;
-}
-.shulker-card.is-collapsed .shulker-card-body {
-  grid-template-rows: 0fr;
-  opacity: 0;
+  display: block;
 }
 .shulker-card-body-inner {
   min-height: 0;
@@ -2376,6 +2398,7 @@ html[data-theme='dark'] .shulker-slot strong {
     -1px 0 0 var(--surface-sunken);
 }
 .shulker-loading-more {
+  grid-column: 1 / -1;
   width: 100%;
   margin: 4px 0 0;
   padding: 12px;
