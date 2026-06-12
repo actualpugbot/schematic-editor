@@ -1,8 +1,15 @@
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const defaultDataRoot = '/home/actualpug/dev/mc-datahub/workspace/versions/26.1.1/decompiled/client/data/minecraft';
-const dataRoot = process.argv[2] ?? defaultDataRoot;
+// Path to an extracted vanilla data pack's `data/minecraft` directory
+// (containing `recipe/` and `tags/item/`), e.g. from the client jar of the
+// Minecraft version you want recipes for.
+const dataRoot = process.argv[2] ?? process.env.MC_DATA_ROOT;
+if (!dataRoot) {
+  console.error('Usage: node scripts/build-recipes.mjs <path-to-minecraft-data-root>');
+  console.error('       (or set MC_DATA_ROOT)');
+  process.exit(1);
+}
 const recipeRoot = path.join(dataRoot, 'recipe');
 const itemTagRoot = path.join(dataRoot, 'tags', 'item');
 const outputPath = path.join(process.cwd(), 'src/lib/data/recipes.generated.json');

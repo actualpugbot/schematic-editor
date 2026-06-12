@@ -1,8 +1,24 @@
-# schematic-editor
+# Schematic Editor
+
+**Live app: <https://actualpugbot.github.io/schematic-editor/>**
+
+![Schematic Editor viewing the featured Mossy Roof House build](public/og-image.png)
 
 A browser-based Minecraft schematic editor. Open on a default featured build, use `New` to start from a blank build platform, or upload a `.litematic`, `.schem`, `.schematic`, or NBT schematic file and inspect or edit it as a 3D Minecraft model with orbit controls, layer-by-layer viewing, and one-click 360 degree rotation.
 
-schematic-editor runs entirely in the browser, so schematic files stay on your machine.
+Schematic Editor runs entirely in the browser — schematic files are parsed locally and never leave your machine.
+
+## Features
+
+- 3D viewer with orbit and spectator cameras, saved camera positions, and auto-rotate.
+- Layer-by-layer inspection for following a build floor by floor.
+- Block editing on a blank platform or an uploaded build.
+- Material list and shulker-box shopping view with crafting recipe breakdowns.
+- Export to `.litematic`, `.schem`, or legacy `.schematic`.
+
+## Browser Support
+
+The 3D viewer requires WebGL2, which is available in all current versions of Chrome, Edge, Firefox, and Safari. If the viewer stays blank, make sure hardware acceleration is enabled in your browser settings.
 
 ## Run Locally
 
@@ -34,4 +50,12 @@ Pushes to `main` publish the app to GitHub Pages with GitHub Actions.
 
 ## Minecraft Assets
 
-The app serves vanilla blockstates, block models, block textures, item textures, and block-entity textures from `public/minecraft-assets/`. Most of these assets were copied from `~/dev/mc-datahub/workspace/versions/26.1.1/decompiled/client/assets/minecraft`, and the item sprite set was sourced from `~/dev/mc-datahub/workspace/datasets/26w14a/images/item`.
+The app renders blocks using vanilla Minecraft blockstates, models, and textures served from `public/minecraft-assets/`. These assets are © Mojang AB / Microsoft, remain the property of their owners, and are included solely so the app can render Minecraft builds faithfully. They are **not** covered by this project's license and will be removed on request.
+
+The featured default build, *Mossy Roof House*, was created by [MildMadi](https://www.youtube.com/watch?v=KO1yKa34Yl0).
+
+> **Not an official Minecraft product. Not approved by or associated with Mojang or Microsoft.**
+
+## License
+
+The source code of this project is released under the [MIT License](LICENSE). Minecraft game assets and the featured example build are excluded — see the notice in the LICENSE file.

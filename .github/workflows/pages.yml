@@ -13,10 +13,7 @@ on:
         type: string
 
 permissions:
-  actions: write
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -25,6 +22,8 @@ concurrency:
 jobs:
   dispatch-main-deploy:
     if: github.event_name == 'push' && github.ref_name == 'ui_redo'
+    permissions:
+      actions: write
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Pages deploy from `main`
@@ -90,6 +89,9 @@ jobs:
 
   deploy:
     if: github.ref_name == 'main'
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
@@ -162,7 +162,22 @@ const labelProjectionVector = new THREE.Vector3();
 const rotationControlProjectionVector = new THREE.Vector3();
 const stageBackgroundTransitionDurationMs = 220;
 
+let webgl2Supported = false;
+
+function checkWebgl2Support(): boolean {
+  if (webgl2Supported) return true;
+  const gl = document.createElement('canvas').getContext('webgl2');
+  if (gl) {
+    // Release the probe context right away so it doesn't count against the
+    // browser's live WebGL context cap until garbage collection.
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    webgl2Supported = true;
+  }
+  return webgl2Supported;
+}
+
 export function Viewer3D(props: InternalViewerProps) {
+  const [webglError, setWebglError] = useState<'unsupported' | 'lost' | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -288,6 +303,11 @@ export function Viewer3D(props: InternalViewerProps) {
     const container = containerRef.current;
     if (!container) return;
 
+    if (!checkWebgl2Support()) {
+      setWebglError('unsupported');
+      return;
+    }
+
     const scene = new THREE.Scene();
     const colors = sceneThemeColors(props.theme);
     scene.background = new THREE.Color(props.stageBackgroundColor ?? colors.background);
@@ -300,13 +320,32 @@ export function Viewer3D(props: InternalViewerProps) {
     cameraRef.current = camera;
     syncSpectatorStateFromCamera(camera, spectatorStateRef.current);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
+    } catch {
+      disposeObject(scene);
+      sceneRef.current = null;
+      cameraRef.current = null;
+      setWebglError('unsupported');
+      return;
+    }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.domElement.tabIndex = 0;
     rendererRef.current = renderer;
     container.appendChild(renderer.domElement);
+
+    const handleContextLost = (event: Event) => {
+      event.preventDefault();
+      setWebglError('lost');
+    };
+    const handleContextRestored = () => {
+      setWebglError(null);
+    };
+    renderer.domElement.addEventListener('webglcontextlost', handleContextLost);
+    renderer.domElement.addEventListener('webglcontextrestored', handleContextRestored);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -594,6 +633,8 @@ export function Viewer3D(props: InternalViewerProps) {
       if (frameRef.current !== null) {
         window.cancelAnimationFrame(frameRef.current);
       }
+      renderer.domElement.removeEventListener('webglcontextlost', handleContextLost);
+      renderer.domElement.removeEventListener('webglcontextrestored', handleContextRestored);
       renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
       renderer.domElement.removeEventListener('pointerup', handlePointerUp);
       renderer.domElement.removeEventListener('pointermove', handlePointerMove);
@@ -808,6 +849,13 @@ export function Viewer3D(props: InternalViewerProps) {
 
   return (
     <div className="viewer-canvas" data-camera-mode={props.cameraMode} data-testid="viewer-canvas" ref={containerRef}>
+      {webglError && (
+        <div className="viewer-webgl-fallback" role="alert">
+          {webglError === 'unsupported'
+            ? 'The 3D viewer needs WebGL2. Enable hardware acceleration or use a current version of Chrome, Edge, Firefox, or Safari.'
+            : 'The browser lost its graphics context, usually from running out of GPU memory. Reload the page to restore the 3D view.'}
+        </div>
+      )}
       <span
         className="cuboid-corner-tag cuboid-corner-tag-a"
         aria-hidden="true"

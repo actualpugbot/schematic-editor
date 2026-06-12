@@ -2967,3 +2967,15 @@ input:focus-visible, button:focus-visible, a.primary-button:focus-visible { outl
 
 /* celebration */
 .shopping-celebration { position: fixed; inset: 0; z-index: 120; pointer-events: none; }
+
+/* WebGL fallback + Mojang disclaimer */
+.viewer-webgl-fallback {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 30;
+  max-width: 360px; padding: 14px 18px; border-radius: var(--r-md); text-align: center;
+  background: rgba(20, 28, 34, 0.88); color: #eef2f5; font-size: 13px; line-height: 1.5;
+  backdrop-filter: blur(8px);
+}
+.mc-disclaimer {
+  position: absolute; right: 10px; bottom: 6px; z-index: 12; pointer-events: none;
+  font-size: 10px; letter-spacing: 0.01em; opacity: 0.45; color: inherit;
+}

@@ -4163,6 +4163,10 @@ function App() {
             <span className="axis-label axis-x">X</span>
           </div>
 
+          <span className="mc-disclaimer">
+            Not an official Minecraft product. Not approved by or associated with Mojang or Microsoft.
+          </span>
+
           {textureViewActive ? (
             <div className="texture-compare-canvases" aria-label="Texture comparison previews">
               <div className="texture-compare-pane">

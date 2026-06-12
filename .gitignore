@@ -4,3 +4,6 @@ test-artifacts/
 *.tsbuildinfo
 vite.config.d.ts
 vite.config.js
+.env
+.env.*
+*.local

@@ -1,4 +1,4 @@
-import { decompressSync, gzipSync } from 'fflate';
+import { Decompress, gzipSync } from 'fflate';
 
 type NbtValue = unknown;
 
@@ -86,13 +86,25 @@ class NbtReader {
 
       const name = this.readString();
       types.set(name, type);
-      compound[name] = this.readTag(type);
+      // defineProperty instead of bracket assignment so a key named
+      // __proto__ in a hostile file cannot swap the compound's prototype.
+      Object.defineProperty(compound, name, {
+        value: this.readTag(type),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     }
   }
 
   private readList(): NbtValue[] {
     const itemType = this.readByte();
-    const length = this.readInt();
+    // Every list element occupies at least one input byte, so this bounds the
+    // loop for declared lengths that exceed the remaining data.
+    const length = this.readLength(1);
+    if (itemType === Tag.End && length > 0) {
+      throw new Error('NBT lists of End tags cannot have elements.');
+    }
     const list: NbtValue[] = [];
     listTagTypes.set(list, itemType);
 
@@ -104,15 +116,14 @@ class NbtReader {
   }
 
   private readByteArray(): Int8Array {
-    const length = this.readInt();
-    this.ensure(length);
+    const length = this.readLength(1);
     const value = new Int8Array(this.bytes.buffer, this.bytes.byteOffset + this.offset, length).slice();
     this.offset += length;
     return value;
   }
 
   private readIntArray(): Int32Array {
-    const length = this.readInt();
+    const length = this.readLength(4);
     const value = new Int32Array(length);
 
     for (let index = 0; index < length; index += 1) {
@@ -123,7 +134,7 @@ class NbtReader {
   }
 
   private readLongArray(): BigInt64Array {
-    const length = this.readInt();
+    const length = this.readLength(8);
     const value = new BigInt64Array(length);
 
     for (let index = 0; index < length; index += 1) {
@@ -131,6 +142,15 @@ class NbtReader {
     }
 
     return value;
+  }
+
+  private readLength(bytesPerElement: number): number {
+    const length = this.readInt();
+    if (length < 0) {
+      throw new Error('Invalid NBT length.');
+    }
+    this.ensure(length * bytesPerElement);
+    return length;
   }
 
   private readString(): string {
@@ -213,12 +233,53 @@ export function parseNbt(buffer: ArrayBuffer): NbtDocument {
   return new NbtReader(bytes).readRoot();
 }
 
+// Generous ceiling for legitimate schematics; stops small "decompression
+// bomb" files from expanding until the tab runs out of memory.
+const maxDecompressedBytes = 512 * 1024 * 1024;
+
+class DecompressionLimitError extends Error {}
+
 function maybeDecompress(bytes: Uint8Array): Uint8Array {
   try {
-    return decompressSync(bytes);
-  } catch {
+    return decompressCapped(bytes, maxDecompressedBytes);
+  } catch (error) {
+    if (error instanceof DecompressionLimitError) {
+      throw new Error('Compressed data expands beyond the supported size.');
+    }
     return bytes;
   }
+}
+
+function decompressCapped(bytes: Uint8Array, maxBytes: number): Uint8Array {
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  const stream = new Decompress((chunk) => {
+    total += chunk.length;
+    if (total > maxBytes) {
+      throw new DecompressionLimitError();
+    }
+    chunks.push(chunk);
+  });
+  // Feed the input in slices: fflate inflates each push synchronously, so a
+  // single whole-buffer push would materialize the entire output before the
+  // size check above ever ran. DEFLATE expands at most ~1032x, bounding each
+  // slice's output to ~66 MB, so a bomb trips the cap instead of OOMing.
+  const pushSliceBytes = 64 * 1024;
+  for (let offset = 0; offset < bytes.length; offset += pushSliceBytes) {
+    stream.push(bytes.subarray(offset, offset + pushSliceBytes), offset + pushSliceBytes >= bytes.length);
+  }
+
+  if (chunks.length === 1) {
+    return chunks[0];
+  }
+
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
 }
 
 export function writeNbt(document: NbtDocument, options: { compressed?: boolean } = {}): Uint8Array {
