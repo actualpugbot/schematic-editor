@@ -222,6 +222,9 @@ interface ShulkerBoxPlan {
   usedSlots: number;
 }
 
+type ShulkerBoxPlanCache = Record<ShulkerViewMode, ShulkerBoxPlan[]>;
+type ShulkerVisibleBoxCounts = Record<ShulkerViewMode, number>;
+
 interface ThumbnailDisplayAdjustment {
   scale: number;
   rotateX: number;
@@ -722,7 +725,10 @@ function App() {
   const [collapsedShoppingGroups, setCollapsedShoppingGroups] = useState<Set<string>>(() => new Set());
   const [shulkerViewMode, setShulkerViewMode] = useState<ShulkerViewMode>('box');
   const [collapsedShulkerBoxes, setCollapsedShulkerBoxes] = useState<Set<string>>(() => new Set());
-  const [visibleShulkerBoxCount, setVisibleShulkerBoxCount] = useState(initialShulkerBoxRenderCount);
+  const [visibleShulkerBoxCounts, setVisibleShulkerBoxCounts] = useState<ShulkerVisibleBoxCounts>(() => ({
+    box: initialShulkerBoxRenderCount,
+    type: initialShulkerBoxRenderCount,
+  }));
   const [checkedPlanSteps, setCheckedPlanSteps] = useState<Set<string>>(() => new Set());
   const [checkedShoppingItems, setCheckedShoppingItems] = useState<Set<string>>(() => new Set());
   const [checkedShulkerSlots, setCheckedShulkerSlots] = useState<Set<string>>(() => new Set());
@@ -968,9 +974,11 @@ function App() {
     });
   }, [activeMaterials, shoppingSearch]);
   const shoppingGroups = useMemo(() => groupShoppingMaterials(shoppingMaterials), [shoppingMaterials]);
-  const shulkerBoxes = useMemo(() => (
-    packMaterialsIntoShulkerBoxes(activeMaterials, shulkerViewMode)
-  ), [activeMaterials, shulkerViewMode]);
+  const shulkerBoxPlanCache = useMemo<ShulkerBoxPlanCache>(() => ({
+    box: packMaterialsIntoShulkerBoxes(activeMaterials, 'box'),
+    type: packMaterialsIntoShulkerBoxes(activeMaterials, 'type'),
+  }), [activeMaterials]);
+  const shulkerBoxes = shulkerBoxPlanCache[shulkerViewMode];
   const shulkerStorage = useMemo(() => (
     model ? shulkerStorageKey(model, shoppingScope, shulkerViewMode, activeMaterials) : ''
   ), [activeMaterials, model, shulkerViewMode, shoppingScope]);
@@ -979,9 +987,21 @@ function App() {
       shulkerBoxes.flatMap((box) => box.filledSlotKeys),
     )
   ), [shulkerBoxes]);
+  const visibleShulkerBoxCount = Math.min(visibleShulkerBoxCounts[shulkerViewMode], shulkerBoxes.length);
   const visibleShulkerBoxes = useMemo(() => (
     shulkerBoxes.slice(0, visibleShulkerBoxCount)
   ), [shulkerBoxes, visibleShulkerBoxCount]);
+  const visibleShulkerThumbnailQueue = useMemo(() => (
+    visibleShulkerBoxes.flatMap((box) => (
+      box.slots.flatMap((slot) => (slot
+        ? [{
+          stateKey: slot.material.stateKey,
+          color: slot.material.color,
+          layers: slot.material.thumbnailLayers,
+        }]
+        : []))
+    ))
+  ), [visibleShulkerBoxes]);
   const shulkerFilledSlotCount = useMemo(() => (
     shulkerBoxes.reduce((sum, box) => sum + box.usedSlots, 0)
   ), [shulkerBoxes]);
@@ -1296,6 +1316,19 @@ function App() {
   }, [appView, filteredBlockLibraryItems, loadState]);
 
   useEffect(() => {
+    if (loadState !== 'ready' || appView !== 'shulker' || visibleShulkerThumbnailQueue.length === 0) return;
+
+    const controller = new AbortController();
+    preloadBlockThumbnails(visibleShulkerThumbnailQueue, {
+      batchSize: 18,
+      priority: 'interactive',
+      signal: controller.signal,
+    });
+
+    return () => controller.abort();
+  }, [appView, loadState, visibleShulkerThumbnailQueue]);
+
+  useEffect(() => {
     if (!THUMBNAIL_DEBUG_ENABLED || appView !== 'thumbnail-debug') return;
 
     const controller = new AbortController();
@@ -1318,19 +1351,20 @@ function App() {
   }, [appView]);
 
   useEffect(() => {
-    if (appView !== 'shulker') {
-      setVisibleShulkerBoxCount(initialShulkerBoxRenderCount);
-      return;
-    }
-
-    setVisibleShulkerBoxCount(Math.min(initialShulkerBoxRenderCount, shulkerBoxes.length));
-  }, [appView, shulkerBoxes]);
+    setVisibleShulkerBoxCounts({
+      box: Math.min(initialShulkerBoxRenderCount, shulkerBoxPlanCache.box.length),
+      type: Math.min(initialShulkerBoxRenderCount, shulkerBoxPlanCache.type.length),
+    });
+  }, [shulkerBoxPlanCache]);
 
   useEffect(() => {
     if (appView !== 'shulker' || visibleShulkerBoxCount >= shulkerBoxes.length) return;
 
     const loadMore = () => {
-      setVisibleShulkerBoxCount((count) => Math.min(count + shulkerBoxRenderBatchSize, shulkerBoxes.length));
+      setVisibleShulkerBoxCounts((counts) => ({
+        ...counts,
+        [shulkerViewMode]: Math.min(counts[shulkerViewMode] + shulkerBoxRenderBatchSize, shulkerBoxes.length),
+      }));
     };
     const sentinel = shulkerLoadMoreRef.current;
     if (!sentinel) {
@@ -1359,7 +1393,7 @@ function App() {
       observer.disconnect();
       window.cancelAnimationFrame(frame);
     };
-  }, [appView, shulkerBoxes.length, visibleShulkerBoxCount]);
+  }, [appView, shulkerBoxes.length, shulkerViewMode, visibleShulkerBoxCount]);
 
   useEffect(() => {
     if (materialsScope === 'cuboid' && !cuboidBounds) {
@@ -2495,7 +2529,6 @@ function App() {
 
   const openShulkerView = () => {
     if (!model) return;
-    setVisibleShulkerBoxCount(0);
     setAppView('shulker');
   };
 
