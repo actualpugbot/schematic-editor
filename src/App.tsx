@@ -306,6 +306,7 @@ const selectionStoragePrefix = 'schematic-editor-selections';
 const cameraStoragePrefix = 'schematic-editor-cameras';
 const emptyBuildBlock = 'minecraft:air';
 const shulkerInventorySlots = 27;
+const shulkerConsolidationSlotThreshold = Math.floor(shulkerInventorySlots / 2);
 const initialShulkerBoxRenderCount = 4;
 const shulkerBoxRenderBatchSize = 4;
 const maxStackSize = 64;
@@ -724,6 +725,7 @@ function App() {
   const [shoppingLayout, setShoppingLayout] = useState<ShoppingLayout>('grid');
   const [collapsedShoppingGroups, setCollapsedShoppingGroups] = useState<Set<string>>(() => new Set());
   const [shulkerViewMode, setShulkerViewMode] = useState<ShulkerViewMode>('box');
+  const [shulkerTypeAutoConsolidated, setShulkerTypeAutoConsolidated] = useState(false);
   const [collapsedShulkerBoxes, setCollapsedShulkerBoxes] = useState<Set<string>>(() => new Set());
   const [visibleShulkerBoxCounts, setVisibleShulkerBoxCounts] = useState<ShulkerVisibleBoxCounts>(() => ({
     box: initialShulkerBoxRenderCount,
@@ -978,10 +980,20 @@ function App() {
     box: packMaterialsIntoShulkerBoxes(activeMaterials, 'box'),
     type: packMaterialsIntoShulkerBoxes(activeMaterials, 'type'),
   }), [activeMaterials]);
-  const shulkerBoxes = shulkerBoxPlanCache[shulkerViewMode];
+  const shulkerBoxes = useMemo(() => {
+    const boxes = shulkerBoxPlanCache[shulkerViewMode];
+    if (shulkerViewMode !== 'type' || !shulkerTypeAutoConsolidated) return boxes;
+    return consolidateLesserFilledShulkerBoxes(boxes);
+  }, [shulkerBoxPlanCache, shulkerTypeAutoConsolidated, shulkerViewMode]);
+  const shulkerConsolidatableBoxCount = useMemo(() => (
+    shulkerBoxPlanCache.type.filter(isLesserFilledShulkerBox).length
+  ), [shulkerBoxPlanCache.type]);
+  const shulkerStorageMode = shulkerViewMode === 'type' && shulkerTypeAutoConsolidated
+    ? 'type-consolidated'
+    : shulkerViewMode;
   const shulkerStorage = useMemo(() => (
-    model ? shulkerStorageKey(model, shoppingScope, shulkerViewMode, activeMaterials) : ''
-  ), [activeMaterials, model, shulkerViewMode, shoppingScope]);
+    model ? shulkerStorageKey(model, shoppingScope, shulkerStorageMode, activeMaterials) : ''
+  ), [activeMaterials, model, shoppingScope, shulkerStorageMode]);
   const shulkerSlotKeys = useMemo(() => (
     new Set(
       shulkerBoxes.flatMap((box) => box.filledSlotKeys),
@@ -2639,6 +2651,10 @@ function App() {
     setCheckedShoppingItems(new Set());
   };
 
+  const resetShulkerCompletion = () => {
+    setCheckedShulkerSlots(new Set());
+  };
+
   const toggleShulkerSlot = (box: ShulkerBoxPlan, slotIndex: number, slot: ShulkerStack) => {
     const key = shulkerSlotKey(box.id, slotIndex, slot);
     setCheckedShulkerSlots((current) => {
@@ -3519,6 +3535,18 @@ function App() {
                   <p className="eyebrow">Shulker Box View</p>
                   <h2>{schematicName}</h2>
                 </div>
+                <div className="shopping-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={resetShulkerCompletion}
+                    disabled={checkedShulkerSlotCount === 0}
+                    title="Reset completed slots for this shulker view"
+                  >
+                    <RotateCcw size={16} aria-hidden="true" />
+                    Reset
+                  </button>
+                </div>
               </div>
 
               <div className="shopping-toolbar shulker-toolbar">
@@ -3546,23 +3574,40 @@ function App() {
                     Selected Area
                   </button>
                 </div>
-                <div className="segmented-control shulker-mode-toggle" role="group" aria-label="Organize shulker boxes">
-                  <button
-                    type="button"
-                    className={shulkerViewMode === 'box' ? 'is-active' : ''}
-                    onClick={() => setShulkerViewMode('box')}
-                    aria-pressed={shulkerViewMode === 'box'}
-                  >
-                    By Box
-                  </button>
-                  <button
-                    type="button"
-                    className={shulkerViewMode === 'type' ? 'is-active' : ''}
-                    onClick={() => setShulkerViewMode('type')}
-                    aria-pressed={shulkerViewMode === 'type'}
-                  >
-                    By Item Type
-                  </button>
+                <div className="shulker-toolbar-right">
+                  {shulkerViewMode === 'type' && (
+                    <button
+                      type="button"
+                      className={`secondary-button shulker-consolidate-button${shulkerTypeAutoConsolidated ? ' is-active' : ''}`}
+                      onClick={() => setShulkerTypeAutoConsolidated((current) => !current)}
+                      disabled={shulkerConsolidatableBoxCount < 2}
+                      aria-pressed={shulkerTypeAutoConsolidated}
+                      title={shulkerConsolidatableBoxCount < 2
+                        ? 'At least two boxes under half full are needed'
+                        : 'Combine boxes with fewer than half their slots filled'}
+                    >
+                      <BoxSelect size={16} aria-hidden="true" />
+                      {shulkerTypeAutoConsolidated ? 'Consolidated' : 'Auto-consolidate'}
+                    </button>
+                  )}
+                  <div className="segmented-control shulker-mode-toggle" role="group" aria-label="Organize shulker boxes">
+                    <button
+                      type="button"
+                      className={shulkerViewMode === 'box' ? 'is-active' : ''}
+                      onClick={() => setShulkerViewMode('box')}
+                      aria-pressed={shulkerViewMode === 'box'}
+                    >
+                      By Box
+                    </button>
+                    <button
+                      type="button"
+                      className={shulkerViewMode === 'type' ? 'is-active' : ''}
+                      onClick={() => setShulkerViewMode('type')}
+                      aria-pressed={shulkerViewMode === 'type'}
+                    >
+                      By Item Type
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -6406,7 +6451,7 @@ function shoppingStorageKey(model: SchematicModel, scopeKey: string, materials: 
 function shulkerStorageKey(
   model: SchematicModel,
   scopeKey: string,
-  mode: ShulkerViewMode,
+  mode: string,
   materials: MaterialSummary[],
 ): string {
   const dimensions = `${model.dimensions.width}x${model.dimensions.height}x${model.dimensions.length}`;
@@ -6483,6 +6528,105 @@ function packMaterialsIntoShulkerBoxes(materials: MaterialSummary[], mode: Shulk
   return boxes;
 }
 
+function consolidateLesserFilledShulkerBoxes(boxes: ShulkerBoxPlan[]): ShulkerBoxPlan[] {
+  const candidates = boxes.filter(isLesserFilledShulkerBox);
+  if (candidates.length < 2) return boxes;
+
+  const candidateIds = new Set(candidates.map((box) => box.id));
+  const sourceGroupLabels = uniqueLabels(candidates.map((box) => box.groupLabel));
+  const consolidatedStacks = mergeShulkerStacks(candidates.flatMap((box) => box.slots.filter((slot): slot is ShulkerStack => Boolean(slot))));
+  if (consolidatedStacks.length === 0) return boxes;
+
+  const consolidatedBoxes: ShulkerBoxPlan[] = [];
+  for (let index = 0; index < consolidatedStacks.length; index += shulkerInventorySlots) {
+    const boxStacks = consolidatedStacks.slice(index, index + shulkerInventorySlots);
+    const slots: ShulkerBoxPlan['slots'] = [...boxStacks];
+    while (slots.length < shulkerInventorySlots) slots.push(null);
+
+    const id = `consolidated-${consolidatedBoxes.length + 1}`;
+    const slotKeys = slots.map((slot, slotIndex) => (slot ? shulkerSlotKey(id, slotIndex, slot) : null));
+    const filledSlotKeys = slotKeys.filter((slotKey): slotKey is string => slotKey !== null);
+    const materials = uniqueMaterials(boxStacks.map((stack) => stack.material));
+    consolidatedBoxes.push({
+      id,
+      label: consolidatedShulkerBoxLabel(sourceGroupLabels, consolidatedBoxes.length + 1, Math.ceil(consolidatedStacks.length / shulkerInventorySlots)),
+      groupLabel: 'Consolidated',
+      color: shulkerColorForMaterials(materials, 'purple'),
+      slots,
+      slotKeys,
+      filledSlotKeys,
+      itemCount: slots.reduce((sum, slot) => sum + (slot?.count ?? 0), 0),
+      usedSlots: filledSlotKeys.length,
+    });
+  }
+
+  let insertedConsolidatedBoxes = false;
+  return boxes.flatMap((box) => {
+    if (!candidateIds.has(box.id)) return [box];
+    if (insertedConsolidatedBoxes) return [];
+    insertedConsolidatedBoxes = true;
+    return consolidatedBoxes;
+  });
+}
+
+function isLesserFilledShulkerBox(box: ShulkerBoxPlan): boolean {
+  return box.usedSlots > 0 && box.usedSlots <= shulkerConsolidationSlotThreshold;
+}
+
+function mergeShulkerStacks(stacks: ShulkerStack[]): ShulkerStack[] {
+  const materials = new Map<string, MaterialSummary>();
+  const totals = new Map<string, number>();
+  const orderedIds: string[] = [];
+
+  for (const stack of stacks) {
+    if (!materials.has(stack.material.id)) {
+      materials.set(stack.material.id, stack.material);
+      orderedIds.push(stack.material.id);
+    }
+    totals.set(stack.material.id, (totals.get(stack.material.id) ?? 0) + stack.count);
+  }
+
+  return orderedIds.flatMap((materialId) => {
+    const material = materials.get(materialId);
+    if (!material) return [];
+
+    const stackSize = materialStackSize(materialId);
+    let remaining = totals.get(materialId) ?? 0;
+    const mergedStacks: ShulkerStack[] = [];
+    while (remaining > 0) {
+      const count = Math.min(stackSize, remaining);
+      mergedStacks.push({ material, count });
+      remaining -= count;
+    }
+    return mergedStacks;
+  });
+}
+
+function consolidatedShulkerBoxLabel(sourceGroupLabels: string[], boxNumber: number, boxCount: number): string {
+  const sourceLabel = consolidatedSourceLabel(sourceGroupLabels);
+  return boxCount > 1 ? `${sourceLabel} ${boxNumber}` : sourceLabel;
+}
+
+function consolidatedSourceLabel(sourceGroupLabels: string[]): string {
+  if (sourceGroupLabels.length === 0) return 'Mixed Items';
+  if (sourceGroupLabels.length === 1) return sourceGroupLabels[0];
+  if (sourceGroupLabels.length === 2) return `Mixed: ${sourceGroupLabels.join(' + ')}`;
+  return `Mixed: ${sourceGroupLabels[0]} + ${sourceGroupLabels.length - 1} types`;
+}
+
+function uniqueLabels(labels: string[]): string[] {
+  return Array.from(new Set(labels.filter(Boolean)));
+}
+
+function uniqueMaterials(materials: MaterialSummary[]): MaterialSummary[] {
+  const seen = new Set<string>();
+  return materials.filter((material) => {
+    if (seen.has(material.id)) return false;
+    seen.add(material.id);
+    return true;
+  });
+}
+
 function shulkerMaterialGroups(
   materials: MaterialSummary[],
   mode: ShulkerViewMode,
@@ -6504,7 +6648,9 @@ function shulkerMaterialGroups(
   return Array.from(groups.values())
     .map((group) => ({
       ...group,
-      color: shulkerColorForMaterials(group.materials, group.color ?? shulkerColorForType(group.id)),
+      color: group.id === 'redstone'
+        ? 'red'
+        : shulkerColorForMaterials(group.materials, group.color ?? shulkerColorForType(group.id)),
       materials: [...group.materials].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
     }))
     .sort((a, b) => {

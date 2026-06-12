@@ -2159,8 +2159,19 @@ html[data-theme='dark'] .material-pick {
 /* ---- Shulker Box View ----------------------------------------------------- */
 .shulker-board { width: min(100%, 1260px); }
 .workspace.is-left-rail-collapsed .shulker-board { width: min(100%, 1420px); }
-.shulker-toolbar { justify-content: space-between; }
-.shulker-mode-toggle { margin-left: auto; }
+.shulker-toolbar { justify-content: flex-start; }
+.shulker-toolbar-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-left: auto;
+}
+.shulker-consolidate-button {
+  height: 38px;
+  padding-inline: 13px;
+}
 
 .shulker-list {
   display: grid;
@@ -2417,7 +2428,8 @@ html[data-theme='dark'] .shulker-slot strong {
   .shulker-toolbar {
     align-items: stretch;
   }
-  .shulker-mode-toggle {
+  .shulker-toolbar-right {
+    justify-content: flex-start;
     margin-left: 0;
   }
   .shulker-list {
