@@ -306,6 +306,24 @@ const shulkerInventorySlots = 27;
 const initialShulkerBoxRenderCount = 4;
 const shulkerBoxRenderBatchSize = 4;
 const maxStackSize = 64;
+const shulkerBoxThumbnailColors = [
+  'white',
+  'light_gray',
+  'gray',
+  'black',
+  'brown',
+  'red',
+  'orange',
+  'yellow',
+  'green',
+  'lime',
+  'cyan',
+  'light_blue',
+  'blue',
+  'purple',
+  'magenta',
+  'pink',
+] as const;
 const defaultHotbarBlocks = [
   'minecraft:stone',
   'minecraft:oak_planks',
@@ -3529,12 +3547,15 @@ function App() {
                       aria-label={box.label}
                       style={{
                         '--shulker-accent': shulkerColorCss(box.color),
-                        '--shulker-icon-color': shulkerViewMode === 'box' ? 'var(--brand-a)' : shulkerColorCss(box.color),
                       } as CSSProperties}
                     >
                       <div className="shulker-card-head">
                         <div className="shulker-card-title">
-                          <ShulkerBoxIcon className="shulker-card-icon" />
+                          <BlockPreview
+                            stateKey={shulkerBoxStateKey(box.color)}
+                            color={shulkerBoxPreviewColor(box.color)}
+                            size={38}
+                          />
                           <h3>{box.label}</h3>
                         </div>
                         <div className="shulker-card-actions">
@@ -5016,19 +5037,6 @@ interface BlockPreviewProps {
   forceSpriteStateKey?: string | null;
 }
 
-function ShulkerBoxIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 148 165" fill="none" aria-hidden="true">
-      <polygon className="shulker-icon-face shulker-icon-face-top" points="5 37.8357 73.7421 5 143 37.8357 75.1607 72.7398" />
-      <polygon className="shulker-icon-face shulker-icon-face-left" points="5 78.1693 75.1607 112.944 75.1607 160 5 123.932" />
-      <polygon className="shulker-icon-face shulker-icon-face-right" points="143 78.1693 75.1607 112.944 75.1607 160 143 123.932" />
-      <polygon className="shulker-icon-face shulker-icon-lid-left" points="5 37.8357 75.1607 72.7398 75.1607 112.944 52.4617 102.085 52.4617 94.975 25.8935 81.9183 25.8935 89.5455 5 78.1693" />
-      <polygon className="shulker-icon-face shulker-icon-lid-right" points="143 37.8357 75.1607 72.7398 75.1607 112.944 96.4411 102.085 96.4411 94.975 121.075 81.9183 121.075 89.5455 143 78.1693" />
-      <path className="shulker-icon-outline" d="M143 78.1693V37.8357L73.7421 5L5 37.8357V78.1693M143 37.8357L75.1607 72.7398M143 78.1693L121.075 89.5455V81.9183L96.4411 94.975V102.085L75.1607 112.944M5 78.1693V123.932L75.1607 160L143 123.932V78.1693M75.1607 112.944L52.4617 102.085V94.975L25.8935 81.9183V89.5455L5 78.1693M75.1607 112.944V72.7398M75.1607 112.944V160M5 37.8357L75.1607 72.7398" />
-    </svg>
-  );
-}
-
 const defaultBlockPreviewRenderSize = 48;
 const highDetailBlockPreviewThreshold = 48;
 
@@ -6447,7 +6455,7 @@ function shulkerMaterialGroups(
   mode: ShulkerViewMode,
 ): Array<{ id: string; label: string; color?: string; materials: MaterialSummary[] }> {
   if (mode === 'box') {
-    return [{ id: 'all', label: 'All Materials', color: 'purple', materials }];
+    return [{ id: 'all', label: 'All Materials', color: 'theme', materials }];
   }
 
   const groups = new Map<string, { id: string; label: string; color?: string; materials: MaterialSummary[] }>();
@@ -6553,6 +6561,39 @@ function shulkerColorForMaterials(materials: MaterialSummary[], fallback: string
   return `#${color.toString(16).padStart(6, '0')}`;
 }
 
+function shulkerBoxStateKey(color: string): string {
+  const boxColor = shulkerBoxThumbnailColor(color);
+  return boxColor === 'natural' ? 'minecraft:shulker_box' : `minecraft:${boxColor}_shulker_box`;
+}
+
+function shulkerBoxPreviewColor(color: string): number {
+  return shulkerColorHex(shulkerBoxThumbnailColor(color));
+}
+
+function shulkerBoxThumbnailColor(color: string): string {
+  if (color === 'theme') return 'cyan';
+  if (color === 'natural' || shulkerBoxThumbnailColors.some((candidate) => candidate === color)) return color;
+  if (!/^#[0-9a-f]{6}$/i.test(color)) return 'purple';
+
+  const target = Number.parseInt(color.slice(1), 16);
+  let closestColor = 'purple';
+  let closestDistance = Number.POSITIVE_INFINITY;
+
+  for (const candidate of shulkerBoxThumbnailColors) {
+    const candidateColor = shulkerColorHex(candidate);
+    const redDelta = ((target >> 16) & 0xff) - ((candidateColor >> 16) & 0xff);
+    const greenDelta = ((target >> 8) & 0xff) - ((candidateColor >> 8) & 0xff);
+    const blueDelta = (target & 0xff) - (candidateColor & 0xff);
+    const distance = redDelta * redDelta + greenDelta * greenDelta + blueDelta * blueDelta;
+    if (distance < closestDistance) {
+      closestColor = candidate;
+      closestDistance = distance;
+    }
+  }
+
+  return closestColor;
+}
+
 function shulkerColorHex(color: string): number {
   switch (color) {
     case 'white':
@@ -6593,6 +6634,7 @@ function shulkerColorHex(color: string): number {
 }
 
 function shulkerColorCss(color: string): string {
+  if (color === 'theme') return 'var(--brand-b)';
   if (/^#[0-9a-f]{6}$/i.test(color)) return color;
   return `#${shulkerColorHex(color).toString(16).padStart(6, '0')}`;
 }
