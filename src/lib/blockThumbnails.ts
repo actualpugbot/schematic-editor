@@ -7,7 +7,9 @@ import {
   type ResolvedBlockPart,
 } from './minecraftModels';
 
-const thumbnailSize = 128;
+export const defaultBlockThumbnailResolution = 128;
+export const highDetailBlockThumbnailResolution = 256;
+const rendererContexts = new Map<number, ThumbnailRendererContext>();
 const faceOrder: ModelFaceName[] = ['east', 'west', 'up', 'down', 'south', 'north'];
 const faceOffsets: Record<ModelFaceName, [number, number, number]> = {
   down: [0, -1, 0],
@@ -37,7 +39,6 @@ const hiddenMaterial = new THREE.MeshBasicMaterial({
   colorWrite: false,
 });
 
-let rendererContext: ThumbnailRendererContext | null = null;
 let thumbnailRenderQueue: Promise<void> = Promise.resolve();
 
 interface ThumbnailRendererContext {
@@ -60,22 +61,29 @@ export interface BlockThumbnailLayer {
   offset?: [number, number, number];
 }
 
+export interface BlockThumbnailRenderOptions {
+  resolution?: number;
+}
+
 export interface BlockThumbnailRequest {
   stateKey: string;
   color: number;
   layers?: BlockThumbnailLayer[];
+  resolution?: number;
 }
 
 export function createBlockThumbnail(
   stateKey: string,
   fallbackColor: number,
   layers?: BlockThumbnailLayer[],
+  options: BlockThumbnailRenderOptions = {},
 ): Promise<string | null> {
-  const key = thumbnailCacheKey(stateKey, fallbackColor, layers);
+  const resolution = normalizeThumbnailResolution(options.resolution);
+  const key = thumbnailCacheKey(stateKey, fallbackColor, layers, resolution);
   const cached = thumbnailCache.get(key);
   if (cached) return cached;
 
-  const promise = prepareBlockThumbnail(stateKey, fallbackColor, layers).then((url) => {
+  const promise = prepareBlockThumbnail(stateKey, fallbackColor, layers, resolution).then((url) => {
     thumbnailResultCache.set(key, url);
     return url;
   });
@@ -87,13 +95,21 @@ export function getCachedBlockThumbnail(
   stateKey: string,
   fallbackColor: number,
   layers?: BlockThumbnailLayer[],
+  options: BlockThumbnailRenderOptions = {},
 ): string | null | undefined {
-  return thumbnailResultCache.get(thumbnailCacheKey(stateKey, fallbackColor, layers));
+  return thumbnailResultCache.get(
+    thumbnailCacheKey(
+      stateKey,
+      fallbackColor,
+      layers,
+      normalizeThumbnailResolution(options.resolution),
+    ),
+  );
 }
 
 export function preloadBlockThumbnails(
   thumbnails: BlockThumbnailRequest[],
-  options: { batchSize?: number; priority?: 'idle' | 'interactive'; signal?: AbortSignal } = {},
+  options: { batchSize?: number; priority?: 'idle' | 'interactive'; signal?: AbortSignal; resolution?: number } = {},
 ) {
   if (typeof window === 'undefined') return;
 
@@ -111,7 +127,12 @@ export function preloadBlockThumbnails(
       const batch = pending.slice(index, index + batchSize);
       index += batchSize;
 
-      void Promise.allSettled(batch.map(({ stateKey, color, layers }) => createBlockThumbnail(stateKey, color, layers)))
+      void Promise.allSettled(batch.map(({ stateKey, color, layers, resolution }) => createBlockThumbnail(
+        stateKey,
+        color,
+        layers,
+        { resolution: resolution ?? options.resolution },
+      )))
         .then(scheduleNextBatch);
     };
 
@@ -131,19 +152,29 @@ export function preloadBlockThumbnails(
   scheduleNextBatch();
 }
 
-function thumbnailCacheKey(stateKey: string, fallbackColor: number, layers?: BlockThumbnailLayer[]): string {
-  if (!layers || layers.length === 0) return `${stateKey}::${fallbackColor}`;
+function normalizeThumbnailResolution(resolution?: number): number {
+  if (resolution && resolution > defaultBlockThumbnailResolution) return highDetailBlockThumbnailResolution;
+  return defaultBlockThumbnailResolution;
+}
+
+function thumbnailCacheKey(
+  stateKey: string,
+  fallbackColor: number,
+  layers?: BlockThumbnailLayer[],
+  resolution = defaultBlockThumbnailResolution,
+): string {
+  if (!layers || layers.length === 0) return `${stateKey}::${fallbackColor}::${resolution}`;
 
   const layerKey = layers
     .map((layer) => `${layer.stateKey}@${(layer.offset ?? [0, 0, 0]).join(',')}`)
     .join('|');
-  return `${stateKey}::${fallbackColor}::${layerKey}`;
+  return `${stateKey}::${fallbackColor}::${layerKey}::${resolution}`;
 }
 
 function uniquePendingThumbnails(thumbnails: BlockThumbnailRequest[]): BlockThumbnailRequest[] {
   const seen = new Set<string>();
-  return thumbnails.filter(({ stateKey, color, layers }) => {
-    const key = thumbnailCacheKey(stateKey, color, layers);
+  return thumbnails.filter(({ stateKey, color, layers, resolution }) => {
+    const key = thumbnailCacheKey(stateKey, color, layers, normalizeThumbnailResolution(resolution));
     if (seen.has(key) || thumbnailResultCache.has(key)) return false;
     seen.add(key);
     return true;
@@ -154,6 +185,7 @@ async function prepareBlockThumbnail(
   stateKey: string,
   fallbackColor: number,
   layers?: BlockThumbnailLayer[],
+  resolution = defaultBlockThumbnailResolution,
 ): Promise<string | null> {
   if (typeof document === 'undefined') return null;
 
@@ -174,7 +206,7 @@ async function prepareBlockThumbnail(
   ).flat();
   if (preparedParts.length === 0) return null;
 
-  return enqueueThumbnailRender(() => renderPreparedThumbnail(preparedParts));
+  return enqueueThumbnailRender(() => renderPreparedThumbnail(preparedParts, resolution));
 }
 
 async function enqueueThumbnailRender(render: () => string): Promise<string> {
@@ -192,9 +224,9 @@ async function enqueueThumbnailRender(render: () => string): Promise<string> {
   }
 }
 
-function renderPreparedThumbnail(parts: PreparedThumbnailPart[]): string {
-  const context = rendererContext ?? createThumbnailRenderer();
-  rendererContext = context;
+function renderPreparedThumbnail(parts: PreparedThumbnailPart[], resolution: number): string {
+  const context = rendererContexts.get(resolution) ?? createThumbnailRenderer(resolution);
+  rendererContexts.set(resolution, context);
   clearGroup(context.group);
 
   for (const part of parts) {
@@ -212,7 +244,7 @@ function renderPreparedThumbnail(parts: PreparedThumbnailPart[]): string {
   return dataUrl;
 }
 
-function createThumbnailRenderer(): ThumbnailRendererContext {
+function createThumbnailRenderer(resolution: number): ThumbnailRendererContext {
   const canvas = document.createElement('canvas');
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -221,7 +253,7 @@ function createThumbnailRenderer(): ThumbnailRendererContext {
     preserveDrawingBuffer: true,
   });
   renderer.setPixelRatio(1);
-  renderer.setSize(thumbnailSize, thumbnailSize, false);
+  renderer.setSize(resolution, resolution, false);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.setClearColor(0x000000, 0);
 
@@ -479,6 +511,7 @@ async function textureMaterial(
   const glowing = isBeaconInnerTexture(textureId) || isGlowingTexture(textureId);
   const transparent = textureRendersTransparent(textureId, translucent);
   const opacity = transparent ? translucentTextureOpacity(textureId) : 1;
+  const side = cutoutTextureNeedsDoubleSide(textureId) ? THREE.DoubleSide : THREE.FrontSide;
   const material = shade
     ? new THREE.MeshStandardMaterial({
         map: texture,
@@ -492,7 +525,7 @@ async function textureMaterial(
         opacity,
         alphaTest: cutout ? 0.5 : isWaterTexture(textureId) ? 0.02 : 0.08,
         depthWrite,
-        side: THREE.FrontSide,
+        side,
       })
     : new THREE.MeshBasicMaterial({
         map: texture,
@@ -501,7 +534,7 @@ async function textureMaterial(
         opacity,
         alphaTest: cutout ? 0.5 : 0.08,
         depthWrite,
-        side: THREE.FrontSide,
+        side,
         toneMapped: false,
       });
 
@@ -606,6 +639,26 @@ function isAlphaCutoutTexture(textureId: string): boolean {
 
 function isCrossPlaneFlowerTexture(path: string): boolean {
   return /^block\/(allium|azure_bluet|blue_orchid|dandelion|golden_dandelion|lily_of_the_valley|oxeye_daisy|poppy|.*_tulip)$/.test(path);
+}
+
+function cutoutTextureNeedsDoubleSide(textureId: string): boolean {
+  const path = textureId.replace(/^minecraft:/, '');
+  return (
+    path.includes('grass')
+    || path.includes('fern')
+    || path.includes('bush')
+    || path.includes('roots')
+    || path.includes('vines')
+    || path.includes('flower')
+    || isCrossPlaneFlowerTexture(path)
+    || /(^|\/)(wheat|carrots|potatoes|beetroots|nether_wart)_stage\d+$/.test(path)
+    || path.includes('crop')
+    || path.includes('sapling')
+    || path.includes('coral')
+    || path.includes('mushroom')
+    || path.includes('amethyst_bud')
+    || path.includes('dripstone')
+  );
 }
 
 function isWaterTexture(textureId: string): boolean {

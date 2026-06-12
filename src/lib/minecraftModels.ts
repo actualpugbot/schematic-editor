@@ -100,6 +100,7 @@ export type ModelFaceUv = [number, number, number, number];
 
 const assetRoot = `${import.meta.env.BASE_URL}minecraft-assets/assets/minecraft`;
 const playerHeadTexturePrefix = 'SchematicEditor:entity/player/head/';
+const piglinHeadTextureId = 'SchematicEditor:entity/piglin/default';
 const solidTexturePrefix = 'SchematicEditor:block/solid/';
 const blockstateCache = new Map<string, Promise<BlockstateJson | null>>();
 const modelCache = new Map<string, Promise<ModelJson | null>>();
@@ -125,6 +126,28 @@ const defaultPlayerSkinSvg = `
   <rect x="40" y="0" width="8" height="8" fill="#4d2e1d" opacity=".95"/>
   <rect x="48" y="0" width="8" height="8" fill="#2f1a10" opacity=".95"/>
   <rect x="40" y="8" width="8" height="3" fill="#2f1a10" opacity=".95"/>
+</svg>`.trim();
+const defaultPiglinHeadSvg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" shape-rendering="crispEdges">
+  <rect width="64" height="64" fill="none"/>
+  <rect x="0" y="8" width="8" height="8" fill="#d49a6a"/>
+  <rect x="8" y="8" width="8" height="8" fill="#e4ac76"/>
+  <rect x="16" y="8" width="8" height="8" fill="#c9815f"/>
+  <rect x="24" y="8" width="8" height="8" fill="#8f523f"/>
+  <rect x="8" y="0" width="8" height="8" fill="#b56f55"/>
+  <rect x="16" y="0" width="8" height="8" fill="#c9815f"/>
+  <rect x="8" y="8" width="8" height="2" fill="#8f523f"/>
+  <rect x="9" y="11" width="2" height="2" fill="#2b2020"/>
+  <rect x="13" y="11" width="2" height="2" fill="#2b2020"/>
+  <rect x="10" y="13" width="4" height="2" fill="#c46c75"/>
+  <rect x="10" y="15" width="1" height="1" fill="#7a3a3e"/>
+  <rect x="13" y="15" width="1" height="1" fill="#7a3a3e"/>
+  <rect x="32" y="8" width="8" height="8" fill="#9e6b50" opacity=".95"/>
+  <rect x="40" y="8" width="8" height="8" fill="#c18362" opacity=".95"/>
+  <rect x="48" y="8" width="8" height="8" fill="#935845" opacity=".95"/>
+  <rect x="56" y="8" width="8" height="8" fill="#6f4334" opacity=".95"/>
+  <rect x="40" y="0" width="8" height="8" fill="#aa6f56" opacity=".95"/>
+  <rect x="48" y="0" width="8" height="8" fill="#7d4838" opacity=".95"/>
 </svg>`.trim();
 
 export function parseBlockStateKey(stateKey: string): BlockStateInfo {
@@ -1492,6 +1515,9 @@ function syntheticBlockParts(
   const conduitParts = syntheticConduitParts(id, properties, variantRotation);
   if (conduitParts.length > 0) return conduitParts;
 
+  const piglinHeadParts = syntheticPiglinHeadParts(id, properties, variantRotation);
+  if (piglinHeadParts.length > 0) return piglinHeadParts;
+
   const playerHeadParts = syntheticPlayerHeadParts(id, properties, variantRotation);
   if (playerHeadParts.length > 0) return playerHeadParts;
 
@@ -1701,6 +1727,57 @@ function syntheticPlayerHeadParts(
   return [baseCuboid, hatCuboid].map((cuboid) =>
     blockEntityCuboidPart(id, properties, `player-head:${wallMounted ? 'wall' : 'floor'}:${cuboid.name}`, cuboid, texture, headRotation),
   );
+}
+
+function syntheticPiglinHeadParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (id !== 'minecraft:piglin_head' && id !== 'minecraft:piglin_wall_head') return [];
+
+  const wallMounted = id === 'minecraft:piglin_wall_head';
+  const headRotation = {
+    x: variantRotation.x,
+    y: variantRotation.y + (wallMounted ? horizontalFacingRotation(properties.facing) : headRotationFromProperty(properties.rotation)),
+  };
+  const texture = piglinHeadTextureId;
+  const earTexture = solidColorTexture(0xcf8f68);
+  const snoutTexture = solidColorTexture(0xcc7c76);
+
+  const parts: ResolvedBlockPart[] = [
+    blockEntityCuboidPart(
+      id,
+      properties,
+      `piglin-head:${wallMounted ? 'wall' : 'floor'}:base`,
+      wallMounted
+        ? { name: 'base', from: [4, 4, 0], to: [12, 12, 8], textureOrigin: [0, 0] }
+        : { name: 'base', from: [4, 0, 4], to: [12, 8, 12], textureOrigin: [0, 0] },
+      texture,
+      headRotation,
+    ),
+  ];
+
+  const appendPiglinPart = (
+    key: string,
+    from: [number, number, number],
+    to: [number, number, number],
+    partTexture: string,
+  ) => {
+    parts.push(syntheticCuboidPart(id, properties, key, from, to, partTexture, headRotation));
+  };
+
+  if (wallMounted) {
+    appendPiglinPart('piglin-head:wall:snout', [5.5, 5.5, 8], [10.5, 8.5, 10.5], snoutTexture);
+    appendPiglinPart('piglin-head:wall:ear-left', [2, 6, 2], [4, 10, 4], earTexture);
+    appendPiglinPart('piglin-head:wall:ear-right', [12, 6, 2], [14, 10, 4], earTexture);
+  } else {
+    appendPiglinPart('piglin-head:floor:snout', [5.5, 1.5, 12], [10.5, 4.5, 14.5], snoutTexture);
+    appendPiglinPart('piglin-head:floor:ear-left', [2, 2, 5.5], [4, 6, 7.5], earTexture);
+    appendPiglinPart('piglin-head:floor:ear-right', [12, 2, 5.5], [14, 6, 7.5], earTexture);
+  }
+
+  return parts;
 }
 
 function isPlayerHeadBlock(id: string): boolean {
@@ -2680,7 +2757,7 @@ function normalizeResourceId(id: string, defaultFolder?: 'block'): string {
 
 function legacyResourcePathAlias(namespace: string, path: string): string {
   if (namespace === 'minecraft' && path === 'chain') return 'iron_chain';
-  if (namespace === 'minecraft' && path === 'grass') return 'short_grass';
+  if (namespace === 'minecraft' && (path === 'grass' || path === 'tallgrass')) return 'short_grass';
   return path;
 }
 
@@ -2700,6 +2777,10 @@ export function textureUrl(textureId: string): string {
 
   if (normalized === 'SchematicEditor:entity/player/default') {
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(defaultPlayerSkinSvg)}`;
+  }
+
+  if (normalized === piglinHeadTextureId) {
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(defaultPiglinHeadSvg)}`;
   }
 
   if (normalized.startsWith(playerHeadTexturePrefix)) {

@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import {
-  BoxSelect,
+  Box,
   Brush,
+  Check,
+  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -9,17 +11,20 @@ import {
   ClipboardList,
   Cuboid,
   Download,
-  Eye,
-  EyeOff,
+  Eraser,
+  ExternalLink,
   FileUp,
   Focus,
   Grid2X2,
-  Hammer,
   ImageIcon,
   Layers,
   List,
   MousePointer2,
   Moon,
+  Move3d,
+  Orbit,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pencil,
   Plus,
   Replace,
@@ -28,9 +33,9 @@ import {
   Rotate3D,
   ScanSearch,
   Search,
+  ShoppingCart,
   SlidersHorizontal,
   Sun,
-  Upload,
   X,
 } from 'lucide-react';
 import {
@@ -38,20 +43,27 @@ import {
   type AxisGizmoOrientation,
   type CameraMode,
   type PlacementPoint,
+  type SavedCameraPosition,
   type SelectionButton,
   type TextureAdjustmentMap,
   type TextureFaceHit,
   type Viewer3DHandle,
   textureAdjustmentKey,
 } from './components/Viewer3D';
+import { FeaturedBuilder } from './components/FeaturedBuilder';
+import { MaterialList, type MaterialListItem } from './components/MaterialList';
 import { ShoppingCelebration } from './components/ShoppingCelebration';
 import {
   createBlockThumbnail,
+  defaultBlockThumbnailResolution,
   getCachedBlockThumbnail,
+  highDetailBlockThumbnailResolution,
   preloadBlockThumbnails,
   type BlockThumbnailLayer,
 } from './lib/blockThumbnails';
-import { textureUrl, type ModelFaceName } from './lib/minecraftModels';
+import { alwaysMaterialSpriteStateKey } from './lib/materialSpriteOverrides';
+import { materialSpriteUrlForStateKey } from './lib/materialSprites';
+import { parseBlockStateKey as parseMinecraftBlockStateKey, textureUrl, type ModelFaceName } from './lib/minecraftModels';
 import { writeNbt, type NbtDocument } from './lib/nbt';
 import {
   defaultRecipeTypePreference,
@@ -59,35 +71,75 @@ import {
   normalizeRecipeItemId,
   recipeTypeLabel,
   type BreakdownNode,
+  type RecipeType,
 } from './lib/recipes';
 import {
-  createSpongeSchematicDocument,
-  createVoxelBlock,
+  createLegacySchematicDocument,
+  createLitematicSchematicDocument,
   createSampleModel,
+  createSpongeSchematicDocument,
+  createStarterModel,
+  createVoxelBlock,
   finalizeSchematicModel,
   parseSchematicDocument,
   renameSchematicDocument,
+  type SchematicExportFormat,
   type PlayerHeadTexture,
   type SchematicModel,
   type VoxelBlock,
 } from './lib/schematic';
 import creativeInventoryData from './lib/data/creative_inventory.json';
+import recipeBundle from './lib/data/recipes.generated.json';
+import thumbnailDisplayAdjustmentsJson from './lib/data/thumbnail_display_adjustments.json';
 import defaultSchematicUrl from '../mossy_roof_house.litematic?url';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 type DraggedFileKind = 'none' | 'unsupported-file' | 'unknown-file' | 'schematic-file';
 type InspectorTab = 'selection' | 'materials' | 'layers';
 type EditPanelTab = 'tools' | 'rotate' | 'replace';
-type AppView = 'inspect' | 'edit' | 'texture' | 'shopping' | 'resource';
+type AppView = 'inspect' | 'edit' | 'texture' | 'shopping' | 'shulker' | 'resource' | 'thumbnail-debug';
 type EditTool = 'select' | 'build';
 type Theme = 'light' | 'dark';
+type SchematicOrigin = 'default' | 'uploaded' | 'new';
 type MaterialsScope = 'build' | 'cuboid';
-type MaterialsMode = 'placed' | 'raw';
 type ShoppingLayout = 'grid' | 'list';
+type ShulkerViewMode = 'box' | 'type';
 type ThumbnailLoadState = 'idle' | 'loading' | 'ready' | 'failed';
 type CuboidCornerId = 'a' | 'b';
 type Direction = 'up' | 'down' | 'north' | 'south' | 'west' | 'east';
 type RotationDirection = 'clockwise' | 'counterclockwise';
+type ControlRailSide = 'left' | 'right';
+
+const UV_VIEW_ENABLED = false;
+const THUMBNAIL_DEBUG_ENABLED = false;
+const defaultExportFormat: SchematicExportFormat = '.litematic';
+const defaultSchematicFileName = 'mossy_roof_house.litematic';
+const defaultSchematicName = 'Mossy Roof House';
+const exportFormatOptions: Array<{
+  value: SchematicExportFormat;
+  label: string;
+  shortLabel: string;
+  description: string;
+}> = [
+  {
+    value: '.litematic',
+    label: 'Litematic (.litematic)',
+    shortLabel: 'Litematic',
+    description: 'Best for modern Litematica builds and round-tripping edits.',
+  },
+  {
+    value: '.schem',
+    label: 'Sponge (.schem)',
+    shortLabel: 'Sponge',
+    description: 'Good for Sponge-compatible tools and newer schematic workflows.',
+  },
+  {
+    value: '.schematic',
+    label: 'Legacy (.schematic)',
+    shortLabel: 'Legacy',
+    description: 'Older MCEdit-style export with limited block-state support.',
+  },
+];
 
 interface TextureSelection {
   stateKey: string;
@@ -105,6 +157,21 @@ interface PendingCuboidCorner {
 interface CuboidCorners {
   a: CuboidPoint | null;
   b: CuboidPoint | null;
+}
+
+interface SelectionArea {
+  id: string;
+  name: string;
+  corners: CuboidCorners;
+  updatedAt: number;
+}
+
+interface SavedCameraView {
+  id: string;
+  name: string;
+  position: SavedCameraPosition;
+  isDefault: boolean;
+  updatedAt: number;
 }
 
 interface CuboidPoint {
@@ -137,22 +204,58 @@ interface ShoppingMaterialGroup {
   materials: MaterialSummary[];
 }
 
-interface ResourceCalculatorStats {
-  totalOutputItems: number;
-  uniqueOutputItems: number;
-  rawMaterialItems: number;
-  uniqueRawMaterials: number;
-  craftingSteps: number;
-  chestsNeeded: number;
-  unresolvedItems: number;
+interface ShulkerStack {
+  material: MaterialSummary;
+  count: number;
 }
 
-interface ResourceGraphGroup {
+interface ShulkerBoxPlan {
   id: string;
   label: string;
-  tone: string;
-  paths: BreakdownNode[][];
-  maxColumns: number;
+  groupLabel: string;
+  color: string;
+  slots: Array<ShulkerStack | null>;
+  slotKeys: Array<string | null>;
+  filledSlotKeys: string[];
+  itemCount: number;
+  usedSlots: number;
+}
+
+type ShulkerBoxPlanCache = Record<ShulkerViewMode, ShulkerBoxPlan[]>;
+type ShulkerVisibleBoxCounts = Record<ShulkerViewMode, number>;
+
+interface ThumbnailDisplayAdjustment {
+  scale: number;
+  rotateX: number;
+  rotateY: number;
+  previewStateKey?: string;
+  previewLayers?: BlockThumbnailLayer[];
+}
+
+type ThumbnailDisplayAdjustmentMap = Record<string, ThumbnailDisplayAdjustment>;
+
+interface ThumbnailDebugItem {
+  key: string;
+  stateKey: string;
+  label: string;
+  color: number;
+  category: string;
+  family: 'block' | 'item';
+  layers?: BlockThumbnailLayer[];
+  sources: string[];
+}
+
+interface ThumbnailPreviewRequest {
+  stateKey: string;
+  layers?: BlockThumbnailLayer[];
+}
+
+type ThumbnailOrientationMode = 'facing' | 'horizontal_facing' | 'rotation' | 'axis' | null;
+
+interface ThumbnailOrientationSummary {
+  mode: ThumbnailOrientationMode;
+  value: string | null;
+  label: string | null;
 }
 
 interface BlockLibraryItem {
@@ -192,12 +295,38 @@ type ColorGroupId =
   | 'pink';
 
 const schematicFileExtensions = new Set(['.litematic', '.schem', '.schematic', '.nbt']);
-const defaultSchematicFileName = 'mossy_roof_house.litematic';
-const defaultSchematicDisplayName = 'Mossy Roof House';
-const defaultBuildTutorialUrl = 'https://www.youtube.com/watch?v=KO1yKa34Yl0';
 const themeStorageKey = 'schematic-editor-theme';
+const leftRailCollapsedStorageKey = 'schematic-editor-left-rail-collapsed';
+const controlRailSideStorageKey = 'schematic-editor-control-rail-side';
+const stageBackgroundColorStorageKey = 'schematic-editor-stage-background-color';
 const shoppingListStoragePrefix = 'schematic-editor-shopping-list';
+const shulkerViewStoragePrefix = 'schematic-editor-shulker-view';
+const selectionStoragePrefix = 'schematic-editor-selections';
+const cameraStoragePrefix = 'schematic-editor-cameras';
 const emptyBuildBlock = 'minecraft:air';
+const shulkerInventorySlots = 27;
+const shulkerConsolidationSlotThreshold = Math.floor(shulkerInventorySlots / 2);
+const initialShulkerBoxRenderCount = 4;
+const shulkerBoxRenderBatchSize = 4;
+const maxStackSize = 64;
+const shulkerBoxThumbnailColors = [
+  'white',
+  'light_gray',
+  'gray',
+  'black',
+  'brown',
+  'red',
+  'orange',
+  'yellow',
+  'green',
+  'lime',
+  'cyan',
+  'light_blue',
+  'blue',
+  'purple',
+  'magenta',
+  'pink',
+] as const;
 const defaultHotbarBlocks = [
   'minecraft:stone',
   'minecraft:oak_planks',
@@ -250,6 +379,78 @@ const colorGroupOrder: Array<{ id: ColorGroupId; label: string }> = [
   { id: 'purple', label: 'Purple' },
   { id: 'pink', label: 'Pink' },
 ];
+const defaultThumbnailDisplayAdjustment: ThumbnailDisplayAdjustment = {
+  scale: 1,
+  rotateX: 0,
+  rotateY: 0,
+};
+const lightStageBackgroundColor = '#f1f5f8';
+const darkStageBackgroundColor = '#25303a';
+const legacyLightStageBackgroundColor = '#f4f8f8';
+
+function defaultStageBackgroundColor(theme: Theme): string {
+  return theme === 'dark' ? darkStageBackgroundColor : lightStageBackgroundColor;
+}
+
+function normalizeHexColor(color: string): string {
+  return color.trim().toLowerCase();
+}
+const thumbnailVerticalFacingBlockIds = new Set([
+  'minecraft:amethyst_cluster',
+  'minecraft:small_amethyst_bud',
+  'minecraft:medium_amethyst_bud',
+  'minecraft:large_amethyst_bud',
+  'minecraft:calibrated_sculk_sensor',
+  'minecraft:command_block',
+  'minecraft:chain_command_block',
+  'minecraft:crafter',
+  'minecraft:dispenser',
+  'minecraft:dropper',
+  'minecraft:end_rod',
+  'minecraft:hopper',
+  'minecraft:lightning_rod',
+  'minecraft:observer',
+  'minecraft:piston',
+  'minecraft:piston_head',
+  'minecraft:repeating_command_block',
+  'minecraft:sticky_piston',
+  'minecraft:trial_spawner',
+  'minecraft:vault',
+]);
+const defaultBlockPreviewAdjustments = thumbnailDisplayAdjustmentsJson as unknown as ThumbnailDisplayAdjustmentMap;
+const ThumbnailDisplayAdjustmentsContext = createContext<ThumbnailDisplayAdjustmentMap>(defaultBlockPreviewAdjustments);
+const blockPreviewVisibilityRootMargin = '420px';
+const blockPreviewVisibilityCallbacks = new Map<Element, () => void>();
+let blockPreviewVisibilityObserver: IntersectionObserver | null = null;
+
+function observeBlockPreviewVisibility(element: Element, onVisible: () => void): () => void {
+  if (typeof IntersectionObserver === 'undefined') {
+    onVisible();
+    return () => {};
+  }
+
+  if (!blockPreviewVisibilityObserver) {
+    blockPreviewVisibilityObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const callback = blockPreviewVisibilityCallbacks.get(entry.target);
+        if (!callback) continue;
+        blockPreviewVisibilityCallbacks.delete(entry.target);
+        blockPreviewVisibilityObserver?.unobserve(entry.target);
+        callback();
+      }
+    }, { rootMargin: blockPreviewVisibilityRootMargin });
+  }
+
+  blockPreviewVisibilityCallbacks.set(element, onVisible);
+  blockPreviewVisibilityObserver.observe(element);
+
+  return () => {
+    blockPreviewVisibilityCallbacks.delete(element);
+    blockPreviewVisibilityObserver?.unobserve(element);
+  };
+}
+
 const woodTypeOrder = [
   'oak',
   'spruce',
@@ -431,39 +632,118 @@ const blockstateFiles = import.meta.glob('/public/minecraft-assets/assets/minecr
   import: 'default',
 });
 
+const scrollbarVisibilityDurationMs = 900;
+
+function useTransientScrollbarVisibility() {
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+
+    const root = document.documentElement;
+    let hideTimer: ReturnType<typeof window.setTimeout> | undefined;
+
+    const showScrollbars = () => {
+      root.dataset.scrollbarsVisible = 'true';
+      if (hideTimer !== undefined) window.clearTimeout(hideTimer);
+      hideTimer = window.setTimeout(() => {
+        delete root.dataset.scrollbarsVisible;
+        hideTimer = undefined;
+      }, scrollbarVisibilityDurationMs);
+    };
+
+    window.addEventListener('scroll', showScrollbars, { capture: true, passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', showScrollbars, { capture: true });
+      if (hideTimer !== undefined) window.clearTimeout(hideTimer);
+      delete root.dataset.scrollbarsVisible;
+    };
+  }, []);
+}
+
 function App() {
+  useTransientScrollbarVisibility();
+
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window === 'undefined') return 'light';
     const savedTheme = window.localStorage.getItem(themeStorageKey);
     if (savedTheme === 'light' || savedTheme === 'dark') return savedTheme;
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
+  const [leftRailCollapsed, setLeftRailCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem(leftRailCollapsedStorageKey) === 'true';
+  });
+  const [controlRailSide, setControlRailSide] = useState<ControlRailSide>(() => {
+    if (typeof window === 'undefined') return 'right';
+    return window.localStorage.getItem(controlRailSideStorageKey) === 'left' ? 'left' : 'right';
+  });
+  const [stageBackgroundColor, setStageBackgroundColor] = useState(() => {
+    if (typeof window === 'undefined') return defaultStageBackgroundColor(theme);
+    const savedColor = window.localStorage.getItem(stageBackgroundColorStorageKey);
+    if (savedColor && /^#[0-9a-f]{6}$/i.test(savedColor)) {
+      const normalized = normalizeHexColor(savedColor);
+      return normalized === legacyLightStageBackgroundColor
+        ? defaultStageBackgroundColor(theme)
+        : normalized;
+    }
+    return defaultStageBackgroundColor(theme);
+  });
   const [model, setModel] = useState<SchematicModel | null>(null);
+  const [schematicOrigin, setSchematicOrigin] = useState<SchematicOrigin>('default');
   const [appView, setAppView] = useState<AppView>('inspect');
   const [schematicName, setSchematicName] = useState('');
   const [isEditingSchematicName, setIsEditingSchematicName] = useState(false);
   const [schematicDocument, setSchematicDocument] = useState<NbtDocument | null>(null);
-  const [schematicExtension, setSchematicExtension] = useState('.schem');
+  const [schematicExtension, setSchematicExtension] = useState('.litematic');
+  const [exportFormat, setExportFormat] = useState<SchematicExportFormat>(defaultExportFormat);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [hasEditChanges, setHasEditChanges] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>('loading');
+  const [loadProgressMessage, setLoadProgressMessage] = useState('Loading featured schematic...');
   const [error, setError] = useState('');
-  const [visibleLayer, setVisibleLayer] = useState(model?.dimensions.height ? model.dimensions.height - 1 : 0);
-  const [singleLayer, setSingleLayer] = useState(false);
+  const [visibleBottomLayer, setVisibleBottomLayer] = useState(0);
+  const [visibleTopLayer, setVisibleTopLayer] = useState(model?.dimensions.height ? model.dimensions.height - 1 : 0);
+  const [singleVisibleLayer, setSingleVisibleLayer] = useState(0);
+  const [renderedVisibleBottomLayer, setRenderedVisibleBottomLayer] = useState(0);
+  const [renderedVisibleTopLayer, setRenderedVisibleTopLayer] = useState(model?.dimensions.height ? model.dimensions.height - 1 : 0);
+  const [showGrid, setShowGrid] = useState(true);
   const [selectedBlock, setSelectedBlock] = useState<VoxelBlock | null>(null);
   const [expandedMaterialIds, setExpandedMaterialIds] = useState<Set<string>>(() => new Set());
   const [materialSearch, setMaterialSearch] = useState('');
+  const [selectionMaterialSearch, setSelectionMaterialSearch] = useState('');
+  const [layerMaterialSearch, setLayerMaterialSearch] = useState('');
+  const [thumbnailDebugSearch, setThumbnailDebugSearch] = useState('');
+  const [thumbnailDisplayAdjustments, setThumbnailDisplayAdjustments] = useState<ThumbnailDisplayAdjustmentMap>(
+    defaultBlockPreviewAdjustments,
+  );
+  const [selectedThumbnailDebugKey, setSelectedThumbnailDebugKey] = useState('');
+  const [thumbnailAdjustmentsCopied, setThumbnailAdjustmentsCopied] = useState(false);
   const [hiddenMaterialIds, setHiddenMaterialIds] = useState<Set<string>>(() => new Set());
-  const [materialsMode, setMaterialsMode] = useState<MaterialsMode>('placed');
-  const [integerCrafting, setIntegerCrafting] = useState(true);
+  const integerCrafting = true;
   const [shoppingSearch, setShoppingSearch] = useState('');
   const [shoppingLayout, setShoppingLayout] = useState<ShoppingLayout>('grid');
+  const [collapsedShoppingGroups, setCollapsedShoppingGroups] = useState<Set<string>>(() => new Set());
+  const [shulkerViewMode, setShulkerViewMode] = useState<ShulkerViewMode>('box');
+  const [shulkerTypeAutoConsolidated, setShulkerTypeAutoConsolidated] = useState(false);
+  const [collapsedShulkerBoxes, setCollapsedShulkerBoxes] = useState<Set<string>>(() => new Set());
+  const [visibleShulkerBoxCounts, setVisibleShulkerBoxCounts] = useState<ShulkerVisibleBoxCounts>(() => ({
+    box: initialShulkerBoxRenderCount,
+    type: initialShulkerBoxRenderCount,
+  }));
+  const [checkedPlanSteps, setCheckedPlanSteps] = useState<Set<string>>(() => new Set());
   const [checkedShoppingItems, setCheckedShoppingItems] = useState<Set<string>>(() => new Set());
+  const [checkedShulkerSlots, setCheckedShulkerSlots] = useState<Set<string>>(() => new Set());
   const [playerHeadSelections, setPlayerHeadSelections] = useState<Record<string, string>>({});
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('materials');
   const [editPanelTab, setEditPanelTab] = useState<EditPanelTab>('tools');
   const [cuboidSelectionMode, setCuboidSelectionMode] = useState(false);
   const [cuboidCorners, setCuboidCorners] = useState<CuboidCorners>(() => emptyCuboidCorners());
+  const [selectionAreas, setSelectionAreas] = useState<SelectionArea[]>([]);
+  const [activeSelectionId, setActiveSelectionId] = useState<string | null>(null);
+  const [selectionUndoStack, setSelectionUndoStack] = useState<CuboidCorners[]>([]);
+  const [editUndoStack, setEditUndoStack] = useState<SchematicModel[]>([]);
+  const [savedCameraViews, setSavedCameraViews] = useState<SavedCameraView[]>([]);
   const [materialsScope, setMaterialsScope] = useState<MaterialsScope>('build');
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit');
   const [editTool, setEditTool] = useState<EditTool>('select');
@@ -486,19 +766,64 @@ function App() {
   const materialItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const selectionPanelRef = useRef<HTMLElement | null>(null);
   const materialPanelRef = useRef<HTMLElement | null>(null);
+  const thumbnailAdjustmentsCopiedTimeoutRef = useRef<number | null>(null);
   const layerPanelRef = useRef<HTMLElement | null>(null);
   const schematicNameInputRef = useRef<HTMLInputElement | null>(null);
-  const [showCelebration, setShowCelebration] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
+  const [celebrationView, setCelebrationView] = useState<'shopping' | 'shulker' | null>(null);
   const skipNextShoppingPersistRef = useRef(false);
+  const skipNextShulkerPersistRef = useRef(false);
+  const skipNextSelectionPersistRef = useRef(false);
+  const skipNextCameraPersistRef = useRef(false);
+  const pendingCameraPositionRef = useRef<SavedCameraPosition | null>(null);
   const prevShoppingProgressRef = useRef(0);
   const prevShoppingStorageRef = useRef('');
+  const prevShulkerProgressRef = useRef(0);
+  const prevShulkerStorageRef = useRef('');
+  const shulkerLoadMoreRef = useRef<HTMLParagraphElement | null>(null);
   const dragDepthRef = useRef(0);
-  const visibleWorldY = model ? model.origin.y + visibleLayer : visibleLayer;
+  const visibleLayerFrameRef = useRef<number | null>(null);
+  const pendingVisibleLayerRangeRef = useRef<{ bottomLayer: number; topLayer: number; singleLayer: number } | null>(null);
+  const visibleBottomWorldY = model ? model.origin.y + visibleBottomLayer : visibleBottomLayer;
+  const visibleTopWorldY = model ? model.origin.y + visibleTopLayer : visibleTopLayer;
   const selectedBlockWorldX = selectedBlock && model ? model.origin.x + selectedBlock.x : null;
   const selectedBlockWorldY = selectedBlock && model ? model.origin.y + selectedBlock.y : null;
   const selectedBlockWorldZ = selectedBlock && model ? model.origin.z + selectedBlock.z : null;
   const spectatorSpeed = 11;
   const showUploadOverlay = isDraggingFile;
+  const currentExportFormatOption = exportFormatOptions.find((option) => option.value === exportFormat) ?? exportFormatOptions[0];
+
+  useEffect(() => () => {
+    if (thumbnailAdjustmentsCopiedTimeoutRef.current !== null) {
+      window.clearTimeout(thumbnailAdjustmentsCopiedTimeoutRef.current);
+    }
+    if (visibleLayerFrameRef.current !== null) {
+      window.cancelAnimationFrame(visibleLayerFrameRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isExportMenuOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node) || exportMenuRef.current?.contains(target)) return;
+      setIsExportMenuOpen(false);
+    };
+
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsExportMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleWindowKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleWindowKeyDown);
+    };
+  }, [isExportMenuOpen]);
 
   const updateAxisGizmo = useCallback((orientation: AxisGizmoOrientation) => {
     const gizmo = axisGizmoRef.current;
@@ -521,13 +846,20 @@ function App() {
 
   const currentLayerBlockCount = useMemo(() => {
     if (!model) return 0;
-    return model.blocks.filter((block) => block.y === visibleLayer && !hiddenMaterialIds.has(materialIdForBlock(block))).length;
-  }, [hiddenMaterialIds, model, visibleLayer]);
+    return model.blocks.filter((block) =>
+      block.y >= renderedVisibleBottomLayer
+      && block.y <= renderedVisibleTopLayer
+      && !hiddenMaterialIds.has(materialIdForBlock(block))
+    ).length;
+  }, [hiddenMaterialIds, model, renderedVisibleBottomLayer, renderedVisibleTopLayer]);
 
   const materials = useMemo<MaterialSummary[]>(() => {
     if (!model) return [];
 
-    return summarizeMaterials(model.blocks);
+    return [
+      ...summarizeMaterials(model.blocks),
+      ...summarizeExtraMaterials(model.extraMaterials),
+    ].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
   }, [model]);
 
   const cuboidBounds = useMemo(() => {
@@ -549,8 +881,18 @@ function App() {
     return summarizeMaterials(model.blocks.filter((block) => blockInBounds(block, cuboidBounds)));
   }, [cuboidBoundsKey, model]);
 
-  const activeMaterials = materialsScope === 'cuboid' ? cuboidMaterials : materials;
-  const activeMaterialsLabel = materialsScope === 'cuboid' ? 'Selected Area' : 'Entire Build';
+  const layerMaterials = useMemo<MaterialSummary[]>(() => {
+    if (!model) return [];
+    return summarizeMaterials(model.blocks.filter((block) =>
+      block.y >= renderedVisibleBottomLayer
+      && block.y <= renderedVisibleTopLayer
+    ));
+  }, [model, renderedVisibleBottomLayer, renderedVisibleTopLayer]);
+
+  const activeMaterials = materialsScope === 'cuboid'
+    ? cuboidMaterials
+    : materials;
+  const resourceCalculatorUrl = useMemo(() => resourceCalculatorUrlForMaterials(activeMaterials), [activeMaterials]);
   const recipeBreakdown = useMemo(() => explodeMaterials(activeMaterials, {
     rawOverrides: new Set(),
     recipeChoice: new Map(),
@@ -560,83 +902,152 @@ function App() {
   const rawMaterials = useMemo<MaterialSummary[]>(() => (
     recipeBreakdown.raw.map((material) => materialSummaryForRecipeItem(material, activeMaterials))
   ), [activeMaterials, recipeBreakdown]);
-  const recipeTreeByMaterialId = useMemo(() => (
-    new Map(recipeBreakdown.trees.map((tree) => [tree.id, tree]))
-  ), [recipeBreakdown]);
-  const visibleMaterials = materialsMode === 'raw' ? rawMaterials : activeMaterials;
-  const visibleMaterialsLabel = materialsMode === 'raw' ? 'Raw Materials' : activeMaterialsLabel;
+  const craftPlan = useMemo(() => {
+    const stepMap = new Map<string, { id: string; method: RecipeType; output: number; outputCount: number; inputs: Map<string, number> }>();
+    const depthCache = new Map<string, number>();
+
+    const visit = (node: BreakdownNode): number => {
+      if (node.isRaw || !node.recipeUsed || node.children.length === 0) return 0;
+      let maxChild = 0;
+      for (const child of node.children) maxChild = Math.max(maxChild, visit(child));
+      const depth = maxChild + 1;
+      const existing = stepMap.get(node.id);
+      if (existing) {
+        existing.outputCount += node.count;
+        for (const child of node.children) existing.inputs.set(child.id, (existing.inputs.get(child.id) ?? 0) + child.count);
+      } else {
+        const inputs = new Map<string, number>();
+        for (const child of node.children) inputs.set(child.id, (inputs.get(child.id) ?? 0) + child.count);
+        stepMap.set(node.id, { id: node.id, method: node.recipeUsed.type, output: node.recipeUsed.output, outputCount: node.count, inputs });
+      }
+      depthCache.set(node.id, Math.max(depthCache.get(node.id) ?? 0, depth));
+      return depth;
+    };
+
+    for (const tree of recipeBreakdown.trees) visit(tree);
+
+    const steps = [...stepMap.values()].map((step) => {
+      const summary = materialSummaryForRecipeItem({ id: step.id, count: step.outputCount }, activeMaterials);
+      const inputs = [...step.inputs.entries()].map(([id, count]) => {
+        const inputSummary = materialSummaryForRecipeItem({ id, count }, activeMaterials);
+        return { ...inputSummary, count };
+      });
+      return {
+        ...summary,
+        count: step.outputCount,
+        method: step.method,
+        crafts: Math.max(1, Math.ceil(step.outputCount / step.output)),
+        inputs,
+        depth: depthCache.get(step.id) ?? 1,
+        category: shoppingCategoryForMaterial(step.id),
+      };
+    });
+
+    steps.sort((a, b) => a.depth - b.depth || b.count - a.count);
+
+    const byCategory = new Map<string, { id: string; label: string; steps: typeof steps }>();
+    for (const step of steps) {
+      const group = byCategory.get(step.category.id) ?? { id: step.category.id, label: step.category.label, steps: [] };
+      group.steps.push(step);
+      byCategory.set(step.category.id, group);
+    }
+
+    return { steps, groups: [...byCategory.values()] };
+  }, [recipeBreakdown, activeMaterials]);
+  const visibleMaterials = activeMaterials;
   const shoppingScope = useMemo(() => (
     model ? shoppingScopeKey(model, materialsScope, cuboidBounds) : 'none'
   ), [cuboidBoundsKey, materialsScope, model]);
-  const shoppingModeScope = `${shoppingScope}:${materialsMode}:${integerCrafting ? 'integer' : 'fractional'}`;
   const shoppingStorage = useMemo(() => (
-    model ? shoppingStorageKey(model, shoppingModeScope, visibleMaterials) : ''
-  ), [model, shoppingModeScope, visibleMaterials]);
+    model ? shoppingStorageKey(model, shoppingScope, activeMaterials) : ''
+  ), [activeMaterials, model, shoppingScope]);
   const shoppingItemKeys = useMemo(() => (
-    new Set(visibleMaterials.map((material) => shoppingItemKey(shoppingModeScope, material)))
-  ), [shoppingModeScope, visibleMaterials]);
+    new Set(activeMaterials.map((material) => shoppingItemKey(shoppingScope, material)))
+  ), [activeMaterials, shoppingScope]);
   const shoppingMaterials = useMemo(() => {
     const query = shoppingSearch.trim().toLocaleLowerCase();
-    if (!query) return visibleMaterials;
+    if (!query) return activeMaterials;
 
-    return visibleMaterials.filter((material) => {
+    return activeMaterials.filter((material) => {
       const label = material.label.toLocaleLowerCase();
       const id = material.id.toLocaleLowerCase();
       return label.includes(query) || id.includes(query);
     });
-  }, [shoppingSearch, visibleMaterials]);
+  }, [activeMaterials, shoppingSearch]);
   const shoppingGroups = useMemo(() => groupShoppingMaterials(shoppingMaterials), [shoppingMaterials]);
-  const filteredRecipeTrees = useMemo(() => {
-    const query = shoppingSearch.trim().toLocaleLowerCase();
-    if (!query) return recipeBreakdown.trees;
-
-    return recipeBreakdown.trees.filter((tree) => resourceTreeMatchesSearch(tree, query));
-  }, [recipeBreakdown.trees, shoppingSearch]);
-  const resourceStats = useMemo<ResourceCalculatorStats>(() => ({
-    totalOutputItems: activeMaterials.reduce((sum, material) => sum + material.count, 0),
-    uniqueOutputItems: activeMaterials.length,
-    rawMaterialItems: rawMaterials.reduce((sum, material) => sum + material.count, 0),
-    uniqueRawMaterials: rawMaterials.length,
-    craftingSteps: countCraftingSteps(recipeBreakdown.trees),
-    chestsNeeded: estimateChestCount(rawMaterials),
-    unresolvedItems: recipeBreakdown.unresolved.length,
-  }), [activeMaterials, rawMaterials, recipeBreakdown]);
+  const shulkerBoxPlanCache = useMemo<ShulkerBoxPlanCache>(() => ({
+    box: packMaterialsIntoShulkerBoxes(activeMaterials, 'box'),
+    type: packMaterialsIntoShulkerBoxes(activeMaterials, 'type'),
+  }), [activeMaterials]);
+  const shulkerBoxes = useMemo(() => {
+    const boxes = shulkerBoxPlanCache[shulkerViewMode];
+    if (shulkerViewMode !== 'type' || !shulkerTypeAutoConsolidated) return boxes;
+    return consolidateLesserFilledShulkerBoxes(boxes);
+  }, [shulkerBoxPlanCache, shulkerTypeAutoConsolidated, shulkerViewMode]);
+  const shulkerConsolidatableBoxCount = useMemo(() => (
+    shulkerBoxPlanCache.type.filter(isLesserFilledShulkerBox).length
+  ), [shulkerBoxPlanCache.type]);
+  const shulkerStorageMode = shulkerViewMode === 'type' && shulkerTypeAutoConsolidated
+    ? 'type-consolidated'
+    : shulkerViewMode;
+  const shulkerStorage = useMemo(() => (
+    model ? shulkerStorageKey(model, shoppingScope, shulkerStorageMode, activeMaterials) : ''
+  ), [activeMaterials, model, shoppingScope, shulkerStorageMode]);
+  const shulkerSlotKeys = useMemo(() => (
+    new Set(
+      shulkerBoxes.flatMap((box) => box.filledSlotKeys),
+    )
+  ), [shulkerBoxes]);
+  const visibleShulkerBoxCount = Math.min(visibleShulkerBoxCounts[shulkerViewMode], shulkerBoxes.length);
+  const visibleShulkerBoxes = useMemo(() => (
+    shulkerBoxes.slice(0, visibleShulkerBoxCount)
+  ), [shulkerBoxes, visibleShulkerBoxCount]);
+  const visibleShulkerThumbnailQueue = useMemo(() => (
+    visibleShulkerBoxes.flatMap((box) => (
+      box.slots.flatMap((slot) => (slot
+        ? [{
+          stateKey: slot.material.stateKey,
+          color: slot.material.color,
+          layers: slot.material.thumbnailLayers,
+        }]
+        : []))
+    ))
+  ), [visibleShulkerBoxes]);
+  const shulkerFilledSlotCount = useMemo(() => (
+    shulkerBoxes.reduce((sum, box) => sum + box.usedSlots, 0)
+  ), [shulkerBoxes]);
+  const checkedShulkerSlotCount = useMemo(() => (
+    Array.from(shulkerSlotKeys).filter((slotKey) => checkedShulkerSlots.has(slotKey)).length
+  ), [checkedShulkerSlots, shulkerSlotKeys]);
+  const shulkerProgressPercent = shulkerFilledSlotCount > 0
+    ? Math.round((checkedShulkerSlotCount / shulkerFilledSlotCount) * 100)
+    : 0;
   const checkedShoppingMaterialCount = useMemo(() => (
-    visibleMaterials.filter((material) => checkedShoppingItems.has(shoppingItemKey(shoppingModeScope, material))).length
-  ), [checkedShoppingItems, shoppingModeScope, visibleMaterials]);
+    activeMaterials.filter((material) => checkedShoppingItems.has(shoppingItemKey(shoppingScope, material))).length
+  ), [activeMaterials, checkedShoppingItems, shoppingScope]);
   const totalShoppingItems = useMemo(() => (
-    visibleMaterials.reduce((sum, material) => sum + material.count, 0)
-  ), [visibleMaterials]);
+    activeMaterials.reduce((sum, material) => sum + material.count, 0)
+  ), [activeMaterials]);
   const completedShoppingItems = useMemo(() => (
-    visibleMaterials.reduce((sum, material) => (
-      checkedShoppingItems.has(shoppingItemKey(shoppingModeScope, material)) ? sum + material.count : sum
+    activeMaterials.reduce((sum, material) => (
+      checkedShoppingItems.has(shoppingItemKey(shoppingScope, material)) ? sum + material.count : sum
     ), 0)
-  ), [checkedShoppingItems, shoppingModeScope, visibleMaterials]);
+  ), [activeMaterials, checkedShoppingItems, shoppingScope]);
   const remainingShoppingItems = Math.max(0, totalShoppingItems - completedShoppingItems);
   const shoppingProgressPercent = totalShoppingItems > 0
     ? Math.round((completedShoppingItems / totalShoppingItems) * 100)
     : 0;
   const filteredMaterials = useMemo(() => {
-    const query = materialSearch.trim().toLocaleLowerCase();
-    if (!query) return visibleMaterials;
-
-    return visibleMaterials.filter((material) => {
-      const label = material.label.toLocaleLowerCase();
-      const id = material.id.toLocaleLowerCase();
-      return label.includes(query) || id.includes(query);
-    });
+    return filterMaterials(visibleMaterials, materialSearch);
   }, [materialSearch, visibleMaterials]);
-  const hideableMaterialIds = useMemo(() => (
-    materialsMode === 'placed' ? visibleMaterials.map((material) => material.id) : []
-  ), [materialsMode, visibleMaterials]);
-  const allVisibleMaterialsHidden = hideableMaterialIds.length > 0
-    && hideableMaterialIds.every((materialId) => hiddenMaterialIds.has(materialId));
-  const bulkMaterialVisibilityLabel = allVisibleMaterialsHidden ? 'Show All' : 'Hide All';
+  const filteredCuboidMaterials = useMemo(() => (
+    filterMaterials(cuboidMaterials, selectionMaterialSearch)
+  ), [cuboidMaterials, selectionMaterialSearch]);
+  const filteredLayerMaterials = useMemo(() => (
+    filterMaterials(layerMaterials, layerMaterialSearch)
+  ), [layerMaterials, layerMaterialSearch]);
 
   const cuboidDimensions = cuboidBounds ? dimensionsForBounds(cuboidBounds) : null;
-  const cuboidVolume = cuboidDimensions
-    ? cuboidDimensions.width * cuboidDimensions.height * cuboidDimensions.length
-    : 0;
 
   const playerHeadOptions = useMemo(() => uniquePlayerHeadTextures(model), [model]);
   const selectedBlockKey = selectedBlock ? blockPositionKey(selectedBlock) : null;
@@ -672,6 +1083,155 @@ function App() {
       };
     })
   ), [allBuildBlocks]);
+  const blockLibraryStateKeys = useMemo(() => new Set(blockLibraryItems.map((item) => item.stateKey)), [blockLibraryItems]);
+  const recipeThumbnailStateKeys = useMemo(() => {
+    const bundle = recipeBundle as unknown as {
+      recipes: Record<string, Array<{ inputs: Record<string, number | undefined> }>>;
+      raw: string[];
+    };
+    const itemIds = new Set<string>();
+
+    for (const [outputId, recipes] of Object.entries(bundle.recipes)) {
+      itemIds.add(normalizeRecipeItemId(outputId));
+      for (const recipe of recipes) {
+        for (const inputId of Object.keys(recipe.inputs)) {
+          itemIds.add(normalizeRecipeItemId(inputId));
+        }
+      }
+    }
+
+    for (const rawId of bundle.raw) {
+      itemIds.add(normalizeRecipeItemId(rawId));
+    }
+
+    return Array.from(itemIds, (id) => recipeItemStateKey(id)).sort((a, b) => a.localeCompare(b));
+  }, []);
+  const thumbnailDebugItems = useMemo<ThumbnailDebugItem[]>(() => {
+    const entries = new Map<string, ThumbnailDebugItem & { sourceSet: Set<string> }>();
+    const upsertItem = (
+      stateKey: string,
+      {
+        label,
+        family,
+        category,
+        source,
+        layers,
+      }: {
+        label: string;
+        family: 'block' | 'item';
+        category: string;
+        source: string;
+        layers?: BlockThumbnailLayer[];
+      },
+    ) => {
+      const key = thumbnailDisplayAdjustmentKey(stateKey);
+      const existing = entries.get(key);
+      if (existing) {
+        existing.sourceSet.add(source);
+        if (!existing.layers && layers) existing.layers = layers;
+        return;
+      }
+
+      const preview = createVoxelBlock(0, 0, 0, stateKey);
+      entries.set(key, {
+        key,
+        stateKey,
+        label,
+        color: preview.color,
+        category,
+        family,
+        layers,
+        sources: [],
+        sourceSet: new Set([source]),
+      });
+    };
+
+    for (const item of blockLibraryItems) {
+      upsertItem(item.stateKey, {
+        label: item.label,
+        family: 'block',
+        category: `Block Library / ${creativeInventoryTabLabel(item.category)}`,
+        source: 'Block Library',
+        layers: materialThumbnailLayers(item.stateKey),
+      });
+    }
+
+    for (const stateKey of recipeThumbnailStateKeys) {
+      const isBlock = blockLibraryStateKeys.has(stateKey);
+      upsertItem(stateKey, {
+        label: formatBlockName(stateKey),
+        family: isBlock ? 'block' : 'item',
+        category: isBlock ? 'Materials & Recipes / Blocks' : 'Materials & Recipes / Items',
+        source: 'Materials & Recipes',
+        layers: isBlock ? materialThumbnailLayers(stateKey) : undefined,
+      });
+    }
+
+    return Array.from(entries.values())
+      .map(({ sourceSet, ...item }) => ({
+        ...item,
+        sources: Array.from(sourceSet).sort(),
+      }))
+      .sort((a, b) => (
+        a.family.localeCompare(b.family)
+          || a.label.localeCompare(b.label)
+          || a.stateKey.localeCompare(b.stateKey)
+      ));
+  }, [blockLibraryItems, blockLibraryStateKeys, recipeThumbnailStateKeys]);
+  const filteredThumbnailDebugItems = useMemo(() => {
+    const query = thumbnailDebugSearch.trim().toLocaleLowerCase();
+    if (!query) return thumbnailDebugItems;
+
+    return thumbnailDebugItems.filter((item) => (
+      item.label.toLocaleLowerCase().includes(query)
+      || item.stateKey.toLocaleLowerCase().includes(query)
+      || item.category.toLocaleLowerCase().includes(query)
+      || item.sources.some((source) => source.toLocaleLowerCase().includes(query))
+    ));
+  }, [thumbnailDebugItems, thumbnailDebugSearch]);
+  const selectedThumbnailDebugItem = useMemo(() => (
+    thumbnailDebugItems.find((item) => item.key === selectedThumbnailDebugKey)
+      ?? filteredThumbnailDebugItems[0]
+      ?? thumbnailDebugItems[0]
+      ?? null
+  ), [filteredThumbnailDebugItems, selectedThumbnailDebugKey, thumbnailDebugItems]);
+  const selectedThumbnailDisplayAdjustment = selectedThumbnailDebugItem
+    ? thumbnailDisplayAdjustments[selectedThumbnailDebugItem.key] ?? defaultThumbnailDisplayAdjustment
+    : defaultThumbnailDisplayAdjustment;
+  const selectedThumbnailPreviewRequest = useMemo<ThumbnailPreviewRequest | null>(() => {
+    if (!selectedThumbnailDebugItem) return null;
+    return resolveThumbnailPreviewRequest(
+      selectedThumbnailDebugItem.stateKey,
+      selectedThumbnailDebugItem.layers,
+      selectedThumbnailDisplayAdjustment,
+    );
+  }, [selectedThumbnailDebugItem, selectedThumbnailDisplayAdjustment]);
+  const selectedThumbnailOrientation = useMemo<ThumbnailOrientationSummary | null>(() => (
+    selectedThumbnailPreviewRequest ? summarizeThumbnailOrientation(selectedThumbnailPreviewRequest) : null
+  ), [selectedThumbnailPreviewRequest]);
+  const selectedThumbnailHorizontalDirections = useMemo(() => {
+    if (!selectedThumbnailPreviewRequest) return [] as Direction[];
+    if (selectedThumbnailOrientation?.mode === 'axis') return [] as Direction[];
+    return (['north', 'east', 'south', 'west'] as const).filter((direction) => (
+      canSetThumbnailPreviewRequestDirection(selectedThumbnailPreviewRequest, direction)
+    ));
+  }, [selectedThumbnailOrientation?.mode, selectedThumbnailPreviewRequest]);
+  const selectedThumbnailVerticalDirections = useMemo(() => {
+    if (!selectedThumbnailPreviewRequest) return [] as Direction[];
+    if (selectedThumbnailOrientation?.mode === 'axis') return [] as Direction[];
+    if (!supportsVerticalThumbnailDirection(selectedThumbnailPreviewRequest)) return [] as Direction[];
+    return (['up', 'down'] as const).filter((direction) => (
+      canSetThumbnailPreviewRequestDirection(selectedThumbnailPreviewRequest, direction)
+    ));
+  }, [selectedThumbnailOrientation?.mode, selectedThumbnailPreviewRequest]);
+  const selectedThumbnailAxes = useMemo(() => {
+    if (!selectedThumbnailPreviewRequest || selectedThumbnailOrientation?.mode !== 'axis') return [] as Array<'x' | 'y' | 'z'>;
+    return (['x', 'y', 'z'] as const).filter((axis) => canSetThumbnailPreviewRequestAxis(selectedThumbnailPreviewRequest, axis));
+  }, [selectedThumbnailOrientation?.mode, selectedThumbnailPreviewRequest]);
+  const exportedThumbnailDisplayAdjustments = useMemo(() => (
+    serializeThumbnailDisplayAdjustments(thumbnailDisplayAdjustments)
+  ), [thumbnailDisplayAdjustments]);
+  const adjustedThumbnailItemCount = Object.keys(exportedThumbnailDisplayAdjustments).length;
 
   const filteredBlockLibraryItems = useMemo(() => {
     const query = blockSearch.trim().toLocaleLowerCase();
@@ -695,8 +1255,12 @@ function App() {
     });
   }, [blockLibraryItems, textureBlockSearch]);
   const texturePreviewModel = useMemo<SchematicModel>(() => createTexturePreviewModel(selectedTextureBlock), [selectedTextureBlock]);
-  const displayedModel = appView === 'texture' ? texturePreviewModel : model;
+  const textureViewActive = UV_VIEW_ENABLED && appView === 'texture';
+  const displayedModel = textureViewActive ? texturePreviewModel : model;
   const displayedHiddenMaterialIds = useMemo(() => new Set<string>(), []);
+  const modelStorageIdentity = useMemo(() => (
+    model ? schematicStorageIdentity(model) : ''
+  ), [model]);
   const selectedTextureAdjustmentKey = selectedTextureFace
     ? textureAdjustmentKey(
       selectedTextureFace.blockId,
@@ -710,6 +1274,18 @@ function App() {
     : { offsetU: 0, offsetV: 0, rotation: 0 };
   const exportedTextureAdjustmentCount = Object.keys(textureAdjustments).length;
   const rotateTargetLabel = materialsScope === 'cuboid' && cuboidBounds ? 'Selected Area' : selectedBlock ? 'Selected Block' : '';
+
+  useEffect(() => {
+    if (!UV_VIEW_ENABLED && appView === 'texture') {
+      setAppView('inspect');
+    }
+  }, [appView]);
+
+  useEffect(() => {
+    if (!thumbnailDebugItems.length) return;
+    if (selectedThumbnailDebugKey && thumbnailDebugItems.some((item) => item.key === selectedThumbnailDebugKey)) return;
+    setSelectedThumbnailDebugKey(thumbnailDebugItems[0].key);
+  }, [selectedThumbnailDebugKey, thumbnailDebugItems]);
 
   useEffect(() => {
     if (loadState !== 'ready') return;
@@ -751,6 +1327,86 @@ function App() {
   }, [appView, filteredBlockLibraryItems, loadState]);
 
   useEffect(() => {
+    if (loadState !== 'ready' || appView !== 'shulker' || visibleShulkerThumbnailQueue.length === 0) return;
+
+    const controller = new AbortController();
+    preloadBlockThumbnails(visibleShulkerThumbnailQueue, {
+      batchSize: 18,
+      priority: 'interactive',
+      signal: controller.signal,
+    });
+
+    return () => controller.abort();
+  }, [appView, loadState, visibleShulkerThumbnailQueue]);
+
+  useEffect(() => {
+    if (!THUMBNAIL_DEBUG_ENABLED || appView !== 'thumbnail-debug') return;
+
+    const controller = new AbortController();
+    preloadBlockThumbnails(filteredThumbnailDebugItems.slice(0, 480).map((item) => ({
+      stateKey: item.stateKey,
+      color: item.color,
+      layers: item.layers,
+    })), {
+      batchSize: 24,
+      priority: 'interactive',
+      signal: controller.signal,
+    });
+
+    return () => controller.abort();
+  }, [appView, filteredThumbnailDebugItems]);
+
+  useEffect(() => {
+    if (THUMBNAIL_DEBUG_ENABLED || appView !== 'thumbnail-debug') return;
+    setAppView('inspect');
+  }, [appView]);
+
+  useEffect(() => {
+    setVisibleShulkerBoxCounts({
+      box: Math.min(initialShulkerBoxRenderCount, shulkerBoxPlanCache.box.length),
+      type: Math.min(initialShulkerBoxRenderCount, shulkerBoxPlanCache.type.length),
+    });
+  }, [shulkerBoxPlanCache]);
+
+  useEffect(() => {
+    if (appView !== 'shulker' || visibleShulkerBoxCount >= shulkerBoxes.length) return;
+
+    const loadMore = () => {
+      setVisibleShulkerBoxCounts((counts) => ({
+        ...counts,
+        [shulkerViewMode]: Math.min(counts[shulkerViewMode] + shulkerBoxRenderBatchSize, shulkerBoxes.length),
+      }));
+    };
+    const sentinel = shulkerLoadMoreRef.current;
+    if (!sentinel) {
+      const batchTimer = globalThis.setTimeout(loadMore, 120);
+      return () => globalThis.clearTimeout(batchTimer);
+    }
+
+    if (!('IntersectionObserver' in window)) {
+      const batchTimer = globalThis.setTimeout(loadMore, 120);
+      return () => globalThis.clearTimeout(batchTimer);
+    }
+
+    let frame = 0;
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(loadMore);
+    }, {
+      root: null,
+      rootMargin: '520px 0px',
+      threshold: 0.01,
+    });
+    observer.observe(sentinel);
+
+    return () => {
+      observer.disconnect();
+      window.cancelAnimationFrame(frame);
+    };
+  }, [appView, shulkerBoxes.length, shulkerViewMode, visibleShulkerBoxCount]);
+
+  useEffect(() => {
     if (materialsScope === 'cuboid' && !cuboidBounds) {
       setMaterialsScope('build');
     }
@@ -770,6 +1426,19 @@ function App() {
   }, [shoppingItemKeys, shoppingStorage]);
 
   useEffect(() => {
+    if (!shulkerStorage) {
+      setCheckedShulkerSlots(new Set());
+      return;
+    }
+
+    const rawSlots = window.localStorage.getItem(shulkerStorage);
+    const storedSlots = rawSlots ? parseShoppingStorage(rawSlots) : [];
+    const nextSlots = storedSlots.filter((slotKey) => shulkerSlotKeys.has(slotKey));
+    skipNextShulkerPersistRef.current = true;
+    setCheckedShulkerSlots(new Set(nextSlots));
+  }, [shulkerSlotKeys, shulkerStorage]);
+
+  useEffect(() => {
     if (!shoppingStorage) return;
     if (skipNextShoppingPersistRef.current) {
       skipNextShoppingPersistRef.current = false;
@@ -781,55 +1450,49 @@ function App() {
   }, [checkedShoppingItems, shoppingItemKeys, shoppingStorage]);
 
   useEffect(() => {
+    if (!shulkerStorage) return;
+    if (skipNextShulkerPersistRef.current) {
+      skipNextShulkerPersistRef.current = false;
+      return;
+    }
+
+    const nextSlots = Array.from(checkedShulkerSlots).filter((slotKey) => shulkerSlotKeys.has(slotKey));
+    window.localStorage.setItem(shulkerStorage, JSON.stringify(nextSlots));
+  }, [checkedShulkerSlots, shulkerSlotKeys, shulkerStorage]);
+
+  useEffect(() => {
     if (prevShoppingStorageRef.current !== shoppingStorage) {
       prevShoppingStorageRef.current = shoppingStorage;
       prevShoppingProgressRef.current = shoppingProgressPercent;
-      setShowCelebration(false);
+      setCelebrationView((current) => (current === 'shopping' ? null : current));
       return;
     }
     if (shoppingProgressPercent === 100 && totalShoppingItems > 0 && prevShoppingProgressRef.current < 100) {
-      setShowCelebration(true);
+      setCelebrationView('shopping');
     }
     prevShoppingProgressRef.current = shoppingProgressPercent;
   }, [shoppingProgressPercent, totalShoppingItems, shoppingStorage]);
 
   useEffect(() => {
-    let isCancelled = false;
+    if (prevShulkerStorageRef.current !== shulkerStorage) {
+      prevShulkerStorageRef.current = shulkerStorage;
+      prevShulkerProgressRef.current = shulkerProgressPercent;
+      setCelebrationView((current) => (current === 'shulker' ? null : current));
+      return;
+    }
+    if (shulkerProgressPercent === 100 && shulkerFilledSlotCount > 0 && prevShulkerProgressRef.current < 100) {
+      setCelebrationView('shulker');
+    }
+    prevShulkerProgressRef.current = shulkerProgressPercent;
+  }, [shulkerFilledSlotCount, shulkerProgressPercent, shulkerStorage]);
 
-    const loadDefaultSchematic = async () => {
-      setLoadState('loading');
-      setError('');
-
-      try {
-        const response = await fetch(defaultSchematicUrl);
-        if (!response.ok) {
-          throw new Error(`Could not load ${defaultSchematicFileName}.`);
-        }
-
-        const buffer = await response.arrayBuffer();
-        const parsed = parseSchematicDocument(buffer, { fileName: defaultSchematicFileName });
-        if (isCancelled) return;
-        applySchematic({ ...parsed.model, name: defaultSchematicDisplayName }, parsed.nbt, fileExtension(defaultSchematicFileName));
-      } catch (caught) {
-        if (isCancelled) return;
-
-        const fallback = createSampleModel();
-        setModel(fallback);
-        setSchematicName(fallback.name);
-        setSchematicDocument(null);
-        setSchematicExtension('.schem');
-        setVisibleLayer(fallback.dimensions.height - 1);
-        setLoadState('ready');
-        setError(caught instanceof Error ? caught.message : 'Could not load the default schematic.');
-      }
-    };
-
-    void loadDefaultSchematic();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, []);
+  useEffect(() => {
+    const boxIds = new Set(shulkerBoxes.map((box) => box.id));
+    setCollapsedShulkerBoxes((current) => {
+      const next = new Set(Array.from(current).filter((boxId) => boxIds.has(boxId)));
+      return next.size === current.size ? current : next;
+    });
+  }, [shulkerBoxes]);
 
   useEffect(() => {
     if (!model) return;
@@ -843,9 +1506,76 @@ function App() {
   }, [model]);
 
   useEffect(() => {
+    if (!model || !modelStorageIdentity) return;
+
+    const storedSelections = parseSelectionAreas(window.localStorage.getItem(selectionStorageKey(modelStorageIdentity)));
+    const nextSelections = storedSelections
+      .map((area) => ({ ...area, corners: clampCuboidCornersToModel(area.corners, model) }))
+      .filter((area) => area.corners.a || area.corners.b);
+    setSelectionAreas(nextSelections);
+    skipNextSelectionPersistRef.current = true;
+    const firstComplete = nextSelections.find((area) => area.corners.a && area.corners.b) ?? nextSelections[0] ?? null;
+    setActiveSelectionId(firstComplete?.id ?? null);
+    setCuboidCorners(firstComplete?.corners ?? emptyCuboidCorners());
+    setSelectionUndoStack([]);
+
+    const storedCameras = parseSavedCameraViews(window.localStorage.getItem(cameraStorageKey(modelStorageIdentity)));
+    skipNextCameraPersistRef.current = true;
+    setSavedCameraViews(storedCameras);
+    const defaultView = storedCameras.find((view) => view.isDefault);
+    if (defaultView) {
+      pendingCameraPositionRef.current = defaultView.position;
+      window.requestAnimationFrame(() => viewerRef.current?.applyCameraPosition(defaultView.position));
+    }
+  }, [model, modelStorageIdentity]);
+
+  useEffect(() => {
+    if (!modelStorageIdentity) return;
+    if (skipNextSelectionPersistRef.current) {
+      skipNextSelectionPersistRef.current = false;
+      return;
+    }
+    window.localStorage.setItem(selectionStorageKey(modelStorageIdentity), JSON.stringify(selectionAreas));
+  }, [modelStorageIdentity, selectionAreas]);
+
+  useEffect(() => {
+    if (!modelStorageIdentity) return;
+    if (skipNextCameraPersistRef.current) {
+      skipNextCameraPersistRef.current = false;
+      return;
+    }
+    window.localStorage.setItem(cameraStorageKey(modelStorageIdentity), JSON.stringify(savedCameraViews));
+  }, [modelStorageIdentity, savedCameraViews]);
+
+  useEffect(() => {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem(themeStorageKey, theme);
   }, [theme]);
+
+  useEffect(() => {
+    setStageBackgroundColor((current) => {
+      const normalized = normalizeHexColor(current);
+      if (
+        normalized === defaultStageBackgroundColor(theme === 'dark' ? 'light' : 'dark')
+        || normalized === legacyLightStageBackgroundColor
+      ) {
+        return defaultStageBackgroundColor(theme);
+      }
+      return current;
+    });
+  }, [theme]);
+
+  useEffect(() => {
+    window.localStorage.setItem(leftRailCollapsedStorageKey, String(leftRailCollapsed));
+  }, [leftRailCollapsed]);
+
+  useEffect(() => {
+    window.localStorage.setItem(controlRailSideStorageKey, controlRailSide);
+  }, [controlRailSide]);
+
+  useEffect(() => {
+    window.localStorage.setItem(stageBackgroundColorStorageKey, stageBackgroundColor);
+  }, [stageBackgroundColor]);
 
   useEffect(() => {
     if (!isEditingSchematicName) return;
@@ -866,11 +1596,12 @@ function App() {
     const isFromCurrentModel = model.blocks.includes(selectedBlock);
     const isVisible =
       !hiddenMaterialIds.has(materialIdForBlock(selectedBlock))
-      && (singleLayer ? selectedBlock.y === visibleLayer : selectedBlock.y <= visibleLayer);
+      && selectedBlock.y >= visibleBottomLayer
+      && selectedBlock.y <= visibleTopLayer;
     if (!isFromCurrentModel || !isVisible) {
       setSelectedBlock(null);
     }
-  }, [hiddenMaterialIds, model, selectedBlock, singleLayer, visibleLayer]);
+  }, [hiddenMaterialIds, model, selectedBlock, visibleBottomLayer, visibleTopLayer]);
 
   useEffect(() => {
     const validMaterialIds = new Set(materials.map((material) => material.id));
@@ -899,21 +1630,44 @@ function App() {
     return () => window.cancelAnimationFrame(frame);
   }, [filteredMaterials, materialSearch, selectedMaterialId]);
 
-  const applySchematic = (nextModel: SchematicModel, nextDocument: NbtDocument | null, nextExtension: string) => {
+  const beginSchematicLoad = (message: string) => {
+    setLoadState('loading');
+    setLoadProgressMessage(message);
+    setError('');
+    setModel(null);
+    setSelectedBlock(null);
+    setCuboidCorners(emptyCuboidCorners());
+    setSelectionAreas([]);
+    setActiveSelectionId(null);
+    setSelectionUndoStack([]);
+    setMaterialsScope('build');
+  };
+
+  const applySchematic = (nextModel: SchematicModel, nextDocument: NbtDocument | null, nextExtension: string, nextOrigin: SchematicOrigin = 'uploaded') => {
     setModel(nextModel);
+    setSchematicOrigin(nextOrigin);
     setSchematicName(nextModel.name);
     setIsEditingSchematicName(false);
     setSchematicDocument(nextDocument);
     setSchematicExtension(nextExtension);
+    setExportFormat(defaultExportFormat);
     setHasEditChanges(false);
-    setVisibleLayer(nextModel.dimensions.height - 1);
-    setSingleLayer(false);
+    setVisibleBottomLayer(0);
+    setVisibleTopLayer(nextModel.dimensions.height - 1);
+    setSingleVisibleLayer(0);
+    setRenderedVisibleBottomLayer(0);
+    setRenderedVisibleTopLayer(nextModel.dimensions.height - 1);
     setSelectedBlock(null);
     setExpandedMaterialIds(new Set());
     setMaterialSearch('');
     setPlayerHeadSelections({});
     setHiddenMaterialIds(new Set());
     setCuboidCorners(emptyCuboidCorners());
+    setSelectionAreas([]);
+    setActiveSelectionId(null);
+    setSelectionUndoStack([]);
+    setEditUndoStack([]);
+    setSavedCameraViews([]);
     setMaterialsScope('build');
     setEditTool('select');
     setSelectedBuildBlock(emptyBuildBlock);
@@ -922,19 +1676,67 @@ function App() {
     setReplaceFromBlock(nextModel.blocks[0]?.stateKey ?? '');
     setReplaceToBlock(emptyBuildBlock);
     setEditNotice('');
+    setLoadProgressMessage('Schematic ready.');
     setLoadState('ready');
   };
 
+  const createNewSchematic = () => {
+    beginSchematicLoad('Creating an empty build platform...');
+    applySchematic(createStarterModel(), null, defaultExportFormat, 'new');
+    setAppView('edit');
+  };
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadDefaultSchematic = async () => {
+      beginSchematicLoad('Loading featured schematic...');
+
+      try {
+        setLoadProgressMessage(`Fetching ${defaultSchematicFileName}...`);
+        const response = await fetch(defaultSchematicUrl);
+        if (!response.ok) {
+          throw new Error(`Could not load ${defaultSchematicFileName}.`);
+        }
+
+        setLoadProgressMessage('Reading schematic data...');
+        const buffer = await response.arrayBuffer();
+        setLoadProgressMessage('Parsing blocks and materials...');
+        const parsed = parseSchematicDocument(buffer, { fileName: defaultSchematicFileName });
+        setLoadProgressMessage('Preparing the 3D stage...');
+        const defaultModel = { ...parsed.model, name: defaultSchematicName };
+        const defaultDocument = renameSchematicDocument(parsed.nbt, parsed.model.source, defaultSchematicName);
+        if (isCancelled) return;
+        applySchematic(defaultModel, defaultDocument, fileExtension(defaultSchematicFileName), 'default');
+      } catch (caught) {
+        if (isCancelled) return;
+
+        const fallback = createSampleModel();
+        applySchematic(fallback, null, defaultExportFormat, 'uploaded');
+        setError(caught instanceof Error ? caught.message : 'Could not load the default schematic.');
+      }
+    };
+
+    void loadDefaultSchematic();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
   const handleFile = async (file: File) => {
-    setLoadState('loading');
-    setError('');
+    beginSchematicLoad(`Opening ${file.name}...`);
 
     try {
+      setLoadProgressMessage('Reading file from your device...');
       const buffer = await file.arrayBuffer();
+      setLoadProgressMessage('Parsing schematic data...');
       const parsed = parseSchematicDocument(buffer, { fileName: file.name });
-      applySchematic(parsed.model, parsed.nbt, fileExtension(file.name));
+      setLoadProgressMessage('Building materials and 3D geometry...');
+      applySchematic(parsed.model, parsed.nbt, fileExtension(file.name), 'uploaded');
     } catch (caught) {
       setLoadState('error');
+      setLoadProgressMessage('Could not load schematic.');
       setError(caught instanceof Error ? caught.message : 'Could not read this schematic file.');
     }
   };
@@ -951,11 +1753,15 @@ function App() {
   const exportRenamedSchematic = () => {
     if (!model) return;
 
-    const nextName = schematicName.trim();
+    const nextName = schematicName.trim() || model.name;
     try {
-      const exportDocument = hasEditChanges || !schematicDocument
-        ? createSpongeSchematicDocument({ ...model, name: nextName }, nextName)
-        : renameSchematicDocument(schematicDocument, model.source, nextName);
+      const exportDocument = !hasEditChanges && schematicDocument && exportFormat === schematicExtension
+        ? renameSchematicDocument(schematicDocument, model.source, nextName)
+        : exportFormat === '.litematic'
+          ? createLitematicSchematicDocument({ ...model, name: nextName }, nextName)
+          : exportFormat === '.schematic'
+            ? createLegacySchematicDocument({ ...model, name: nextName }, nextName)
+            : createSpongeSchematicDocument({ ...model, name: nextName }, nextName);
       const bytes = writeNbt(exportDocument);
       const arrayBuffer = new ArrayBuffer(bytes.byteLength);
       new Uint8Array(arrayBuffer).set(bytes);
@@ -963,7 +1769,7 @@ function App() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${safeFileBaseName(nextName)}${hasEditChanges ? '.schem' : schematicExtension}`;
+      link.download = `${safeFileBaseName(nextName)}${exportFormat}`;
       link.click();
       URL.revokeObjectURL(url);
       setModel((current) => (current ? { ...current, name: nextName } : current));
@@ -1012,12 +1818,69 @@ function App() {
     if (file && isSchematicFileName(file.name)) void handleFile(file);
   };
 
-  const stepLayer = (delta: number) => {
-    if (!model) return;
-    setVisibleLayer((current) => clamp(current + delta, 0, model.dimensions.height - 1));
+  const commitLayerRange = (bottomLayer = visibleBottomLayer, topLayer = visibleTopLayer) => {
+    setRenderedVisibleBottomLayer(bottomLayer);
+    setRenderedVisibleTopLayer(topLayer);
   };
 
-  const layerPercent = model && model.dimensions.height > 1 ? (visibleLayer / (model.dimensions.height - 1)) * 100 : 100;
+  const cancelScheduledVisibleLayerRange = () => {
+    pendingVisibleLayerRangeRef.current = null;
+    if (visibleLayerFrameRef.current !== null) {
+      window.cancelAnimationFrame(visibleLayerFrameRef.current);
+      visibleLayerFrameRef.current = null;
+    }
+  };
+
+  const setVisibleLayerRange = (
+    bottomLayer: number,
+    topLayer: number,
+    singleLayer = singleVisibleLayer,
+    options: { commit?: boolean; immediate?: boolean } = {},
+  ) => {
+    if (options.immediate) {
+      cancelScheduledVisibleLayerRange();
+      setSingleVisibleLayer(singleLayer);
+      setVisibleBottomLayer(bottomLayer);
+      setVisibleTopLayer(topLayer);
+      if (options.commit) commitLayerRange(bottomLayer, topLayer);
+      return;
+    }
+
+    pendingVisibleLayerRangeRef.current = { bottomLayer, topLayer, singleLayer };
+    if (visibleLayerFrameRef.current !== null) return;
+
+    visibleLayerFrameRef.current = window.requestAnimationFrame(() => {
+      visibleLayerFrameRef.current = null;
+      const pending = pendingVisibleLayerRangeRef.current;
+      pendingVisibleLayerRangeRef.current = null;
+      if (!pending) return;
+      setSingleVisibleLayer(pending.singleLayer);
+      setVisibleBottomLayer(pending.bottomLayer);
+      setVisibleTopLayer(pending.topLayer);
+    });
+  };
+
+  const stepLayer = (delta: number) => {
+    if (!model) return;
+    const nextLayer = clamp(singleVisibleLayer + delta, 0, model.dimensions.height - 1);
+    setVisibleLayerRange(nextLayer, nextLayer, nextLayer, { commit: true, immediate: true });
+  };
+
+  const singleLayerPercent = model && model.dimensions.height > 1 ? (singleVisibleLayer / (model.dimensions.height - 1)) * 100 : 0;
+
+  const showSingleLayer = (layer: number, shouldCommit = false) => {
+    if (!model) return;
+    const nextLayer = clamp(layer, 0, model.dimensions.height - 1);
+    setVisibleLayerRange(nextLayer, nextLayer, nextLayer, { commit: shouldCommit, immediate: shouldCommit });
+  };
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      commitLayerRange();
+    }, 140);
+
+    return () => window.clearTimeout(timeout);
+  }, [visibleBottomLayer, visibleTopLayer]);
 
   const toggleMaterialVisibility = (id: string) => {
     setHiddenMaterialIds((current) => {
@@ -1026,23 +1889,6 @@ function App() {
         next.delete(id);
       } else {
         next.add(id);
-      }
-      return next;
-    });
-  };
-
-  const toggleAllMaterialVisibility = () => {
-    if (hideableMaterialIds.length === 0) return;
-
-    setHiddenMaterialIds((current) => {
-      const next = new Set(current);
-      const shouldShowAll = hideableMaterialIds.every((materialId) => next.has(materialId));
-      for (const materialId of hideableMaterialIds) {
-        if (shouldShowAll) {
-          next.delete(materialId);
-        } else {
-          next.add(materialId);
-        }
       }
       return next;
     });
@@ -1070,27 +1916,139 @@ function App() {
   };
 
   const toggleTheme = () => {
-    setTheme((current) => (current === 'dark' ? 'light' : 'dark'));
+    setTheme((current) => {
+      const nextTheme = current === 'dark' ? 'light' : 'dark';
+      setStageBackgroundColor((currentStageColor) => {
+        const normalized = normalizeHexColor(currentStageColor);
+        if (
+          normalized === defaultStageBackgroundColor(current)
+          || normalized === defaultStageBackgroundColor(nextTheme)
+          || normalized === legacyLightStageBackgroundColor
+        ) {
+          return defaultStageBackgroundColor(nextTheme);
+        }
+        return currentStageColor;
+      });
+      return nextTheme;
+    });
   };
+
+  const toggleControlRailSide = () => {
+    setControlRailSide((side) => {
+      const nextSide = side === 'right' ? 'left' : 'right';
+      if (nextSide === 'left') setLeftRailCollapsed(true);
+      return nextSide;
+    });
+  };
+
+  const panelRefForTab = (tab: InspectorTab) => (
+    tab === 'selection' ? selectionPanelRef : tab === 'layers' ? layerPanelRef : materialPanelRef
+  );
 
   const showPanel = (tab: InspectorTab) => {
     setInspectorTab(tab);
-    const panel = tab === 'selection' ? selectionPanelRef : tab === 'layers' ? layerPanelRef : materialPanelRef;
+  };
+
+  const revealPanel = (tab: InspectorTab) => {
+    setInspectorTab(tab);
+    const panel = panelRefForTab(tab);
     window.requestAnimationFrame(() => panel.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
   };
 
   const beginCuboidSelection = (resetSelection = false, revealViewPanel = appView === 'inspect') => {
     if (resetSelection) {
+      pushSelectionUndo(cuboidCorners);
       setCuboidCorners(emptyCuboidCorners());
+      setActiveSelectionId(null);
       setMaterialsScope('build');
     }
     setCuboidSelectionMode(true);
-    if (revealViewPanel) showPanel('selection');
+    if (revealViewPanel) revealPanel('selection');
+  };
+
+  const pushSelectionUndo = (corners: CuboidCorners) => {
+    setSelectionUndoStack((current) => [cloneCuboidCorners(corners), ...current].slice(0, 24));
+  };
+
+  const commitCuboidCorners = (nextCorners: CuboidCorners, options: { saveArea?: boolean } = {}) => {
+    if (cuboidCornersKey(nextCorners) === cuboidCornersKey(cuboidCorners)) return;
+    pushSelectionUndo(cuboidCorners);
+    setCuboidCorners(nextCorners);
+
+    if (activeSelectionId) {
+      setSelectionAreas((current) => current.map((area) => (
+        area.id === activeSelectionId
+          ? { ...area, corners: nextCorners, updatedAt: Date.now() }
+          : area
+      )));
+    } else if (options.saveArea && nextCorners.a && nextCorners.b) {
+      const nextArea = createSelectionArea(nextCorners, selectionAreas.length + 1);
+      setSelectionAreas((current) => [nextArea, ...current]);
+      setActiveSelectionId(nextArea.id);
+    }
+  };
+
+  const undoCuboidSelection = () => {
+    setSelectionUndoStack((current) => {
+      const [previous, ...rest] = current;
+      if (!previous) return current;
+      setCuboidCorners(previous);
+      if (activeSelectionId) {
+        setSelectionAreas((areas) => areas.map((area) => (
+          area.id === activeSelectionId
+            ? { ...area, corners: previous, updatedAt: Date.now() }
+            : area
+        )));
+      }
+      return rest;
+    });
+  };
+
+  const saveCurrentSelection = () => {
+    if (!cuboidCorners.a || !cuboidCorners.b) return;
+    if (activeSelectionId) return;
+    const nextArea = createSelectionArea(cuboidCorners, selectionAreas.length + 1);
+    setSelectionAreas((current) => [nextArea, ...current]);
+    setActiveSelectionId(nextArea.id);
+    setMaterialsScope('cuboid');
+  };
+
+  const activateSelectionArea = (id: string) => {
+    const area = selectionAreas.find((candidate) => candidate.id === id);
+    if (!area) return;
+    pushSelectionUndo(cuboidCorners);
+    setActiveSelectionId(id);
+    setCuboidCorners(area.corners);
+    if (area.corners.a && area.corners.b) setMaterialsScope('cuboid');
+  };
+
+  const removeSelectionArea = (id: string) => {
+    setSelectionAreas((current) => current.filter((area) => area.id !== id));
+    if (activeSelectionId === id) {
+      setActiveSelectionId(null);
+      setCuboidCorners(emptyCuboidCorners());
+      setMaterialsScope('build');
+    }
+  };
+
+  const selectVisibleLayers = () => {
+    if (!model) return;
+    const nextCorners = {
+      a: { x: 0, y: visibleBottomLayer, z: 0 },
+      b: {
+        x: Math.max(0, model.dimensions.width - 1),
+        y: visibleTopLayer,
+        z: Math.max(0, model.dimensions.length - 1),
+      },
+    };
+    commitCuboidCorners(nextCorners, { saveArea: true });
+    setCuboidSelectionMode(false);
+    setMaterialsScope('cuboid');
   };
 
   const openInspectorPanel = (tab: InspectorTab) => {
     setAppView('inspect');
-    showPanel(tab);
+    revealPanel(tab);
   };
 
   const activateEditTool = (tool: EditTool) => {
@@ -1110,10 +2068,10 @@ function App() {
       setSelectedBlock(block);
       const corner = button === 'secondary' ? 'b' : 'a';
       const otherCorner = corner === 'a' ? cuboidCorners.b : cuboidCorners.a;
-      setCuboidCorners((current) => ({
-        ...current,
+      commitCuboidCorners({
+        ...cuboidCorners,
         [corner]: pointFromBlock(block),
-      }));
+      }, { saveArea: Boolean(otherCorner) });
       if (otherCorner) setMaterialsScope('cuboid');
       return;
     }
@@ -1150,32 +2108,53 @@ function App() {
   };
 
   const clearCuboidSelection = () => {
-    setCuboidCorners(emptyCuboidCorners());
+    commitCuboidCorners(emptyCuboidCorners());
+    setActiveSelectionId(null);
     setMaterialsScope('build');
   };
 
   const updateModelBlocks = (updater: (blocks: VoxelBlock[], currentModel: SchematicModel) => VoxelBlock[]) => {
-    setModel((current) => {
-      if (!current) return current;
+    if (!model) return;
 
-      const selectedKey = selectedBlock ? blockPositionKey(selectedBlock) : null;
-      const blocks = updater(current.blocks, current)
-        .filter((block) => blockInsideModel(block, current))
-        .sort(compareBlocks);
-      const nextModel = finalizeSchematicModel({
-        ...current,
-        source: 'Sponge .schem',
-        blocks,
-        paletteSize: new Set(blocks.map((block) => block.stateKey)).size,
-        warnings: current.warnings,
-      });
-      if (selectedKey) {
-        setSelectedBlock(blocks.find((block) => blockPositionKey(block) === selectedKey) ?? null);
-      }
+    const selectedKey = selectedBlock ? blockPositionKey(selectedBlock) : null;
+    const blocks = updater(model.blocks, model)
+      .filter((block) => blockInsideModel(block, model))
+      .sort(compareBlocks);
+    const nextModel = finalizeSchematicModel({
+      ...model,
+      source: 'Sponge .schem',
+      blocks,
+      paletteSize: new Set(blocks.map((block) => block.stateKey)).size,
+      warnings: model.warnings,
+    });
+    if (selectedKey) {
+      setSelectedBlock(blocks.find((block) => blockPositionKey(block) === selectedKey) ?? null);
+    }
+    setEditUndoStack((stack) => [model, ...stack].slice(0, 24));
+    setHasEditChanges(true);
+    setSchematicExtension('.schem');
+    setModel(nextModel);
+  };
+
+  const undoLastEdit = () => {
+    setEditUndoStack((current) => {
+      const [previous, ...rest] = current;
+      if (!previous) return current;
+      setModel(previous);
+      setSelectedBlock(null);
       setHasEditChanges(true);
       setSchematicExtension('.schem');
-      return nextModel;
+      setEditNotice('Undid last schematic edit.');
+      return rest;
     });
+  };
+
+  const undoLastChange = () => {
+    if (editUndoStack.length > 0) {
+      undoLastEdit();
+      return;
+    }
+    undoCuboidSelection();
   };
 
   const setBlockAt = (x: number, y: number, z: number, stateKey: string) => {
@@ -1271,7 +2250,7 @@ function App() {
         ...blocks.filter((block) => !sourceKeys.has(blockPositionKey(block)) && !targetKeys.has(blockPositionKey(block))),
         ...rotatedBlocks,
       ]);
-      setCuboidCorners({ a: boundsMinPoint(rotatedBounds), b: boundsMaxPoint(rotatedBounds) });
+      commitCuboidCorners({ a: boundsMinPoint(rotatedBounds), b: boundsMaxPoint(rotatedBounds) });
       setSelectedBlock((current) => {
         if (!current || !sourceKeys.has(blockPositionKey(current))) return null;
         const nextPoint = rotatePointInBounds(current, cuboidBounds, direction);
@@ -1293,6 +2272,46 @@ function App() {
     setEditNotice(`${formatBlockName(selectedBlock.name)} rotated ${rotationLabel(direction)}.`);
   };
 
+  const shiftSelectedArea = (direction: Direction) => {
+    if (!model || !cuboidBounds) {
+      setEditNotice('Select an area before moving it.');
+      return;
+    }
+
+    const offset = directionOffset(direction);
+    const shiftedBounds = translateBounds(cuboidBounds, offset);
+    if (!boundsInsideModel(shiftedBounds, model)) {
+      setEditNotice(`Selected area cannot move ${directionLabel(direction).toLocaleLowerCase()} outside the schematic bounds.`);
+      return;
+    }
+
+    const sourceBlocks = model.blocks.filter((block) => blockInBounds(block, cuboidBounds));
+    const sourceKeys = keysForBounds(cuboidBounds);
+    const targetKeys = new Set(Array.from(sourceKeys, (key) => pointKey(translatePoint(pointFromKey(key), offset))));
+    const shiftedBlocks = sourceBlocks.map((block) => createVoxelBlock(
+      block.x + offset.x,
+      block.y + offset.y,
+      block.z + offset.z,
+      block.stateKey,
+    ));
+
+    updateModelBlocks((blocks) => [
+      ...blocks.filter((block) => !sourceKeys.has(blockPositionKey(block)) && !targetKeys.has(blockPositionKey(block))),
+      ...shiftedBlocks,
+    ]);
+    commitCuboidCorners({
+      a: cuboidCorners.a ? translatePoint(cuboidCorners.a, offset) : boundsMinPoint(shiftedBounds),
+      b: cuboidCorners.b ? translatePoint(cuboidCorners.b, offset) : boundsMaxPoint(shiftedBounds),
+    });
+    setSelectedBlock((current) => {
+      if (!current || !sourceKeys.has(blockPositionKey(current))) return null;
+      const nextPoint = translatePoint(current, offset);
+      return shiftedBlocks.find((block) => blockPositionKey(block) === pointKey(nextPoint)) ?? null;
+    });
+    setMaterialsScope('cuboid');
+    setEditNotice(`${sourceBlocks.length.toLocaleString()} block${sourceBlocks.length === 1 ? '' : 's'} moved ${directionLabel(direction).toLocaleLowerCase()}.`);
+  };
+
   const chooseBuildBlock = (stateKey: string) => {
     setSelectedBuildBlock(stateKey);
     setReplaceToBlock(stateKey);
@@ -1305,7 +2324,7 @@ function App() {
     setSelectedTextureFace(null);
     setTextureExportText('');
     setCameraMode('orbit');
-    setAppView('texture');
+    if (UV_VIEW_ENABLED) setAppView('texture');
   };
 
   const handleTextureFaceSelect = (hit: TextureFaceHit) => {
@@ -1412,10 +2431,105 @@ function App() {
     void navigator.clipboard?.writeText(text).catch(() => undefined);
   };
 
-  const openResourceCalculator = () => {
-    if (!model) return;
-    setShoppingSearch('');
-    setAppView('resource');
+  const updateSelectedThumbnailScale = (value: number) => {
+    if (!selectedThumbnailDebugItem) return;
+
+    setThumbnailDisplayAdjustments((current) => {
+      const previous = current[selectedThumbnailDebugItem.key] ?? defaultThumbnailDisplayAdjustment;
+      const next = normalizeThumbnailDisplayAdjustment({
+        ...previous,
+        scale: value,
+      });
+
+      if (isDefaultThumbnailDisplayAdjustment(next)) {
+        const updated = { ...current };
+        delete updated[selectedThumbnailDebugItem.key];
+        return updated;
+      }
+
+      return {
+        ...current,
+        [selectedThumbnailDebugItem.key]: next,
+      };
+    });
+  };
+
+  const updateSelectedThumbnailPreviewRequest = (request: ThumbnailPreviewRequest) => {
+    if (!selectedThumbnailDebugItem) return;
+
+    setThumbnailDisplayAdjustments((current) => {
+      const previous = current[selectedThumbnailDebugItem.key] ?? defaultThumbnailDisplayAdjustment;
+      const normalizedRequest = normalizeThumbnailPreviewRequest(request);
+      const baseRequest = baseThumbnailPreviewRequest(selectedThumbnailDebugItem.stateKey, selectedThumbnailDebugItem.layers);
+      const next = normalizeThumbnailDisplayAdjustment({
+        ...previous,
+        previewStateKey: thumbnailPreviewRequestsEqual(normalizedRequest, baseRequest) ? undefined : normalizedRequest.stateKey,
+        previewLayers: thumbnailPreviewRequestsEqual(normalizedRequest, baseRequest) ? undefined : normalizedRequest.layers,
+      });
+
+      if (isDefaultThumbnailDisplayAdjustment(next)) {
+        const updated = { ...current };
+        delete updated[selectedThumbnailDebugItem.key];
+        return updated;
+      }
+
+      return {
+        ...current,
+        [selectedThumbnailDebugItem.key]: next,
+      };
+    });
+  };
+
+  const rotateSelectedThumbnailPreview = (direction: RotationDirection) => {
+    if (!selectedThumbnailPreviewRequest) return;
+    updateSelectedThumbnailPreviewRequest(rotateThumbnailPreviewRequestY(selectedThumbnailPreviewRequest, direction));
+  };
+
+  const setSelectedThumbnailDirection = (direction: Direction) => {
+    if (!selectedThumbnailPreviewRequest) return;
+    updateSelectedThumbnailPreviewRequest(setThumbnailPreviewRequestDirection(selectedThumbnailPreviewRequest, direction));
+  };
+
+  const setSelectedThumbnailAxis = (axis: 'x' | 'y' | 'z') => {
+    if (!selectedThumbnailPreviewRequest) return;
+    updateSelectedThumbnailPreviewRequest(setThumbnailPreviewRequestAxis(selectedThumbnailPreviewRequest, axis));
+  };
+
+  const resetSelectedThumbnailDisplayAdjustment = () => {
+    if (!selectedThumbnailDebugItem) return;
+    setThumbnailDisplayAdjustments((current) => {
+      const updated = { ...current };
+      delete updated[selectedThumbnailDebugItem.key];
+      return updated;
+    });
+  };
+
+  const resetAllThumbnailDisplayAdjustments = () => {
+    setThumbnailDisplayAdjustments(defaultBlockPreviewAdjustments);
+  };
+
+  const copyThumbnailDisplayAdjustments = () => {
+    const text = JSON.stringify(exportedThumbnailDisplayAdjustments, null, 2);
+    const copyOperation = navigator.clipboard?.writeText(text);
+    if (!copyOperation) {
+      setThumbnailAdjustmentsCopied(false);
+      setEditNotice('Clipboard copy is not available in this browser.');
+      return;
+    }
+
+    void copyOperation.then(() => {
+      if (thumbnailAdjustmentsCopiedTimeoutRef.current !== null) {
+        window.clearTimeout(thumbnailAdjustmentsCopiedTimeoutRef.current);
+      }
+      setThumbnailAdjustmentsCopied(true);
+      thumbnailAdjustmentsCopiedTimeoutRef.current = window.setTimeout(() => {
+        setThumbnailAdjustmentsCopied(false);
+        thumbnailAdjustmentsCopiedTimeoutRef.current = null;
+      }, 1800);
+    }).catch(() => {
+      setThumbnailAdjustmentsCopied(false);
+      setEditNotice('Could not copy the thumbnail display adjustment JSON.');
+    });
   };
 
   const openShoppingList = () => {
@@ -1424,8 +2538,65 @@ function App() {
     setAppView('shopping');
   };
 
+  const openShulkerView = () => {
+    if (!model) return;
+    setAppView('shulker');
+  };
+
+  const openResourceCalculator = () => {
+    if (!model) return;
+    setShoppingSearch('');
+    setAppView('resource');
+  };
+
+  const openThumbnailDebug = () => {
+    if (!THUMBNAIL_DEBUG_ENABLED) return;
+    setThumbnailDebugSearch('');
+    setAppView('thumbnail-debug');
+  };
+
+  const saveCameraView = () => {
+    const position = viewerRef.current?.getCameraPosition();
+    if (!position) return;
+    const nextView: SavedCameraView = {
+      id: createStableId('camera'),
+      name: `Camera ${savedCameraViews.length + 1}`,
+      position,
+      isDefault: savedCameraViews.length === 0,
+      updatedAt: Date.now(),
+    };
+    setSavedCameraViews((current) => [nextView, ...current]);
+  };
+
+  const applyCameraView = (id: string) => {
+    const view = savedCameraViews.find((candidate) => candidate.id === id);
+    if (!view) return;
+    viewerRef.current?.applyCameraPosition(view.position);
+  };
+
+  const thumbnailDebugActive = THUMBNAIL_DEBUG_ENABLED && appView === 'thumbnail-debug';
+
+  const setDefaultCameraView = (id: string) => {
+    setSavedCameraViews((current) => current.map((view) => ({
+      ...view,
+      isDefault: view.id === id,
+      updatedAt: view.id === id ? Date.now() : view.updatedAt,
+    })));
+  };
+
+  const removeCameraView = (id: string) => {
+    setSavedCameraViews((current) => current.filter((view) => view.id !== id));
+  };
+
+  const handleViewerReady = () => {
+    const pending = pendingCameraPositionRef.current;
+    if (!pending) return;
+    viewerRef.current?.applyCameraPosition(pending);
+    pendingCameraPositionRef.current = null;
+  };
+
   const toggleShoppingItem = (material: MaterialSummary) => {
-    const key = shoppingItemKey(shoppingModeScope, material);
+    const key = shoppingItemKey(shoppingScope, material);
     setCheckedShoppingItems((current) => {
       const next = new Set(current);
       if (next.has(key)) {
@@ -1437,8 +2608,18 @@ function App() {
     });
   };
 
+  const handleShoppingItemPointerDown = (event: ReactPointerEvent<HTMLButtonElement>, material: MaterialSummary) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    toggleShoppingItem(material);
+  };
+
+  const handleShoppingItemClick = (event: ReactMouseEvent<HTMLButtonElement>, material: MaterialSummary) => {
+    if (event.detail !== 0) return;
+    toggleShoppingItem(material);
+  };
+
   const toggleShoppingGroup = (materials: MaterialSummary[]) => {
-    const keys = materials.map((material) => shoppingItemKey(shoppingModeScope, material));
+    const keys = materials.map((material) => shoppingItemKey(shoppingScope, material));
     setCheckedShoppingItems((current) => {
       const allChecked = keys.every((key) => current.has(key));
       const next = new Set(current);
@@ -1453,55 +2634,131 @@ function App() {
     });
   };
 
+  const toggleShoppingGroupCollapsed = (groupId: string) => {
+    setCollapsedShoppingGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  };
+
   const resetShoppingList = () => {
     setCheckedShoppingItems(new Set());
   };
 
+  const resetShulkerCompletion = () => {
+    setCheckedShulkerSlots(new Set());
+  };
+
+  const toggleShulkerSlot = (box: ShulkerBoxPlan, slotIndex: number, slot: ShulkerStack) => {
+    const key = shulkerSlotKey(box.id, slotIndex, slot);
+    setCheckedShulkerSlots((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const handleShulkerSlotPointerDown = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    box: ShulkerBoxPlan,
+    slotIndex: number,
+    slot: ShulkerStack,
+  ) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    toggleShulkerSlot(box, slotIndex, slot);
+  };
+
+  const handleShulkerSlotClick = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+    box: ShulkerBoxPlan,
+    slotIndex: number,
+    slot: ShulkerStack,
+  ) => {
+    if (event.detail !== 0) return;
+    toggleShulkerSlot(box, slotIndex, slot);
+  };
+
+  const toggleShulkerBoxCompletion = (box: ShulkerBoxPlan) => {
+    const keys = box.filledSlotKeys;
+    setCheckedShulkerSlots((current) => {
+      const allChecked = keys.every((key) => current.has(key));
+      const next = new Set(current);
+      for (const key of keys) {
+        if (allChecked) {
+          next.delete(key);
+        } else {
+          next.add(key);
+        }
+      }
+      return next;
+    });
+  };
+
+  const toggleShulkerBoxCollapsed = (boxId: string) => {
+    setCollapsedShulkerBoxes((current) => {
+      const next = new Set(current);
+      if (next.has(boxId)) {
+        next.delete(boxId);
+      } else {
+        next.add(boxId);
+      }
+      return next;
+    });
+  };
+
   const stepCuboidCorner = (corner: CuboidCornerId, axis: 'x' | 'y' | 'z', delta: number) => {
     if (!model) return;
-    setCuboidCorners((current) => {
-      const point = current[corner];
-      if (!point) return current;
-      return {
-        ...current,
-        [corner]: {
-          ...point,
-          [axis]: clamp(point[axis] + delta, 0, maxCoordinateForAxis(model, axis)),
-        },
-      };
+    const point = cuboidCorners[corner];
+    if (!point) return;
+    commitCuboidCorners({
+      ...cuboidCorners,
+      [corner]: {
+        ...point,
+        [axis]: clamp(point[axis] + delta, 0, maxCoordinateForAxis(model, axis)),
+      },
     });
   };
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (appView !== 'edit' || (event.key !== 'Delete' && event.key !== 'Backspace')) return;
+      if (isAppEditableElement(event.target)) return;
 
-      const target = event.target as HTMLElement | null;
-      const tagName = target?.tagName;
-      if (
-        target?.isContentEditable
-        || tagName === 'INPUT'
-        || tagName === 'TEXTAREA'
-        || tagName === 'SELECT'
-      ) {
+      const key = event.key.toLocaleLowerCase();
+      if ((event.ctrlKey || event.metaKey) && key === 'z' && !event.shiftKey) {
+        if (editUndoStack.length > 0 || selectionUndoStack.length > 0) {
+          event.preventDefault();
+          undoLastChange();
+        }
         return;
       }
 
-      if (deleteSelection()) event.preventDefault();
+      if (appView === 'edit' && (event.key === 'Delete' || event.key === 'Backspace')) {
+        if (deleteSelection()) event.preventDefault();
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [appView, deleteSelection]);
+  }, [appView, deleteSelection, editUndoStack.length, selectionUndoStack.length, undoLastChange]);
 
   return (
-    <main
-      className={`app-shell${showUploadOverlay ? ' is-upload-message-visible' : ''}`}
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
+    <ThumbnailDisplayAdjustmentsContext.Provider value={thumbnailDisplayAdjustments}>
+      <main
+        className={`app-shell${showUploadOverlay ? ' is-upload-message-visible' : ''}`}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
       <div className="drop-overlay" aria-hidden={!showUploadOverlay} aria-live="polite">
         <div>
           <FileUp size={38} />
@@ -1513,291 +2770,256 @@ function App() {
         <div className="topbar-left">
           <div className="brand-lockup">
             <div className="brand-mark" aria-hidden="true">
-              <Cuboid size={22} />
+              <Box size={20} strokeWidth={2.4} />
             </div>
-            <strong>schematic-editor</strong>
+            <strong>Schematic Editor</strong>
+            <span className="brand-beta">Beta</span>
           </div>
+          <div className="topbar-divider" aria-hidden="true" />
           <div className="file-lockup">
             {model ? (
-              <div className="schematic-meta">
-                <div className={`schematic-title${isEditingSchematicName ? ' is-editing' : ''}`}>
-                  {isEditingSchematicName ? (
-                    <input
-                      ref={schematicNameInputRef}
-                      type="text"
-                      value={schematicName}
-                      onBlur={commitSchematicName}
-                      onChange={(event) => setSchematicName(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.currentTarget.blur();
-                        }
-                        if (event.key === 'Escape') {
-                          setSchematicName(model.name);
-                          setIsEditingSchematicName(false);
-                        }
-                      }}
-                      aria-label="Schematic name"
-                    />
-                  ) : (
-                    <h1>{schematicName}</h1>
-                  )}
-                  <button
-                    type="button"
-                    className="schematic-title-edit"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => setIsEditingSchematicName(true)}
-                    title="Edit schematic name"
-                    aria-label="Edit schematic name"
-                  >
-                    <Pencil size={14} />
-                  </button>
-                </div>
-                <a className="build-credit" href={defaultBuildTutorialUrl} target="_blank" rel="noreferrer">
-                  build by MildMadi
-                </a>
+              <div className={`schematic-title${isEditingSchematicName ? ' is-editing' : ''}`}>
+                {isEditingSchematicName ? (
+                  <input
+                    ref={schematicNameInputRef}
+                    type="text"
+                    value={schematicName}
+                    onBlur={commitSchematicName}
+                    onChange={(event) => setSchematicName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.currentTarget.blur();
+                      }
+                      if (event.key === 'Escape') {
+                        setSchematicName(model.name);
+                        setIsEditingSchematicName(false);
+                      }
+                    }}
+                    aria-label="Schematic name"
+                  />
+                ) : (
+                  <h1>{schematicName}</h1>
+                )}
+                <button
+                  type="button"
+                  className="schematic-title-edit"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => setIsEditingSchematicName(true)}
+                  title="Edit schematic name"
+                  aria-label="Edit schematic name"
+                >
+                  <Pencil size={14} />
+                </button>
               </div>
             ) : (
-              <h1>Minecraft schematic viewer</h1>
+              <h1>Open a schematic to begin</h1>
             )}
+          </div>
+        </div>
+
+        <div className="topbar-right">
+          <button
+            type="button"
+            className="topbar-secondary"
+            onClick={createNewSchematic}
+            title="Create a new schematic"
+          >
+            <Plus size={16} />
+            <span>New</span>
+          </button>
+          <div
+            className={`topbar-export${isExportMenuOpen ? ' is-open' : ''}`}
+            ref={exportMenuRef}
+          >
+            <button
+              type="button"
+              className="topbar-save topbar-save-main"
+              onClick={() => {
+                setIsExportMenuOpen(false);
+                exportRenamedSchematic();
+              }}
+              disabled={!canSaveSchematic}
+              title={`${hasEditChanges ? 'Export edited build' : 'Export schematic'} as ${currentExportFormatOption.label}`}
+            >
+              <Download size={16} />
+              <span>Export</span>
+            </button>
+            <button
+              type="button"
+              className="topbar-save topbar-save-toggle"
+              onClick={() => setIsExportMenuOpen((open) => !open)}
+              aria-label="Choose export format"
+              aria-haspopup="menu"
+              aria-expanded={isExportMenuOpen}
+              title={`Choose export format (${currentExportFormatOption.shortLabel})`}
+            >
+              <ChevronDown size={16} className="topbar-save-chevron" />
+            </button>
+            <div className="topbar-export-menu" role="menu" aria-label="Save format">
+              {exportFormatOptions.map((option) => {
+                const isActive = option.value === exportFormat;
+
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="menuitemradio"
+                    className={`topbar-export-option${isActive ? ' is-active' : ''}`}
+                    aria-checked={isActive}
+                    onClick={() => {
+                      setExportFormat(option.value);
+                      setIsExportMenuOpen(false);
+                    }}
+                    title={`Save as ${option.label}`}
+                  >
+                    <span className="topbar-export-option-copy">
+                      <strong>{option.shortLabel}</strong>
+                      <span>{option.description}</span>
+                    </span>
+                    {isActive ? <Check size={15} aria-hidden="true" /> : null}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </header>
 
-      <div className={`workspace${appView === 'shopping' ? ' is-shopping' : ''}${appView === 'resource' ? ' is-resource' : ''}`}>
-        <aside className="left-rail" aria-label="Primary controls">
-          <div className="rail-cluster rail-mode-switch" role="tablist" aria-label="Schematic mode">
+      <div className={`workspace${leftRailCollapsed ? ' is-left-rail-collapsed' : ''}${controlRailSide === 'left' ? ' is-control-rail-left' : ''}${appView === 'shopping' || appView === 'shulker' ? ' is-shopping' : ''}${appView === 'resource' ? ' is-resource' : ''}${thumbnailDebugActive ? ' is-thumbnail-debug' : ''}`}>
+        <aside className="left-rail" aria-label="Primary navigation">
+          <div className="rail-head">
+            <span className="rail-head-title">Tools</span>
+            <button
+              type="button"
+              className="rail-collapse-button"
+              onClick={() => setLeftRailCollapsed((value) => !value)}
+              aria-label={leftRailCollapsed ? 'Expand navigation rail' : 'Collapse navigation rail'}
+              aria-expanded={!leftRailCollapsed}
+              title={leftRailCollapsed ? 'Expand rail' : 'Collapse rail'}
+            >
+              {leftRailCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+            </button>
+          </div>
+
+          <div className="rail-cluster" role="tablist" aria-label="Workspace mode">
             <button
               type="button"
               role="tab"
-              className={appView === 'inspect' ? 'is-active' : ''}
-              onClick={() => setAppView('inspect')}
-              aria-selected={appView === 'inspect'}
-              title="Inspect mode"
+              className={appView === 'inspect' && inspectorTab === 'materials' ? 'is-active' : ''}
+              onClick={() => openInspectorPanel('materials')}
+              aria-selected={appView === 'inspect' && inspectorTab === 'materials'}
+              aria-label="Inspect"
+              title="Inspect"
+              disabled={!model}
             >
-              <Eye size={19} />
-              <span>View</span>
+              <Search size={19} />
+              <span>Inspect</span>
             </button>
-            <button
-              type="button"
-              role="tab"
-              className={appView === 'edit' ? 'is-active' : ''}
-              onClick={() => setAppView('edit')}
-              aria-selected={appView === 'edit'}
-              title="Edit mode"
-            >
-              <Brush size={19} />
-              <span>Edit</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              className={appView === 'texture' ? 'is-active' : ''}
-              onClick={() => setAppView('texture')}
-              aria-selected={appView === 'texture'}
-              title="Texture mode"
-            >
-              <ImageIcon size={19} />
-              <span>UV</span>
-            </button>
+            {UV_VIEW_ENABLED && (
+              <button
+                type="button"
+                role="tab"
+                className={textureViewActive ? 'is-active' : ''}
+                onClick={() => setAppView('texture')}
+                aria-selected={textureViewActive}
+                aria-label="UV"
+                title="UV"
+                disabled={!model}
+              >
+                <ImageIcon size={19} />
+                <span>UV</span>
+              </button>
+            )}
             <button
               type="button"
               role="tab"
               className={appView === 'resource' ? 'is-active' : ''}
               onClick={openResourceCalculator}
               aria-selected={appView === 'resource'}
-              disabled={!model}
+              aria-label="Resource Calculator"
               title="Resource Calculator"
+              disabled={!model}
             >
               <ClipboardList size={19} />
-              <span>Calc</span>
+              <span>Resource Calculator</span>
             </button>
+            <button
+              type="button"
+              role="tab"
+              className={appView === 'shopping' ? 'is-active' : ''}
+              onClick={openShoppingList}
+              aria-selected={appView === 'shopping'}
+              aria-label="Shopping List"
+              title="Shopping List"
+              disabled={!model}
+            >
+              <ShoppingCart size={19} />
+              <span>Shopping List</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              className={appView === 'shulker' ? 'is-active' : ''}
+              onClick={openShulkerView}
+              aria-selected={appView === 'shulker'}
+              aria-label="Shulker Box View"
+              title="Shulker Box View"
+              disabled={!model}
+            >
+              <Box size={19} />
+              <span>Shulker Box View</span>
+            </button>
+            {THUMBNAIL_DEBUG_ENABLED ? (
+              <button
+                type="button"
+                role="tab"
+                className={thumbnailDebugActive ? 'is-active' : ''}
+                onClick={openThumbnailDebug}
+                aria-selected={thumbnailDebugActive}
+                aria-label="Thumbnail Debug"
+                title="Thumbnail Debug"
+              >
+                <SlidersHorizontal size={19} />
+                <span>Thumbnail Debug</span>
+              </button>
+            ) : null}
           </div>
 
-          <div className="rail-divider" />
-
           <div
-            className="rail-cluster"
-            aria-label={
-              appView === 'edit'
-                ? 'Edit tools'
-                : appView === 'texture'
-                  ? 'Texture tools'
-                  : appView === 'resource'
-                    ? 'Resource Calculator tools'
-                    : appView === 'shopping'
-                      ? 'Shopping list tools'
-                      : 'Inspect panels'
-            }
+            className="rail-dropzone"
+            role="button"
+            tabIndex={0}
+            onClick={() => inputRef.current?.click()}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                inputRef.current?.click();
+              }
+            }}
           >
-            {appView === 'edit' ? (
-              <>
-                <button
-                  type="button"
-                  className={editPanelTab === 'tools' && editTool === 'select' ? 'is-active' : ''}
-                  onClick={() => activateEditTool('select')}
-                  aria-pressed={editPanelTab === 'tools' && editTool === 'select'}
-                  title="Select blocks"
-                >
-                  <MousePointer2 size={19} />
-                  <span>Select</span>
-                </button>
-                <button
-                  type="button"
-                  className={editPanelTab === 'tools' && editTool === 'build' ? 'is-active' : ''}
-                  onClick={() => activateEditTool('build')}
-                  aria-pressed={editPanelTab === 'tools' && editTool === 'build'}
-                  title="Build selected block"
-                >
-                  <Brush size={19} />
-                  <span>Build</span>
-                </button>
-                <button
-                  type="button"
-                  className={editPanelTab === 'replace' ? 'is-active' : ''}
-                  onClick={() => {
-                    setAppView('edit');
-                    setEditPanelTab('replace');
-                    setCuboidSelectionMode(false);
-                  }}
-                  aria-pressed={editPanelTab === 'replace'}
-                  title="Find and replace blocks"
-                >
-                  <Replace size={19} />
-                  <span>Replace</span>
-                </button>
-              </>
-            ) : appView === 'texture' ? (
-              <>
-                <button
-                  type="button"
-                  className="is-active"
-                  onClick={() => setAppView('texture')}
-                  aria-pressed
-                  title="Texture adjustment"
-                >
-                  <SlidersHorizontal size={19} />
-                  <span>Adjust</span>
-                </button>
-              </>
-            ) : appView === 'resource' ? (
-              <>
-                <button
-                  type="button"
-                  className="is-active"
-                  onClick={openResourceCalculator}
-                  aria-pressed
-                  disabled={!model}
-                  title="Resource Calculator"
-                >
-                  <ClipboardList size={19} />
-                  <span>Calc</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openInspectorPanel('materials')}
-                  disabled={!model}
-                  title="Back to materials"
-                >
-                  <Cuboid size={19} />
-                  <span>Blocks</span>
-                </button>
-              </>
-            ) : appView === 'shopping' ? (
-              <>
-                <button
-                  type="button"
-                  className="is-active"
-                  onClick={openShoppingList}
-                  aria-pressed
-                  disabled={!model}
-                  title="Shopping list"
-                >
-                  <ClipboardList size={19} />
-                  <span>List</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openInspectorPanel('materials')}
-                  disabled={!model}
-                  title="Back to materials"
-                >
-                  <Cuboid size={19} />
-                  <span>Blocks</span>
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className={inspectorTab === 'materials' ? 'is-active' : ''}
-                  onClick={() => openInspectorPanel('materials')}
-                  aria-pressed={inspectorTab === 'materials'}
-                  disabled={!model}
-                  title="Materials"
-                >
-                  <Cuboid size={19} />
-                  <span>Blocks</span>
-                </button>
-                <button
-                  type="button"
-                  className={inspectorTab === 'selection' ? 'is-active' : ''}
-                  onClick={() => openInspectorPanel('selection')}
-                  aria-pressed={inspectorTab === 'selection'}
-                  disabled={!model}
-                  title="Area selection"
-                >
-                  <BoxSelect size={19} />
-                  <span>Area</span>
-                </button>
-                <button
-                  type="button"
-                  className={inspectorTab === 'layers' ? 'is-active' : ''}
-                  onClick={() => openInspectorPanel('layers')}
-                  aria-pressed={inspectorTab === 'layers'}
-                  disabled={!model}
-                  title="Layer view"
-                >
-                  <Layers size={19} />
-                  <span>Layers</span>
-                </button>
-              </>
-            )}
+            <FileUp size={22} />
+            <p>Import an existing schematic any time.</p>
+            <span className="or">or</span>
+            <button type="button" className="rail-browse" onClick={(event) => { event.stopPropagation(); inputRef.current?.click(); }}>
+              <span>Browse Files</span>
+            </button>
           </div>
 
           <div className="rail-spacer" />
 
-          <div className="rail-cluster rail-system-controls" aria-label="File and display controls">
+          <div className="rail-bottom-actions">
             <button
               type="button"
-              onClick={() => inputRef.current?.click()}
-              title="Upload schematic"
-              aria-label="Upload schematic"
-            >
-              <Upload size={19} />
-              <span>Upload</span>
-            </button>
-            <button
-              type="button"
-              onClick={exportRenamedSchematic}
-              disabled={!canSaveSchematic}
-              title={hasEditChanges ? 'Export edited build as .schem' : 'Export schematic with current name'}
-              aria-label={hasEditChanges ? 'Export edited build as .schem' : 'Export schematic with current name'}
-            >
-              <Download size={19} />
-              <span>Export</span>
-            </button>
-            <button
-              type="button"
+              className={`topbar-icon-btn${isDarkTheme ? ' is-on' : ''}`}
               onClick={toggleTheme}
-              title={isDarkTheme ? 'Use light theme' : 'Use dark theme'}
-              aria-label={isDarkTheme ? 'Use light theme' : 'Use dark theme'}
+              title={isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'}
+              aria-label={isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'}
               aria-pressed={isDarkTheme}
             >
-              {isDarkTheme ? <Sun size={19} /> : <Moon size={19} />}
-              <span>Theme</span>
+              {isDarkTheme ? <Sun size={18} /> : <Moon size={18} />}
             </button>
           </div>
+
           <input
             ref={inputRef}
             className="file-input"
@@ -1812,29 +3034,708 @@ function App() {
         </aside>
 
         <section
-          className={`viewport-panel${appView === 'shopping' ? ' shopping-viewport' : ''}${appView === 'resource' ? ' resource-viewport' : ''}${selectedBlock && appView !== 'texture' && appView !== 'shopping' && appView !== 'resource' ? ' has-selection-modal' : ''}`}
-          aria-label={appView === 'resource' ? 'Resource Calculator' : appView === 'shopping' ? 'Shopping list' : 'Schematic 3D viewport'}
+          className={`viewport-panel${appView === 'shopping' || appView === 'shulker' || appView === 'resource' || thumbnailDebugActive ? ' shopping-viewport' : ''}${appView === 'resource' ? ' resource-viewport' : ''}${appView === 'shulker' ? ' shulker-viewport' : ''}${thumbnailDebugActive ? ' thumbnail-debug-viewport' : ''}${selectedBlock && !textureViewActive && appView !== 'shopping' && appView !== 'shulker' && appView !== 'resource' && !thumbnailDebugActive ? ' has-selection-modal' : ''}`}
+          aria-label={appView === 'resource' ? 'Resource Calculator' : appView === 'shulker' ? 'Shulker Box View' : appView === 'shopping' ? 'Shopping list' : thumbnailDebugActive ? 'Thumbnail debug' : 'Schematic 3D viewport'}
         >
-          {appView === 'resource' && model ? (
-            <ResourceCalculatorBoard
-              schematicName={schematicName}
-              activeMaterialsLabel={activeMaterialsLabel}
-              activeMaterials={activeMaterials}
-              rawMaterials={rawMaterials}
-              resourceStats={resourceStats}
-              filteredRecipeTrees={filteredRecipeTrees}
-              shoppingSearch={shoppingSearch}
-              setShoppingSearch={setShoppingSearch}
-              materialsScope={materialsScope}
-              setMaterialsScope={setMaterialsScope}
-              cuboidBounds={cuboidBounds}
-              beginCuboidSelection={beginCuboidSelection}
-              setAppView={setAppView}
-              setInspectorTab={setInspectorTab}
-              integerCrafting={integerCrafting}
-              setIntegerCrafting={setIntegerCrafting}
-              openInspectorPanel={openInspectorPanel}
-            />
+          {loadState === 'loading' ? (
+            <div className="load-progress" role="status" aria-live="polite">
+              <div className="load-spinner" aria-hidden="true" />
+              <strong>Loading schematic</strong>
+              <span>{loadProgressMessage}</span>
+            </div>
+          ) : thumbnailDebugActive ? (
+            <section className="thumbnail-debug-board" aria-label="Thumbnail debug catalog">
+              <div className="thumbnail-debug-header">
+                <div className="shopping-title-block">
+                  <p className="eyebrow">Thumbnail Debug</p>
+                  <h2>Preview Defaults</h2>
+                </div>
+                <div className="thumbnail-debug-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={resetSelectedThumbnailDisplayAdjustment}
+                    disabled={!selectedThumbnailDebugItem || !thumbnailDisplayAdjustments[selectedThumbnailDebugItem.key]}
+                  >
+                    <RotateCcw size={16} />
+                    Reset Selected
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={resetAllThumbnailDisplayAdjustments}
+                    disabled={adjustedThumbnailItemCount === 0}
+                  >
+                    <X size={16} />
+                    Reset All
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={copyThumbnailDisplayAdjustments}
+                  >
+                    {thumbnailAdjustmentsCopied ? <Check size={15} aria-hidden="true" /> : <ClipboardList size={15} aria-hidden="true" />}
+                    {thumbnailAdjustmentsCopied ? 'Copied JSON' : 'Copy JSON'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="thumbnail-debug-toolbar">
+                <label className="material-search">
+                  <Search size={16} aria-hidden="true" />
+                  <input
+                    type="search"
+                    value={thumbnailDebugSearch}
+                    onChange={(event) => setThumbnailDebugSearch(event.target.value)}
+                    placeholder="Search blocks, items, or ids"
+                    aria-label="Search thumbnail debug items"
+                  />
+                </label>
+                <div className="thumbnail-debug-summary" aria-label="Thumbnail debug summary">
+                  <span>{filteredThumbnailDebugItems.length.toLocaleString()} visible</span>
+                  <span>{thumbnailDebugItems.length.toLocaleString()} total</span>
+                  <span>{adjustedThumbnailItemCount.toLocaleString()} adjusted</span>
+                </div>
+              </div>
+
+              <div className="thumbnail-debug-layout">
+                <section className="thumbnail-debug-catalog" aria-label="Thumbnail catalog">
+                  <div className="thumbnail-debug-grid">
+                    {filteredThumbnailDebugItems.map((item) => {
+                      const isSelected = selectedThumbnailDebugItem?.key === item.key;
+                      const hasAdjustment = Boolean(thumbnailDisplayAdjustments[item.key]);
+
+                      return (
+                        <button
+                          type="button"
+                          key={item.key}
+                          className={`thumbnail-debug-card${isSelected ? ' is-selected' : ''}${hasAdjustment ? ' is-adjusted' : ''}`}
+                          onClick={() => setSelectedThumbnailDebugKey(item.key)}
+                          aria-pressed={isSelected}
+                        >
+                          <span className="thumbnail-debug-card-preview">
+                            <BlockPreview
+                              stateKey={item.stateKey}
+                              color={item.color}
+                              layers={item.layers}
+                            />
+                          </span>
+                          <span className="thumbnail-debug-card-meta">
+                            <strong>{item.label}</strong>
+                            <span>{item.family === 'block' ? 'Block' : 'Item'}</span>
+                            <small>{item.stateKey}</small>
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {filteredThumbnailDebugItems.length === 0 && (
+                      <p className="material-empty">No thumbnail entries match "{thumbnailDebugSearch.trim()}".</p>
+                    )}
+                  </div>
+                </section>
+
+                <aside className="thumbnail-debug-editor" aria-label="Thumbnail adjustment editor">
+                  {selectedThumbnailDebugItem ? (
+                    <>
+                      <div className="thumbnail-debug-editor-head">
+                        <div>
+                          <p className="eyebrow">{selectedThumbnailDebugItem.family === 'block' ? 'Block' : 'Item'}</p>
+                          <h3>{selectedThumbnailDebugItem.label}</h3>
+                        </div>
+                        {thumbnailDisplayAdjustments[selectedThumbnailDebugItem.key] && (
+                          <span className="thumbnail-debug-adjusted-pill">Adjusted</span>
+                        )}
+                      </div>
+
+                      <div className="thumbnail-debug-preview-stage">
+                        <div className="thumbnail-debug-preview-samples">
+                          <div>
+                            <span>Small</span>
+                            <BlockPreview
+                              stateKey={selectedThumbnailDebugItem.stateKey}
+                              color={selectedThumbnailDebugItem.color}
+                              layers={selectedThumbnailDebugItem.layers}
+                              size={28}
+                            />
+                          </div>
+                          <div>
+                            <span>Default</span>
+                            <BlockPreview
+                              stateKey={selectedThumbnailDebugItem.stateKey}
+                              color={selectedThumbnailDebugItem.color}
+                              layers={selectedThumbnailDebugItem.layers}
+                              size={42}
+                            />
+                          </div>
+                          <div>
+                            <span>Large</span>
+                            <BlockPreview
+                              stateKey={selectedThumbnailDebugItem.stateKey}
+                              color={selectedThumbnailDebugItem.color}
+                              layers={selectedThumbnailDebugItem.layers}
+                              size={68}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <dl className="thumbnail-debug-facts">
+                        <div>
+                          <dt>State Key</dt>
+                          <dd>{selectedThumbnailDebugItem.stateKey}</dd>
+                        </div>
+                        <div>
+                          <dt>Facing</dt>
+                          <dd>{selectedThumbnailOrientation?.label ?? 'Not direction-aware'}</dd>
+                        </div>
+                        <div>
+                          <dt>Category</dt>
+                          <dd>{selectedThumbnailDebugItem.category}</dd>
+                        </div>
+                        <div>
+                          <dt>Sources</dt>
+                          <dd>{selectedThumbnailDebugItem.sources.join(' · ')}</dd>
+                        </div>
+                      </dl>
+
+                      <div className="thumbnail-debug-controls">
+                        <label className="thumbnail-debug-control">
+                          <div>
+                            <span>Scale</span>
+                            <strong>{selectedThumbnailDisplayAdjustment.scale.toFixed(2)}x</strong>
+                          </div>
+                          <input
+                            type="range"
+                            min="0.5"
+                            max="2.4"
+                            step="0.05"
+                            value={selectedThumbnailDisplayAdjustment.scale}
+                            onChange={(event) => updateSelectedThumbnailScale(Number(event.target.value))}
+                          />
+                        </label>
+
+                        <div className="thumbnail-debug-control">
+                          <div>
+                            <span>Rotate Around Y</span>
+                            <strong>{selectedThumbnailOrientation?.label ?? 'No directional state'}</strong>
+                          </div>
+                          <div className="thumbnail-debug-direction-actions">
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => rotateSelectedThumbnailPreview('counterclockwise')}
+                              disabled={!selectedThumbnailPreviewRequest || thumbnailPreviewRequestsEqual(
+                                rotateThumbnailPreviewRequestY(selectedThumbnailPreviewRequest, 'counterclockwise'),
+                                selectedThumbnailPreviewRequest,
+                              )}
+                            >
+                              <RotateCcw size={16} />
+                              Rotate Left
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => rotateSelectedThumbnailPreview('clockwise')}
+                              disabled={!selectedThumbnailPreviewRequest || thumbnailPreviewRequestsEqual(
+                                rotateThumbnailPreviewRequestY(selectedThumbnailPreviewRequest, 'clockwise'),
+                                selectedThumbnailPreviewRequest,
+                              )}
+                            >
+                              <RotateCw size={16} />
+                              Rotate Right
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="thumbnail-debug-control">
+                          <div>
+                            <span>Set Facing</span>
+                            <strong>Changes the rendered block state</strong>
+                          </div>
+                          {selectedThumbnailAxes.length > 0 && (
+                            <div className="thumbnail-debug-direction-actions" role="group" aria-label="Set axis">
+                              {(['x', 'y', 'z'] as const).map((axis) => {
+                                const nextRequest = selectedThumbnailPreviewRequest
+                                  ? setThumbnailPreviewRequestAxis(selectedThumbnailPreviewRequest, axis)
+                                  : null;
+                                const isActive = selectedThumbnailPreviewRequest && nextRequest
+                                  ? thumbnailPreviewRequestsEqual(nextRequest, selectedThumbnailPreviewRequest)
+                                  : false;
+
+                                return (
+                                  <button
+                                    type="button"
+                                    key={axis}
+                                    className={`secondary-button${isActive ? ' is-active' : ''}`}
+                                    onClick={() => setSelectedThumbnailAxis(axis)}
+                                    disabled={!selectedThumbnailPreviewRequest || !canSetThumbnailPreviewRequestAxis(selectedThumbnailPreviewRequest, axis)}
+                                    aria-pressed={isActive}
+                                  >
+                                    Axis {axis.toUpperCase()}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {selectedThumbnailHorizontalDirections.length > 0 && (
+                            <div className="thumbnail-debug-direction-grid" role="group" aria-label="Set horizontal facing">
+                              {(['north', 'east', 'south', 'west'] as const).map((direction) => {
+                                const nextRequest = selectedThumbnailPreviewRequest
+                                  ? setThumbnailPreviewRequestDirection(selectedThumbnailPreviewRequest, direction)
+                                  : null;
+                                const isActive = selectedThumbnailPreviewRequest && nextRequest
+                                  ? thumbnailPreviewRequestsEqual(nextRequest, selectedThumbnailPreviewRequest)
+                                  : false;
+
+                                return (
+                                  <button
+                                    type="button"
+                                    key={direction}
+                                    className={`secondary-button${isActive ? ' is-active' : ''}`}
+                                    onClick={() => setSelectedThumbnailDirection(direction)}
+                                    disabled={!selectedThumbnailPreviewRequest || !canSetThumbnailPreviewRequestDirection(selectedThumbnailPreviewRequest, direction)}
+                                    aria-pressed={isActive}
+                                  >
+                                    {direction}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {selectedThumbnailVerticalDirections.length > 0 && (
+                            <div className="thumbnail-debug-direction-actions" role="group" aria-label="Set vertical facing">
+                              {(['up', 'down'] as const).map((direction) => {
+                                const nextRequest = selectedThumbnailPreviewRequest
+                                  ? setThumbnailPreviewRequestDirection(selectedThumbnailPreviewRequest, direction)
+                                  : null;
+                                const isActive = selectedThumbnailPreviewRequest && nextRequest
+                                  ? thumbnailPreviewRequestsEqual(nextRequest, selectedThumbnailPreviewRequest)
+                                  : false;
+
+                                return (
+                                  <button
+                                    type="button"
+                                    key={direction}
+                                    className={`secondary-button${isActive ? ' is-active' : ''}`}
+                                    onClick={() => setSelectedThumbnailDirection(direction)}
+                                    disabled={!selectedThumbnailPreviewRequest || !canSetThumbnailPreviewRequestDirection(selectedThumbnailPreviewRequest, direction)}
+                                    aria-pressed={isActive}
+                                  >
+                                    {direction}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {selectedThumbnailAxes.length === 0
+                            && selectedThumbnailHorizontalDirections.length === 0
+                            && selectedThumbnailVerticalDirections.length === 0 && (
+                            <p className="thumbnail-debug-control-note">This preview does not expose a directional state we can override yet.</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="thumbnail-debug-export">
+                        <div className="thumbnail-debug-export-head">
+                          <strong>Default JSON</strong>
+                          <span>Copy this into the thumbnail defaults map.</span>
+                        </div>
+                        <pre>{JSON.stringify(exportedThumbnailDisplayAdjustments, null, 2)}</pre>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="material-empty">Choose a thumbnail from the catalog to start adjusting its default display.</p>
+                  )}
+                </aside>
+              </div>
+            </section>
+          ) : appView === 'resource' && model ? (
+            <section className="shopping-board resource-board" aria-label="Resource Calculator">
+              <div className="shopping-header">
+                <div className="shopping-title-block">
+                  <p className="eyebrow">Crafting Plan</p>
+                  <h2>{schematicName}</h2>
+                </div>
+                <div className="shopping-actions">
+                  <a
+                    className="primary-button resource-calculator-link"
+                    href={resourceCalculatorUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={`Open ${activeMaterials.length.toLocaleString()} material types in ResourceCalculator.com`}
+                  >
+                    <ExternalLink size={16} />
+                    Open in ResourceCalculator
+                  </a>
+                  <div className="segmented-control shopping-scope" role="group" aria-label="Crafting plan scope">
+                    <button
+                      type="button"
+                      className={materialsScope === 'build' ? 'is-active' : ''}
+                      onClick={() => setMaterialsScope('build')}
+                    >
+                      Entire Build
+                    </button>
+                    <button
+                      type="button"
+                      className={materialsScope === 'cuboid' ? 'is-active' : ''}
+                      onClick={() => {
+                        if (cuboidBounds) {
+                          setMaterialsScope('cuboid');
+                        } else {
+                          beginCuboidSelection();
+                          setAppView('inspect');
+                          setInspectorTab('selection');
+                        }
+                      }}
+                    >
+                      Selected Area
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="craft-plan" aria-label="Crafting plan">
+                <aside className="craft-plan-ingredients" aria-label="Base ingredients">
+                  <div className="craft-plan-ingredients-head">
+                    <h3>Base Ingredients</h3>
+                    <span>{rawMaterials.length} types</span>
+                  </div>
+                  <div
+                    className="craft-plan-progress"
+                    style={{ '--plan-progress': `${rawMaterials.length ? Math.round((rawMaterials.filter((m) => checkedPlanSteps.has(`raw:${m.id}`)).length / rawMaterials.length) * 100) : 0}%` } as CSSProperties}
+                  >
+                    <span>{rawMaterials.length ? Math.round((rawMaterials.filter((m) => checkedPlanSteps.has(`raw:${m.id}`)).length / rawMaterials.length) * 100) : 0}% gathered</span>
+                  </div>
+                  <div className="craft-plan-ingredient-list">
+                    {rawMaterials.map((material) => {
+                      const key = `raw:${material.id}`;
+                      const checked = checkedPlanSteps.has(key);
+                      return (
+                        <button
+                          type="button"
+                          key={material.id}
+                          className={`craft-plan-ingredient${checked ? ' is-checked' : ''}`}
+                          onClick={() => setCheckedPlanSteps((current) => {
+                            const next = new Set(current);
+                            if (next.has(key)) next.delete(key); else next.add(key);
+                            return next;
+                          })}
+                          aria-pressed={checked}
+                        >
+                          <span className={`plan-check${checked ? ' is-on' : ''}`}>{checked && <Check size={12} strokeWidth={3} />}</span>
+                          <MaterialPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
+                          <span className="plan-ing-meta">
+                            <strong>{material.label}</strong>
+                            <span>{material.count.toLocaleString()} · {Math.ceil(material.count / 64)} stacks</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {rawMaterials.length === 0 && <p className="material-empty">No base ingredients to gather.</p>}
+                  </div>
+                </aside>
+
+                <div className="craft-plan-flow" aria-label="Crafting flow">
+                  {craftPlan.groups.map((group) => (
+                    <section className="craft-plan-group" key={group.id}>
+                      <div className="craft-plan-group-head">
+                        <h3>{group.label}</h3>
+                        <span>{group.steps.length} {group.steps.length === 1 ? 'step' : 'steps'}</span>
+                      </div>
+                      <div className="craft-plan-steps">
+                        {group.steps.map((step) => {
+                          const checked = checkedPlanSteps.has(`step:${step.id}`);
+                          return (
+                            <div className={`craft-plan-step${checked ? ' is-checked' : ''}`} key={step.id}>
+                              <div className="craft-plan-inputs">
+                                {step.inputs.map((input) => (
+                                  <div className="craft-plan-chip" key={input.id}>
+                                    <MaterialPreview stateKey={input.stateKey} color={input.color} layers={input.thumbnailLayers} />
+                                    <span className="chip-label">{input.label}</span>
+                                    <span className="chip-count">{input.count.toLocaleString()}</span>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="craft-plan-arrow" aria-hidden="true">
+                                <span className="craft-plan-method">{recipeTypeLabel(step.method)}</span>
+                                <ChevronRight size={18} />
+                              </div>
+                              <button
+                                type="button"
+                                className="craft-plan-output"
+                                onClick={() => setCheckedPlanSteps((current) => {
+                                  const next = new Set(current);
+                                  const k = `step:${step.id}`;
+                                  if (next.has(k)) next.delete(k); else next.add(k);
+                                  return next;
+                                })}
+                                aria-pressed={checked}
+                              >
+                                <span className={`plan-check${checked ? ' is-on' : ''}`}>{checked && <Check size={12} strokeWidth={3} />}</span>
+                                <MaterialPreview stateKey={step.stateKey} color={step.color} layers={step.thumbnailLayers} />
+                                <span className="plan-out-meta">
+                                  <strong>{step.label}</strong>
+                                  <span>{step.count.toLocaleString()} · {step.crafts.toLocaleString()} {step.crafts === 1 ? 'craft' : 'crafts'}</span>
+                                </span>
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ))}
+                  {craftPlan.groups.length === 0 && (
+                    <p className="material-empty">No crafting steps — every material is gathered directly.</p>
+                  )}
+                </div>
+
+                <aside className="craft-plan-queue" aria-label="Do next">
+                  <div className="craft-plan-queue-head">
+                    <h3>Do Next</h3>
+                    <span className="queue-badge">{craftPlan.steps.filter((s) => !checkedPlanSteps.has(`step:${s.id}`)).length}</span>
+                  </div>
+                  <div className="craft-plan-queue-list">
+                    {craftPlan.steps.map((step, index) => {
+                      const checked = checkedPlanSteps.has(`step:${step.id}`);
+                      const fromLabel = step.inputs.map((input) => input.label).join(' + ');
+                      return (
+                        <button
+                          type="button"
+                          key={step.id}
+                          className={`craft-plan-queue-item${checked ? ' is-checked' : ''}`}
+                          onClick={() => setCheckedPlanSteps((current) => {
+                            const next = new Set(current);
+                            const k = `step:${step.id}`;
+                            if (next.has(k)) next.delete(k); else next.add(k);
+                            return next;
+                          })}
+                          aria-pressed={checked}
+                        >
+                          <span className="queue-index">{index + 1}</span>
+                          <MaterialPreview stateKey={step.stateKey} color={step.color} layers={step.thumbnailLayers} />
+                          <span className="queue-meta">
+                            <strong>{recipeTypeLabel(step.method)} {step.label}</strong>
+                            <span className="queue-count">{step.count.toLocaleString()} ({step.crafts.toLocaleString()} {step.crafts === 1 ? 'craft' : 'crafts'})</span>
+                            <span className="queue-from">From {fromLabel}</span>
+                          </span>
+                          <span className={`plan-check${checked ? ' is-on' : ''}`}>{checked && <Check size={12} strokeWidth={3} />}</span>
+                        </button>
+                      );
+                    })}
+                    {craftPlan.steps.length === 0 && <p className="material-empty">Nothing to craft.</p>}
+                  </div>
+                </aside>
+              </div>
+            </section>
+          ) : appView === 'shulker' && model ? (
+            <section className="shopping-board shulker-board" aria-label="Shulker Box View">
+              <div className="shopping-header">
+                <div className="shopping-title-block">
+                  <p className="eyebrow">Shulker Box View</p>
+                  <h2>{schematicName}</h2>
+                </div>
+                <div className="shopping-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={resetShulkerCompletion}
+                    disabled={checkedShulkerSlotCount === 0}
+                    title="Reset completed slots for this shulker view"
+                  >
+                    <RotateCcw size={16} aria-hidden="true" />
+                    Reset
+                  </button>
+                </div>
+              </div>
+
+              <div className="shopping-toolbar shulker-toolbar">
+                <div className="segmented-control shopping-scope" role="group" aria-label="Shulker box scope">
+                  <button
+                    type="button"
+                    className={materialsScope === 'build' ? 'is-active' : ''}
+                    onClick={() => setMaterialsScope('build')}
+                  >
+                    Entire Build
+                  </button>
+                  <button
+                    type="button"
+                    className={materialsScope === 'cuboid' ? 'is-active' : ''}
+                    onClick={() => {
+                      if (cuboidBounds) {
+                        setMaterialsScope('cuboid');
+                      } else {
+                        beginCuboidSelection();
+                        setAppView('inspect');
+                        setInspectorTab('selection');
+                      }
+                    }}
+                  >
+                    Selected Area
+                  </button>
+                </div>
+                <div className="shulker-toolbar-right">
+                  {shulkerViewMode === 'type' && (
+                    <button
+                      type="button"
+                      className={`shulker-consolidate-button${shulkerTypeAutoConsolidated ? ' is-active' : ''}`}
+                      onClick={() => setShulkerTypeAutoConsolidated((current) => !current)}
+                      disabled={shulkerConsolidatableBoxCount < 2}
+                      role="switch"
+                      aria-checked={shulkerTypeAutoConsolidated}
+                      title={shulkerConsolidatableBoxCount < 2
+                        ? 'At least two boxes under half full are needed'
+                        : 'Combine boxes with fewer than half their slots filled'}
+                    >
+                      <span className="shulker-consolidate-copy">
+                        <span className="shulker-consolidate-label">Auto-consolidate</span>
+                        <span className="shulker-consolidate-subtitle">Group similar items</span>
+                      </span>
+                      <span className="shulker-consolidate-switch" aria-hidden="true">
+                        <span className="shulker-consolidate-thumb">
+                          <Check size={13} strokeWidth={3} />
+                        </span>
+                      </span>
+                    </button>
+                  )}
+                  <div className="segmented-control shulker-mode-toggle" role="group" aria-label="Organize shulker boxes">
+                    <button
+                      type="button"
+                      className={shulkerViewMode === 'box' ? 'is-active' : ''}
+                      onClick={() => setShulkerViewMode('box')}
+                      aria-pressed={shulkerViewMode === 'box'}
+                    >
+                      By Box
+                    </button>
+                    <button
+                      type="button"
+                      className={shulkerViewMode === 'type' ? 'is-active' : ''}
+                      onClick={() => setShulkerViewMode('type')}
+                      aria-pressed={shulkerViewMode === 'type'}
+                    >
+                      By Item Type
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="shulker-list" aria-live="polite">
+                {visibleShulkerBoxes.map((box) => {
+                  const checkedSlotCount = box.filledSlotKeys.filter((key) => checkedShulkerSlots.has(key)).length;
+                  const isBoxChecked = box.filledSlotKeys.length > 0 && checkedSlotCount === box.filledSlotKeys.length;
+                  const isBoxCollapsed = collapsedShulkerBoxes.has(box.id);
+                  const boxItemsId = `shulker-box-${box.id}`;
+
+                  return (
+                    <section
+                      className={`shulker-card${isBoxChecked ? ' is-complete' : ''}${isBoxCollapsed ? ' is-collapsed' : ''}`}
+                      key={box.id}
+                      aria-label={box.label}
+                      style={{
+                        '--shulker-accent': shulkerColorCss(box.color),
+                      } as CSSProperties}
+                    >
+                      <div className="shulker-card-head">
+                        <div className="shulker-card-title">
+                          <BlockPreview
+                            stateKey={shulkerBoxStateKey(box.color)}
+                            color={shulkerBoxPreviewColor(box.color)}
+                            size={38}
+                          />
+                          <h3>{box.label}</h3>
+                        </div>
+                        <div className="shulker-card-actions">
+                          <span className="shulker-card-progress">
+                            {checkedSlotCount.toLocaleString()} / {box.usedSlots.toLocaleString()} complete
+                          </span>
+                          {isBoxChecked && <span className="shopping-group-done-chip">Done</span>}
+                          <button
+                            type="button"
+                            className="shopping-group-toggle shulker-group-toggle"
+                            onClick={() => toggleShulkerBoxCompletion(box)}
+                            aria-pressed={isBoxChecked}
+                          >
+                            <CheckCircle2 size={15} aria-hidden="true" />
+                            {isBoxChecked ? 'Clear group' : 'Mark all complete'}
+                          </button>
+                          <button
+                            type="button"
+                            className="shopping-group-collapse shulker-card-collapse"
+                            onClick={() => toggleShulkerBoxCollapsed(box.id)}
+                            aria-expanded={!isBoxCollapsed}
+                            aria-controls={isBoxCollapsed ? undefined : boxItemsId}
+                            aria-label={`${isBoxCollapsed ? 'Expand' : 'Collapse'} ${box.label}`}
+                          >
+                            {isBoxCollapsed ? <ChevronDown size={17} /> : <ChevronUp size={17} />}
+                          </button>
+                        </div>
+                      </div>
+                      {!isBoxCollapsed && (
+                        <div className="shulker-card-body" id={boxItemsId}>
+                          <div className="shulker-card-body-inner">
+                            <div className="shulker-grid" role="grid" aria-label={`${box.label} inventory`}>
+                              {box.slots.map((slot, index) => {
+                                if (!slot) {
+                                  return (
+                                    <div
+                                      className="shulker-slot"
+                                      key={`${box.id}-slot-${index}`}
+                                      role="gridcell"
+                                      aria-label="Empty slot"
+                                    />
+                                  );
+                                }
+
+                                const slotKey = box.slotKeys[index] ?? shulkerSlotKey(box.id, index, slot);
+                                const isSlotChecked = checkedShulkerSlots.has(slotKey);
+
+                                return (
+                                  <button
+                                    type="button"
+                                    className={`shulker-slot has-item${isSlotChecked ? ' is-checked' : ''}`}
+                                    key={`${box.id}-slot-${index}`}
+                                    role="gridcell"
+                                    aria-label={`${slot.material.label}, ${slot.count}. ${isSlotChecked ? 'Complete' : 'Not complete'}.`}
+                                    aria-pressed={isSlotChecked}
+                                    data-tooltip={slot.material.label}
+                                    onPointerDown={(event) => handleShulkerSlotPointerDown(event, box, index, slot)}
+                                    onClick={(event) => handleShulkerSlotClick(event, box, index, slot)}
+                                  >
+                                    <span className="shulker-slot-frame">
+                                      <MaterialPreview
+                                        stateKey={slot.material.stateKey}
+                                        color={slot.material.color}
+                                        layers={slot.material.thumbnailLayers}
+                                        size={42}
+                                      />
+                                      <strong>{slot.count}</strong>
+                                      <span className="shulker-slot-check" aria-hidden="true">
+                                        <Check size={14} strokeWidth={3} />
+                                      </span>
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </section>
+                  );
+                })}
+                {visibleShulkerBoxCount < shulkerBoxes.length && (
+                  <p className="shulker-loading-more" role="status" ref={shulkerLoadMoreRef}>
+                    Loading {Math.min(visibleShulkerBoxCount, shulkerBoxes.length).toLocaleString()} of {shulkerBoxes.length.toLocaleString()} boxes
+                  </p>
+                )}
+                {shulkerBoxes.length === 0 && (
+                  <p className="material-empty">
+                    {materialsScope === 'cuboid' && !cuboidBounds
+                      ? 'Select an area to pack shulker boxes for that region.'
+                      : 'No non-air blocks to pack into shulker boxes.'}
+                  </p>
+                )}
+              </div>
+            </section>
           ) : appView === 'shopping' && model ? (
             <section className="shopping-board" aria-label="Required resources shopping list">
               <div className="shopping-header">
@@ -1846,20 +3747,35 @@ function App() {
                   <button
                     type="button"
                     className="secondary-button"
-                    onClick={() => openInspectorPanel('materials')}
-                  >
-                    <Cuboid size={16} />
-                    Materials
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary-button"
                     onClick={resetShoppingList}
                     disabled={checkedShoppingMaterialCount === 0}
                   >
                     <RotateCcw size={16} />
                     Reset
                   </button>
+                </div>
+              </div>
+
+              <div
+                className="shopping-progress"
+                style={{ '--shopping-progress': `${shoppingProgressPercent}%` } as CSSProperties}
+                aria-label={`${shoppingProgressPercent}% collected`}
+              >
+                <div>
+                  <span>Total</span>
+                  <strong>{totalShoppingItems.toLocaleString()}</strong>
+                </div>
+                <div>
+                  <span>Collected</span>
+                  <strong>{completedShoppingItems.toLocaleString()}</strong>
+                </div>
+                <div>
+                  <span>Remaining</span>
+                  <strong>{remainingShoppingItems.toLocaleString()}</strong>
+                </div>
+                <div>
+                  <span>Rows</span>
+                  <strong>{checkedShoppingMaterialCount.toLocaleString()} / {activeMaterials.length.toLocaleString()}</strong>
                 </div>
               </div>
 
@@ -1888,30 +3804,6 @@ function App() {
                     Selected Area
                   </button>
                 </div>
-                <div className="segmented-control shopping-mode" role="group" aria-label="Shopping material mode">
-                  <button
-                    type="button"
-                    className={materialsMode === 'placed' ? 'is-active' : ''}
-                    onClick={() => setMaterialsMode('placed')}
-                  >
-                    Placed
-                  </button>
-                  <button
-                    type="button"
-                    className={materialsMode === 'raw' ? 'is-active' : ''}
-                    onClick={() => setMaterialsMode('raw')}
-                  >
-                    Raw
-                  </button>
-                </div>
-                <label className="toggle-row compact-toggle">
-                  <input
-                    type="checkbox"
-                    checked={integerCrafting}
-                    onChange={(event) => setIntegerCrafting(event.target.checked)}
-                  />
-                  <span>Whole crafts</span>
-                </label>
                 <label className="material-search shopping-search">
                   <Search size={16} aria-hidden="true" />
                   <input
@@ -1946,75 +3838,80 @@ function App() {
                 </div>
               </div>
 
-              <div
-                className="shopping-progress"
-                style={{ '--shopping-progress': `${shoppingProgressPercent}%` } as CSSProperties}
-                aria-label={`${shoppingProgressPercent}% collected`}
-              >
-                <div>
-                  <span>Total</span>
-                  <strong>{totalShoppingItems.toLocaleString()}</strong>
-                </div>
-                <div>
-                  <span>Collected</span>
-                  <strong>{completedShoppingItems.toLocaleString()}</strong>
-                </div>
-                <div>
-                  <span>Remaining</span>
-                  <strong>{remainingShoppingItems.toLocaleString()}</strong>
-                </div>
-                <div>
-                  <span>Rows</span>
-                  <strong>{checkedShoppingMaterialCount.toLocaleString()} / {visibleMaterials.length.toLocaleString()}</strong>
-                </div>
-              </div>
-
               <div className={`shopping-list is-${shoppingLayout}`} aria-live="polite">
                 {shoppingGroups.map((group) => {
                   const checkedGroupItems = group.materials.filter((material) => (
-                    checkedShoppingItems.has(shoppingItemKey(shoppingModeScope, material))
+                    checkedShoppingItems.has(shoppingItemKey(shoppingScope, material))
                   )).length;
                   const isGroupChecked = checkedGroupItems === group.materials.length;
+                  const isGroupCollapsed = collapsedShoppingGroups.has(group.id);
+                  const groupItemsId = `shopping-group-${group.id}`;
 
                   return (
-                    <section className="shopping-group" key={group.id} aria-label={group.label}>
+                    <section className={`shopping-group${isGroupCollapsed ? ' is-collapsed' : ''}`} key={group.id} aria-label={group.label}>
                       <div className="shopping-group-heading">
-                        <span>{group.label}</span>
+                        <div className="shopping-group-title">
+                          <span className="shopping-group-label">{group.label}</span>
+                          <span className="shopping-group-meta">
+                            <strong>{checkedGroupItems.toLocaleString()} / {group.materials.length.toLocaleString()}</strong>
+                            {isGroupChecked && <span className="shopping-group-done-chip">Done</span>}
+                          </span>
+                        </div>
                         <div className="shopping-group-summary">
-                          <strong>{checkedGroupItems.toLocaleString()} / {group.materials.length.toLocaleString()}</strong>
                           <button
                             type="button"
                             className="shopping-group-toggle"
                             onClick={() => toggleShoppingGroup(group.materials)}
                             aria-pressed={isGroupChecked}
                           >
-                            {isGroupChecked ? 'Clear group' : 'Select all'}
+                            <CheckCircle2 size={15} aria-hidden="true" />
+                            {isGroupChecked ? 'Clear group' : 'Mark all complete'}
+                          </button>
+                          <button
+                            type="button"
+                            className="shopping-group-collapse"
+                            onClick={() => toggleShoppingGroupCollapsed(group.id)}
+                            aria-expanded={!isGroupCollapsed}
+                            aria-controls={groupItemsId}
+                            aria-label={`${isGroupCollapsed ? 'Expand' : 'Collapse'} ${group.label}`}
+                          >
+                            {isGroupCollapsed ? <ChevronDown size={17} /> : <ChevronUp size={17} />}
                           </button>
                         </div>
                       </div>
-                      <div className="shopping-group-items">
+                      <div className="shopping-group-items" id={groupItemsId} hidden={isGroupCollapsed}>
                         {group.materials.map((material) => {
-                          const itemKey = shoppingItemKey(shoppingModeScope, material);
+                          const itemKey = shoppingItemKey(shoppingScope, material);
                           const isChecked = checkedShoppingItems.has(itemKey);
 
                           return (
                             <button
                               type="button"
                               key={itemKey}
-                              className={`shopping-row${isChecked ? ' is-checked' : ''}`}
-                              onClick={() => toggleShoppingItem(material)}
+                              className={`shopping-item material-item${isChecked ? ' is-checked' : ''}`}
+                              onPointerDown={(event) => handleShoppingItemPointerDown(event, material)}
+                              onClick={(event) => handleShoppingItemClick(event, material)}
                               aria-pressed={isChecked}
                             >
-                              <BlockPreview
-                                stateKey={material.stateKey}
-                                color={material.color}
-                                layers={material.thumbnailLayers}
-                              />
-                              <span className="shopping-row-label">
-                                <strong>{material.label}</strong>
+                              <span className="material-row shopping-material-row">
+                                <span className="material-pick shopping-pick">
+                                  <MaterialPreview
+                                    stateKey={material.stateKey}
+                                    color={material.color}
+                                    layers={material.thumbnailLayers}
+                                  />
+                                  <span className="material-name">{material.label}</span>
+                                  <span className="material-actions shopping-item-actions">
+                                    {shouldShowCompactMaterialBreakdown(material.id, material.count) && (
+                                      <span className="material-breakdown shopping-breakdown">
+                                        <MaterialBreakdown materialId={material.id} count={material.count} compact />
+                                      </span>
+                                    )}
+                                    <strong className="material-count-badge">{material.count.toLocaleString()}</strong>
+                                    <Check className="shopping-checkmark" size={15} aria-hidden="true" />
+                                  </span>
+                                </span>
                               </span>
-                              <span className="shopping-row-count">{material.count.toLocaleString()}</span>
-                              <MaterialBreakdown materialId={material.id} count={material.count} />
                             </button>
                           );
                         })}
@@ -2031,16 +3928,11 @@ function App() {
                         : 'No non-air blocks in this shopping list.'}
                   </p>
                 )}
-                {materialsMode === 'raw' && recipeBreakdown.unresolved.length > 0 && (
-                  <p className="raw-material-notice">
-                    {recipeBreakdown.unresolved.length.toLocaleString()} item types had no recipe and were counted as raw.
-                  </p>
-                )}
               </div>
             </section>
           ) : (
             <>
-          {selectedBlock && appView !== 'texture' && (
+          {selectedBlock && !textureViewActive && (
             <section className="selection-inspector-card" aria-label="Selected block details">
               <div className="selection-inspector-header">
                 <div>
@@ -2173,16 +4065,20 @@ function App() {
                 className={cameraMode === 'orbit' ? 'is-active' : ''}
                 onClick={() => setCameraMode('orbit')}
                 aria-pressed={cameraMode === 'orbit'}
+                title="Orbit camera"
+                aria-label="Orbit camera"
               >
-                Orbit
+                <Orbit size={19} />
               </button>
               <button
                 type="button"
                 className={cameraMode === 'spectator' ? 'is-active' : ''}
                 onClick={() => setCameraMode('spectator')}
                 aria-pressed={cameraMode === 'spectator'}
+                title="Fly camera"
+                aria-label="Fly camera"
               >
-                Fly
+                <Move3d size={19} />
               </button>
             </div>
             <div className="viewport-action-row">
@@ -2205,21 +4101,48 @@ function App() {
               </button>
               <button
                 type="button"
-                className={cuboidSelectionMode ? 'is-active' : ''}
-                onClick={() => {
-                  setCuboidSelectionMode((current) => !current);
-                  if (appView === 'inspect') showPanel('selection');
-                }}
-                title={cuboidSelectionMode ? 'Area selection is active' : 'Select area'}
-                aria-pressed={cuboidSelectionMode}
+                onClick={saveCameraView}
+                title="Save camera position"
+                aria-label="Save camera position"
+                disabled={cameraMode === 'spectator'}
               >
-                <BoxSelect size={19} />
-              </button>
-              <button type="button" onClick={() => appView === 'texture' ? setAppView('texture') : showPanel('materials')} title={appView === 'texture' ? 'Texture adjustments' : 'Materials'}>
-                <Cuboid size={19} />
+                <Plus size={19} />
               </button>
             </div>
           </div>
+
+          {savedCameraViews.length > 0 && !textureViewActive && (
+            <div className="camera-saves" aria-label="Saved camera positions">
+              {savedCameraViews.map((view) => (
+                <div className="camera-save-row" key={view.id}>
+                  <button type="button" onClick={() => applyCameraView(view.id)}>
+                    {view.name}
+                  </button>
+                  <button
+                    type="button"
+                    className={view.isDefault ? 'is-active' : ''}
+                    onClick={() => setDefaultCameraView(view.id)}
+                    title={view.isDefault ? 'Default camera' : 'Set as default camera'}
+                    aria-label={view.isDefault ? `${view.name} is the default camera` : `Set ${view.name} as default camera`}
+                  >
+                    <Focus size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeCameraView(view.id)}
+                    title={`Remove ${view.name}`}
+                    aria-label={`Remove ${view.name}`}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {appView === 'inspect' && model && schematicOrigin === 'default' && (
+            <FeaturedBuilder name="MildMadi" />
+          )}
 
           {cameraMode === 'spectator' && (
             <>
@@ -2240,7 +4163,7 @@ function App() {
             <span className="axis-label axis-x">X</span>
           </div>
 
-          {appView === 'texture' ? (
+          {textureViewActive ? (
             <div className="texture-compare-canvases" aria-label="Texture comparison previews">
               <div className="texture-compare-pane">
                 <span>Default</span>
@@ -2248,17 +4171,19 @@ function App() {
                   model={texturePreviewModel}
                   cameraMode="orbit"
                   spectatorSpeed={spectatorSpeed}
-                  visibleLayer={0}
-                  singleLayer={false}
+                  visibleBottomLayer={0}
+                  visibleTopLayer={0}
                   autoRotate={false}
                   showGrid={false}
                   theme={theme}
+                  stageBackgroundColor={stageBackgroundColor}
                   hiddenMaterialIds={displayedHiddenMaterialIds}
                   playerHeadSelections={playerHeadSelections}
                   selectedBlock={null}
                   placementPreviewBlock={null}
                   cuboidBounds={null}
                   cuboidCorners={emptyCuboidCorners()}
+                  showCuboidCornerLabels={false}
                   textureAdjustments={{}}
                   textureEditMode={false}
                   onAxisOrientationChange={updateAxisGizmo}
@@ -2271,17 +4196,19 @@ function App() {
                   model={texturePreviewModel}
                   cameraMode="orbit"
                   spectatorSpeed={spectatorSpeed}
-                  visibleLayer={0}
-                  singleLayer={false}
+                  visibleBottomLayer={0}
+                  visibleTopLayer={0}
                   autoRotate={false}
                   showGrid={false}
                   theme={theme}
+                  stageBackgroundColor={stageBackgroundColor}
                   hiddenMaterialIds={displayedHiddenMaterialIds}
                   playerHeadSelections={playerHeadSelections}
                   selectedBlock={null}
                   placementPreviewBlock={null}
                   cuboidBounds={null}
                   cuboidCorners={emptyCuboidCorners()}
+                  showCuboidCornerLabels={false}
                   textureAdjustments={textureAdjustments}
                   textureEditMode
                   onTextureFaceSelect={handleTextureFaceSelect}
@@ -2296,22 +4223,25 @@ function App() {
               model={displayedModel}
               cameraMode={cameraMode}
               spectatorSpeed={spectatorSpeed}
-              visibleLayer={visibleLayer}
-              singleLayer={singleLayer}
+              visibleBottomLayer={renderedVisibleBottomLayer}
+              visibleTopLayer={renderedVisibleTopLayer}
               autoRotate={false}
-              showGrid
+              showGrid={showGrid}
               theme={theme}
+              stageBackgroundColor={stageBackgroundColor}
               hiddenMaterialIds={hiddenMaterialIds}
               playerHeadSelections={playerHeadSelections}
               selectedBlock={selectedBlock}
               placementPreviewBlock={appView === 'edit' && selectedBuildBlock !== 'minecraft:air' ? selectedBuildBlockPreview : null}
               cuboidBounds={cuboidBounds}
               cuboidCorners={cuboidCorners}
+              showCuboidCornerLabels={appView === 'inspect' && inspectorTab === 'selection' && Boolean(cuboidBounds)}
               rotationTarget={appView === 'edit' && rotateTargetLabel ? (materialsScope === 'cuboid' && cuboidBounds ? 'cuboid' : 'block') : null}
               rotationControlRef={rotationControlsRef}
               textureAdjustments={textureAdjustments}
               onBlockSelect={handleBlockSelect}
               onAxisOrientationChange={updateAxisGizmo}
+              onReady={handleViewerReady}
               viewerRef={viewerRef}
             />
           )}
@@ -2328,7 +4258,7 @@ function App() {
           </section>
         )}
 
-        {appView === 'texture' ? (
+        {textureViewActive ? (
           <section className="texture-panel" aria-label="Texture adjustment editor">
             <div className="section-heading compact">
               <div>
@@ -2467,35 +4397,47 @@ function App() {
           <>
             {appView === 'inspect' ? (
               <>
-            <div className="inspector-tabs" role="tablist" aria-label="Inspector panels">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={inspectorTab === 'materials'}
-                className={inspectorTab === 'materials' ? 'is-active' : ''}
-                onClick={() => showPanel('materials')}
-              >
-                Materials List
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={inspectorTab === 'selection'}
-                className={inspectorTab === 'selection' ? 'is-active' : ''}
-                onClick={() => showPanel('selection')}
-              >
-                Selection
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={inspectorTab === 'layers'}
-                className={inspectorTab === 'layers' ? 'is-active' : ''}
-                onClick={() => showPanel('layers')}
-              >
-                Layer View
-              </button>
-            </div>
+                <div className="inspector-tabs" role="tablist" aria-label="Inspector panels">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={inspectorTab === 'materials'}
+                    className={inspectorTab === 'materials' ? 'is-active' : ''}
+                    onClick={() => showPanel('materials')}
+                  >
+                    Materials List
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={inspectorTab === 'selection'}
+                    className={inspectorTab === 'selection' ? 'is-active' : ''}
+                    onClick={() => showPanel('selection')}
+                  >
+                    Selection
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={inspectorTab === 'layers'}
+                    className={inspectorTab === 'layers' ? 'is-active' : ''}
+                    onClick={() => showPanel('layers')}
+                  >
+                    Layer View
+                  </button>
+                  <div className="control-rail-actions" role="presentation">
+                    <button
+                      type="button"
+                      className={`control-rail-side-toggle${controlRailSide === 'left' ? ' is-on' : ' is-left-chevron'}`}
+                      onClick={toggleControlRailSide}
+                      title={controlRailSide === 'right' ? 'Move controls to left side' : 'Move controls to right side'}
+                      aria-pressed={controlRailSide === 'left'}
+                      aria-label={controlRailSide === 'right' ? 'Move controls to left side' : 'Move controls to right side'}
+                    >
+                      {controlRailSide === 'right' ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+                    </button>
+                  </div>
+                </div>
 
             <section
               className={`selection-panel inspector-panel${inspectorTab === 'selection' ? ' is-active' : ''}`}
@@ -2526,6 +4468,35 @@ function App() {
                   <button
                     type="button"
                     className="icon-button"
+                    onClick={saveCurrentSelection}
+                    title="Save selected area"
+                    aria-label="Save selected area"
+                    disabled={!cuboidBounds || Boolean(activeSelectionId)}
+                  >
+                    <Check size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    onClick={undoCuboidSelection}
+                    title="Undo selection change"
+                    aria-label="Undo selection change"
+                    disabled={selectionUndoStack.length === 0}
+                  >
+                    <RotateCcw size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    onClick={selectVisibleLayers}
+                    title="Select visible layers"
+                    aria-label="Select visible layers"
+                  >
+                    <Layers size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button"
                     onClick={clearCuboidSelection}
                     title="Clear selected area"
                     aria-label="Clear selected area"
@@ -2536,9 +4507,44 @@ function App() {
                 </div>
               </div>
 
+              {selectionAreas.length > 0 && (
+                <div className="selection-area-list" aria-label="Saved selected areas">
+                  {selectionAreas.map((area) => {
+                    const bounds = area.corners.a && area.corners.b ? normalizeCuboidBounds(area.corners.a, area.corners.b, model) : null;
+                    const dimensions = bounds ? dimensionsForBounds(bounds) : null;
+                    return (
+                      <div className={`selection-area-row${area.id === activeSelectionId ? ' is-active' : ''}`} key={area.id}>
+                        <button type="button" onClick={() => activateSelectionArea(area.id)}>
+                          <strong>{area.name}</strong>
+                          <span>{dimensions ? `${dimensions.width} x ${dimensions.height} x ${dimensions.length}` : 'Incomplete'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeSelectionArea(area.id)}
+                          title={`Remove ${area.name}`}
+                          aria-label={`Remove ${area.name}`}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
               {cuboidBounds && cuboidDimensions ? (
                 <>
                   <div className="cuboid-corner-editor" aria-label="Selected area corner coordinates">
+                    <div className="cuboid-corner-editor-head">
+                      <p>Selection bounds</p>
+                      <Box size={16} strokeWidth={2.1} aria-hidden="true" />
+                    </div>
+                    <div className="cuboid-axis-header" aria-hidden="true">
+                      <span className="cuboid-axis-header-spacer" />
+                      {(['X', 'Y', 'Z'] as const).map((axis) => (
+                        <span key={axis}>{axis}</span>
+                      ))}
+                    </div>
                     <CuboidCornerControls
                       title="Corner A"
                       corner="a"
@@ -2553,21 +4559,29 @@ function App() {
                       model={model}
                       onStep={stepCuboidCorner}
                     />
+                    <div className="cuboid-move-panel" aria-label="Move selected area">
+                      <div className="cuboid-corner-editor-head">
+                        <p>Move selected area</p>
+                        <Move3d size={16} strokeWidth={2.1} aria-hidden="true" />
+                      </div>
+                      <div className="cuboid-move-grid">
+                        {(['up', 'down', 'north', 'south', 'west', 'east'] as Direction[]).map((direction) => {
+                          const canMove = Boolean(cuboidBounds && boundsInsideModel(translateBounds(cuboidBounds, directionOffset(direction)), model));
+
+                          return (
+                            <button
+                              type="button"
+                              key={direction}
+                              onClick={() => shiftSelectedArea(direction)}
+                              disabled={!canMove}
+                            >
+                              {directionLabel(direction)}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
-                  <dl className="summary-metrics selection-metrics">
-                    <div>
-                      <dt>Dimensions</dt>
-                      <dd>{cuboidDimensions.width} x {cuboidDimensions.height} x {cuboidDimensions.length}</dd>
-                    </div>
-                    <div>
-                      <dt>Selected Blocks</dt>
-                      <dd>{cuboidVolume.toLocaleString()}</dd>
-                    </div>
-                    <div>
-                      <dt>Non-air Blocks</dt>
-                      <dd>{cuboidMaterials.reduce((sum, material) => sum + material.count, 0).toLocaleString()}</dd>
-                    </div>
-                  </dl>
                 </>
               ) : (
                 <p className="panel-empty">
@@ -2578,6 +4592,38 @@ function App() {
                       : 'Create a selected area, then left-click Corner A and right-click Corner B in the viewport.'}
                 </p>
               )}
+              <section className="filtered-materials" aria-label="Selected Materials">
+                <div className="filtered-materials-head">
+                  <h3>Selected Materials</h3>
+                  <span>
+                    {selectionMaterialSearch.trim()
+                      ? `${filteredCuboidMaterials.length.toLocaleString()} of ${cuboidMaterials.length.toLocaleString()} types`
+                      : `${cuboidMaterials.length.toLocaleString()} types`}
+                  </span>
+                </div>
+                <MaterialList
+                  ariaLabel="Selected materials list"
+                  materials={filteredCuboidMaterials}
+                  selectedMaterialId={selectedMaterialId}
+                  expandedMaterialIds={expandedMaterialIds}
+                  hiddenMaterialIds={hiddenMaterialIds}
+                  hasBreakdown={(material) => shouldShowCompactMaterialBreakdown(material.id, material.count)}
+                  onToggleExpanded={toggleMaterialBreakdown}
+                  onToggleVisibility={toggleMaterialVisibility}
+                  renderPreview={(material) => (
+                    <MaterialPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
+                  )}
+                  renderBreakdown={(material) => (
+                    <MaterialBreakdown materialId={material.id} count={material.count} />
+                  )}
+                  emptyText={cuboidBounds ? 'No non-air blocks in this selection.' : 'Select an area to preview its materials.'}
+                  searchValue={selectionMaterialSearch}
+                  onSearchChange={setSelectionMaterialSearch}
+                  searchPlaceholder="Search selected materials"
+                  searchAriaLabel="Search selected materials"
+                  emptySearchText={cuboidBounds ? (query) => `No selected materials match "${query}".` : undefined}
+                />
+              </section>
             </section>
 
             <section
@@ -2587,7 +4633,7 @@ function App() {
               <div className="section-heading">
                 <div>
                   <p className="eyebrow">Layer view</p>
-                  <h2>Y {visibleWorldY}</h2>
+                  <h2>Y {visibleBottomWorldY}-{visibleTopWorldY}</h2>
                 </div>
                 <div className="stepper">
                   <button type="button" onClick={() => stepLayer(-1)} title="Previous layer">
@@ -2599,61 +4645,127 @@ function App() {
                 </div>
               </div>
 
-              <div className="slider-wrap" style={{ '--layer-progress': `${layerPercent}%` } as CSSProperties}>
+              <div className="layer-range">
+                <label>
+                  <span>Bottom</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max={Math.max(0, model.dimensions.height - 1)}
+                    value={visibleBottomLayer}
+                    onChange={(event) => {
+                      const next = Number(event.target.value);
+                      setVisibleLayerRange(Math.min(next, visibleTopLayer), visibleTopLayer);
+                    }}
+                    onPointerUp={(event) => setVisibleLayerRange(
+                      Math.min(Number(event.currentTarget.value), visibleTopLayer),
+                      visibleTopLayer,
+                      singleVisibleLayer,
+                      { commit: true, immediate: true },
+                    )}
+                    onKeyUp={(event) => setVisibleLayerRange(
+                      Math.min(Number(event.currentTarget.value), visibleTopLayer),
+                      visibleTopLayer,
+                      singleVisibleLayer,
+                      { commit: true, immediate: true },
+                    )}
+                    onBlur={(event) => setVisibleLayerRange(
+                      Math.min(Number(event.currentTarget.value), visibleTopLayer),
+                      visibleTopLayer,
+                      singleVisibleLayer,
+                      { commit: true, immediate: true },
+                    )}
+                    aria-label="Bottom visible layer"
+                  />
+                </label>
+                <label>
+                  <span>Top</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max={Math.max(0, model.dimensions.height - 1)}
+                    value={visibleTopLayer}
+                    onChange={(event) => {
+                      const next = Number(event.target.value);
+                      setVisibleLayerRange(visibleBottomLayer, Math.max(next, visibleBottomLayer));
+                    }}
+                    onPointerUp={(event) => setVisibleLayerRange(
+                      visibleBottomLayer,
+                      Math.max(Number(event.currentTarget.value), visibleBottomLayer),
+                      singleVisibleLayer,
+                      { commit: true, immediate: true },
+                    )}
+                    onKeyUp={(event) => setVisibleLayerRange(
+                      visibleBottomLayer,
+                      Math.max(Number(event.currentTarget.value), visibleBottomLayer),
+                      singleVisibleLayer,
+                      { commit: true, immediate: true },
+                    )}
+                    onBlur={(event) => setVisibleLayerRange(
+                      visibleBottomLayer,
+                      Math.max(Number(event.currentTarget.value), visibleBottomLayer),
+                      singleVisibleLayer,
+                      { commit: true, immediate: true },
+                    )}
+                    aria-label="Top visible layer"
+                  />
+                </label>
+              </div>
+              <div className="slider-wrap" style={{ '--layer-progress': `${singleLayerPercent}%` } as CSSProperties}>
                 <input
                   type="range"
                   min="0"
                   max={Math.max(0, model.dimensions.height - 1)}
-                  value={visibleLayer}
-                  onChange={(event) => setVisibleLayer(Number(event.target.value))}
-                  aria-label="Visible layer"
+                  value={singleVisibleLayer}
+                  onChange={(event) => showSingleLayer(Number(event.target.value))}
+                  onPointerUp={(event) => showSingleLayer(Number(event.currentTarget.value), true)}
+                  onKeyUp={(event) => showSingleLayer(Number(event.currentTarget.value), true)}
+                  onBlur={(event) => showSingleLayer(Number(event.currentTarget.value), true)}
+                  aria-label="Single visible layer"
                 />
               </div>
 
               <div className="mode-row">
-                <label className="toggle-row">
-                  <input type="checkbox" checked={singleLayer} onChange={(event) => setSingleLayer(event.target.checked)} />
-                  <span>Only this layer</span>
-                </label>
                 <span>{currentLayerBlockCount.toLocaleString()} blocks</span>
               </div>
+              <section className="filtered-materials" aria-label="Visible Layer Materials">
+                <div className="filtered-materials-head">
+                  <h3>Visible Layer Materials</h3>
+                  <span>
+                    {layerMaterialSearch.trim()
+                      ? `${filteredLayerMaterials.length.toLocaleString()} of ${layerMaterials.length.toLocaleString()} types`
+                      : `${layerMaterials.length.toLocaleString()} types`}
+                  </span>
+                </div>
+                <MaterialList
+                  ariaLabel="Visible layer materials list"
+                  materials={filteredLayerMaterials}
+                  selectedMaterialId={selectedMaterialId}
+                  expandedMaterialIds={expandedMaterialIds}
+                  hiddenMaterialIds={hiddenMaterialIds}
+                  hasBreakdown={(material) => shouldShowCompactMaterialBreakdown(material.id, material.count)}
+                  onToggleExpanded={toggleMaterialBreakdown}
+                  onToggleVisibility={toggleMaterialVisibility}
+                  renderPreview={(material) => (
+                    <MaterialPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
+                  )}
+                  renderBreakdown={(material) => (
+                    <MaterialBreakdown materialId={material.id} count={material.count} />
+                  )}
+                  emptyText="No visible non-air blocks in this layer range."
+                  searchValue={layerMaterialSearch}
+                  onSearchChange={setLayerMaterialSearch}
+                  searchPlaceholder="Search visible layer materials"
+                  searchAriaLabel="Search visible layer materials"
+                  emptySearchText={(query) => `No visible layer materials match "${query}".`}
+                />
+              </section>
             </section>
 
             <section
-              className={`material-list inspector-panel${inspectorTab === 'materials' ? ' is-active' : ''}`}
+              className={`material-list material-list-panel inspector-panel${inspectorTab === 'materials' ? ' is-active' : ''}`}
               ref={materialPanelRef}
             >
-              <div className="section-heading compact">
-                <div>
-                  <h2>
-                    {materialSearch.trim()
-                      ? `${filteredMaterials.length.toLocaleString()} of ${visibleMaterials.length.toLocaleString()} materials`
-                      : `${visibleMaterials.length.toLocaleString()} materials`}
-                  </h2>
-                  <p className="eyebrow">{visibleMaterialsLabel}</p>
-                </div>
-                <div className="material-heading-actions">
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={toggleAllMaterialVisibility}
-                    disabled={hideableMaterialIds.length === 0}
-                    aria-label={`${bulkMaterialVisibilityLabel} placed materials`}
-                    title={bulkMaterialVisibilityLabel}
-                  >
-                    {allVisibleMaterialsHidden ? <Eye size={16} /> : <EyeOff size={16} />}
-                    {bulkMaterialVisibilityLabel}
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary-button material-shopping-link"
-                    onClick={openShoppingList}
-                  >
-                    <ClipboardList size={16} />
-                    Shopping List
-                  </button>
-                </div>
-              </div>
               <div className="segmented-control" role="group" aria-label="Materials scope">
                 <button
                   type="button"
@@ -2676,116 +4788,37 @@ function App() {
                   Selected Area
                 </button>
               </div>
-              <div className="segmented-control" role="group" aria-label="Material list mode">
-                <button
-                  type="button"
-                  className={materialsMode === 'placed' ? 'is-active' : ''}
-                  onClick={() => setMaterialsMode('placed')}
-                >
-                  Placed Blocks
-                </button>
-                <button
-                  type="button"
-                  className={materialsMode === 'raw' ? 'is-active' : ''}
-                  onClick={() => setMaterialsMode('raw')}
-                >
-                  Raw Materials
-                </button>
-              </div>
-              <label className="toggle-row compact-toggle material-crafting-toggle">
-                <input
-                  type="checkbox"
-                  checked={integerCrafting}
-                  onChange={(event) => setIntegerCrafting(event.target.checked)}
-                />
-                <span>Whole crafts</span>
-              </label>
-              {materialsMode === 'raw' && recipeBreakdown.unresolved.length > 0 && (
-                <p className="raw-material-notice">
-                  {recipeBreakdown.unresolved.length.toLocaleString()} item types had no recipe and were counted as raw.
-                </p>
-              )}
-              <label className="material-search">
-                <Search size={16} aria-hidden="true" />
-                <input
-                  type="search"
-                  value={materialSearch}
-                  onChange={(event) => setMaterialSearch(event.target.value)}
-                  placeholder="Search materials"
-                  aria-label="Search materials"
-                />
-              </label>
-              <div className="material-stack">
-                {filteredMaterials.map((material) => {
-                  const isExpanded = expandedMaterialIds.has(material.id);
-                  const isSelected = materialsMode === 'placed' && material.id === selectedMaterialId;
-                  const breakdownId = `material-breakdown-${material.id}`;
-                  const recipeTree = recipeTreeByMaterialId.get(normalizeRecipeItemId(material.id));
-
-                  return (
-                    <div
-                      className="material-item"
-                      key={material.id}
-                      ref={(node) => {
-                        if (node) {
-                          materialItemRefs.current.set(material.id, node);
-                        } else {
-                          materialItemRefs.current.delete(material.id);
-                        }
-                      }}
-                    >
-                      <div className={`material-row${isExpanded ? ' is-expanded' : ''}${isSelected ? ' is-selected' : ''}`}>
-                        <button
-                          className="material-pick"
-                          type="button"
-                          aria-expanded={isExpanded}
-                          aria-controls={breakdownId}
-                          onClick={() => toggleMaterialBreakdown(material.id)}
-                        >
-                          <BlockPreview
-                            stateKey={material.stateKey}
-                            color={material.color}
-                            layers={material.thumbnailLayers}
-                          />
-                          <span>{material.label}</span>
-                          <strong>{material.count.toLocaleString()}</strong>
-                          <ChevronDown className="material-disclosure" size={15} aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          className="material-visibility"
-                          aria-label={hiddenMaterialIds.has(material.id) ? `Show ${material.label}` : `Hide ${material.label}`}
-                          title={hiddenMaterialIds.has(material.id) ? 'Show block' : 'Hide block'}
-                          onClick={() => toggleMaterialVisibility(material.id)}
-                          disabled={materialsMode === 'raw'}
-                        >
-                          {hiddenMaterialIds.has(material.id) ? <EyeOff size={16} /> : <Eye size={16} />}
-                        </button>
-                      </div>
-                      {isExpanded && (
-                        <div
-                          id={breakdownId}
-                          className="material-breakdown"
-                        >
-                          <MaterialBreakdown materialId={material.id} count={material.count} />
-                          {materialsMode === 'placed' && recipeTree && (
-                            <RecipeTree node={recipeTree} />
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {filteredMaterials.length === 0 && (
-                  <p className="material-empty">
-                    {materialsScope === 'cuboid' && !cuboidBounds
-                      ? 'Select an area to list materials for that region.'
-                      : materialSearch.trim()
-                        ? `No materials match "${materialSearch.trim()}".`
-                        : 'No non-air blocks in this area.'}
-                  </p>
+              <MaterialList
+                ariaLabel="Materials list"
+                materials={filteredMaterials}
+                selectedMaterialId={selectedMaterialId}
+                expandedMaterialIds={expandedMaterialIds}
+                hiddenMaterialIds={hiddenMaterialIds}
+                hasBreakdown={(material) => shouldShowCompactMaterialBreakdown(material.id, material.count)}
+                onToggleExpanded={toggleMaterialBreakdown}
+                onToggleVisibility={toggleMaterialVisibility}
+                renderPreview={(material) => (
+                  <MaterialPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
                 )}
-              </div>
+                renderBreakdown={(material) => (
+                  <MaterialBreakdown materialId={material.id} count={material.count} />
+                )}
+                emptyText={materialsScope === 'cuboid' && !cuboidBounds
+                  ? 'Select an area to list materials for that region.'
+                  : 'No non-air blocks in this area.'}
+                searchValue={materialSearch}
+                onSearchChange={setMaterialSearch}
+                searchPlaceholder="Search materials"
+                searchAriaLabel="Search materials"
+                emptySearchText={materialsScope === 'cuboid' && !cuboidBounds ? undefined : (query) => `No materials match "${query}".`}
+                onItemRef={(id, node) => {
+                  if (node) {
+                    materialItemRefs.current.set(id, node);
+                  } else {
+                    materialItemRefs.current.delete(id);
+                  }
+                }}
+              />
             </section>
               </>
             ) : (
@@ -2955,6 +4988,31 @@ function App() {
                       90 Right
                     </button>
                   </div>
+                  <div className="edit-transform-move">
+                    <div className="section-heading compact">
+                      <div>
+                        <h2>Move</h2>
+                        <p className="eyebrow">Selected area</p>
+                      </div>
+                      <Move3d size={18} />
+                    </div>
+                    <div className="cuboid-move-grid">
+                      {(['up', 'down', 'north', 'south', 'west', 'east'] as Direction[]).map((direction) => {
+                        const canMove = Boolean(cuboidBounds && boundsInsideModel(translateBounds(cuboidBounds, directionOffset(direction)), model));
+
+                        return (
+                          <button
+                            type="button"
+                            key={direction}
+                            onClick={() => shiftSelectedArea(direction)}
+                            disabled={!canMove}
+                          >
+                            {directionLabel(direction)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                   {editNotice && <p className="edit-notice">{editNotice}</p>}
                 </section>
               </section>
@@ -3035,91 +5093,183 @@ function App() {
       </aside>
       )}
       </div>
-      {showCelebration && appView === 'shopping' && (
+      {celebrationView === 'shopping' && appView === 'shopping' && (
         <ShoppingCelebration
           materials={visibleMaterials}
-          onDone={() => setShowCelebration(false)}
+          onDone={() => setCelebrationView(null)}
         />
       )}
-    </main>
+      {celebrationView === 'shulker' && appView === 'shulker' && (
+        <ShoppingCelebration
+          materials={visibleMaterials}
+          onDone={() => setCelebrationView(null)}
+        />
+      )}
+      </main>
+    </ThumbnailDisplayAdjustmentsContext.Provider>
   );
 }
 
-function BlockPreview({ stateKey, color, layers }: { stateKey: string; color: number; layers?: BlockThumbnailLayer[] }) {
+interface BlockPreviewProps {
+  stateKey: string;
+  color: number;
+  layers?: BlockThumbnailLayer[];
+  size?: number;
+  rotateX?: number;
+  rotateY?: number;
+  adjustmentKey?: string;
+  fallbackToSprite?: boolean;
+  forceSpriteStateKey?: string | null;
+}
+
+const defaultBlockPreviewRenderSize = 48;
+const highDetailBlockPreviewThreshold = 48;
+
+function preferredBlockThumbnailResolution(size: number | undefined, scale: number): number {
+  const baseSize = size ?? defaultBlockPreviewRenderSize;
+  const effectiveSize = Math.max(baseSize, baseSize * Math.max(scale, 1));
+  return effectiveSize >= highDetailBlockPreviewThreshold
+    ? highDetailBlockThumbnailResolution
+    : defaultBlockThumbnailResolution;
+}
+
+const BlockPreview = memo(function BlockPreview({
+  stateKey,
+  color,
+  layers,
+  size,
+  rotateX,
+  rotateY,
+  adjustmentKey,
+  fallbackToSprite = false,
+  forceSpriteStateKey = null,
+}: BlockPreviewProps) {
+  const thumbnailDisplayAdjustments = useContext(ThumbnailDisplayAdjustmentsContext);
+  const defaultAdjustment = thumbnailDisplayAdjustments[adjustmentKey ?? thumbnailDisplayAdjustmentKey(stateKey)]
+    ?? defaultThumbnailDisplayAdjustment;
+  const previewRequest = useMemo(
+    () => resolveThumbnailPreviewRequest(stateKey, layers, defaultAdjustment),
+    [defaultAdjustment, layers, stateKey],
+  );
+  const requestedThumbnailResolution = useMemo(
+    () => preferredBlockThumbnailResolution(size, defaultAdjustment.scale),
+    [defaultAdjustment.scale, size],
+  );
+  const forcedSpriteUrl = forceSpriteStateKey ? materialSpriteUrlForStateKey(forceSpriteStateKey) : null;
+  const fallbackSpriteUrl = fallbackToSprite ? materialSpriteUrlForStateKey(stateKey) : null;
   const previewRef = useRef<HTMLSpanElement | null>(null);
-  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(() => getCachedBlockThumbnail(stateKey, color, layers) ?? null);
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(() => (
+    getCachedBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers, {
+      resolution: requestedThumbnailResolution,
+    })
+      ?? (
+        requestedThumbnailResolution !== defaultBlockThumbnailResolution
+          ? getCachedBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers, {
+            resolution: defaultBlockThumbnailResolution,
+          })
+          : undefined
+      )
+      ?? null
+  ));
   const [thumbnailState, setThumbnailState] = useState<ThumbnailLoadState>(() => {
-    const cachedThumbnail = getCachedBlockThumbnail(stateKey, color, layers);
-    if (cachedThumbnail === undefined) return 'idle';
-    return cachedThumbnail ? 'ready' : 'failed';
+    const cachedThumbnail = getCachedBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers, {
+      resolution: requestedThumbnailResolution,
+    });
+    if (cachedThumbnail !== undefined) return cachedThumbnail ? 'ready' : 'failed';
+
+    const cachedFallbackThumbnail = requestedThumbnailResolution !== defaultBlockThumbnailResolution
+      ? getCachedBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers, {
+        resolution: defaultBlockThumbnailResolution,
+      })
+      : undefined;
+    if (cachedFallbackThumbnail !== undefined) return cachedFallbackThumbnail ? 'ready' : 'failed';
+
+    return 'idle';
   });
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
+    if (forcedSpriteUrl) return;
     const preview = previewRef.current;
     if (!preview) return;
 
-    if (typeof IntersectionObserver === 'undefined') {
-      setIsVisible(true);
-      return;
-    }
-
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        setIsVisible(true);
-        observer.disconnect();
-      }
-    }, { rootMargin: '900px' });
-
-    observer.observe(preview);
-    return () => observer.disconnect();
-  }, []);
+    return observeBlockPreviewVisibility(preview, () => setIsVisible(true));
+  }, [forcedSpriteUrl]);
 
   useEffect(() => {
-    const cachedThumbnail = getCachedBlockThumbnail(stateKey, color, layers);
+    if (forcedSpriteUrl) return;
+    const cachedThumbnail = getCachedBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers, {
+      resolution: requestedThumbnailResolution,
+    });
+    const cachedFallbackThumbnail = requestedThumbnailResolution !== defaultBlockThumbnailResolution
+      ? getCachedBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers, {
+        resolution: defaultBlockThumbnailResolution,
+      })
+      : undefined;
+
     if (cachedThumbnail !== undefined) {
-      setThumbnailUrl(cachedThumbnail);
-      setThumbnailState(cachedThumbnail ? 'ready' : 'failed');
+      setThumbnailUrl(cachedThumbnail ?? cachedFallbackThumbnail ?? null);
+      setThumbnailState(cachedThumbnail || cachedFallbackThumbnail ? 'ready' : 'failed');
       return;
     }
 
-    if (!isVisible) return;
+    if (cachedFallbackThumbnail !== undefined) {
+      setThumbnailUrl(cachedFallbackThumbnail);
+      setThumbnailState(cachedFallbackThumbnail ? 'ready' : 'failed');
+    } else {
+      setThumbnailUrl(null);
+      setThumbnailState(isVisible ? 'loading' : 'idle');
+    }
+
+    if (!isVisible || cachedFallbackThumbnail === null) return;
 
     let cancelled = false;
-    setThumbnailUrl(null);
-    setThumbnailState('loading');
-    void createBlockThumbnail(stateKey, color, layers)
+    if (!cachedFallbackThumbnail) {
+      setThumbnailUrl(null);
+      setThumbnailState('loading');
+    }
+    void createBlockThumbnail(previewRequest.stateKey, color, previewRequest.layers, {
+      resolution: requestedThumbnailResolution,
+    })
       .then((url) => {
         if (cancelled) return;
-        setThumbnailUrl(url);
-        setThumbnailState(url ? 'ready' : 'failed');
+        setThumbnailUrl(url ?? cachedFallbackThumbnail ?? null);
+        setThumbnailState(url || cachedFallbackThumbnail ? 'ready' : 'failed');
       })
       .catch(() => {
         if (cancelled) return;
-        setThumbnailUrl(null);
-        setThumbnailState('failed');
+        setThumbnailUrl(cachedFallbackThumbnail ?? null);
+        setThumbnailState(cachedFallbackThumbnail ? 'ready' : 'failed');
       });
 
     return () => {
       cancelled = true;
     };
-  }, [color, isVisible, layers, stateKey]);
-
-  const fallbackColor = `#${color.toString(16).padStart(6, '0')}`;
+  }, [color, forcedSpriteUrl, isVisible, previewRequest.layers, previewRequest.stateKey, requestedThumbnailResolution]);
+  const showingForcedSprite = Boolean(forcedSpriteUrl);
+  const showingSpriteFallback = !thumbnailUrl && thumbnailState === 'failed' && Boolean(fallbackSpriteUrl);
+  const showingSprite = showingForcedSprite || showingSpriteFallback;
+  const resolvedRotateX = showingSprite ? 0 : (rotateX ?? defaultAdjustment.rotateX);
+  const resolvedRotateY = showingSprite ? 0 : (rotateY ?? defaultAdjustment.rotateY);
+  const previewUrl = forcedSpriteUrl ?? thumbnailUrl ?? (showingSpriteFallback ? fallbackSpriteUrl : null);
+  const previewState = forcedSpriteUrl || previewUrl ? 'ready' : thumbnailState;
 
   return (
     <span
       ref={previewRef}
       className="block-preview"
-      data-shape="thumbnail"
-      data-state={thumbnailState}
+      data-shape={showingSprite ? 'sprite' : 'thumbnail'}
+      data-state={previewState}
       aria-hidden="true"
       style={{
-        '--block-fallback': fallbackColor,
-        '--block-thumbnail': thumbnailUrl ? `url("${thumbnailUrl}")` : 'none',
+        '--block-thumbnail': previewUrl ? `url("${previewUrl}")` : 'none',
+        '--block-preview-size': size ? `${size}px` : undefined,
+        '--block-preview-scale': showingSprite ? '1' : defaultAdjustment.scale.toString(),
+        '--block-preview-rotate-x': `${resolvedRotateX}deg`,
+        '--block-preview-rotate-y': `${resolvedRotateY}deg`,
       } as CSSProperties}
     >
-      {thumbnailState === 'failed' && (
+      {previewState === 'failed' && (
         <>
           <span className="block-preview-face block-preview-top" />
           <span className="block-preview-face block-preview-left" />
@@ -3128,6 +5278,286 @@ function BlockPreview({ stateKey, color, layers }: { stateKey: string; color: nu
       )}
     </span>
   );
+});
+
+const MaterialPreview = memo(function MaterialPreview(props: {
+  stateKey: string;
+  color: number;
+  layers?: BlockThumbnailLayer[];
+  size?: number;
+}) {
+  const forceSpriteStateKey = alwaysMaterialSpriteStateKey(props.stateKey);
+  return <BlockPreview {...props} fallbackToSprite forceSpriteStateKey={forceSpriteStateKey} />;
+});
+
+function thumbnailDisplayAdjustmentKey(stateKey: string): string {
+  return stateKey;
+}
+
+function baseThumbnailPreviewRequest(stateKey: string, layers?: BlockThumbnailLayer[]): ThumbnailPreviewRequest {
+  return normalizeThumbnailPreviewRequest({ stateKey, layers });
+}
+
+function resolveThumbnailPreviewRequest(
+  stateKey: string,
+  layers: BlockThumbnailLayer[] | undefined,
+  adjustment: ThumbnailDisplayAdjustment,
+): ThumbnailPreviewRequest {
+  return normalizeThumbnailPreviewRequest({
+    stateKey: adjustment.previewStateKey ?? stateKey,
+    layers: adjustment.previewLayers ?? layers,
+  });
+}
+
+function normalizeThumbnailPreviewRequest(request: ThumbnailPreviewRequest): ThumbnailPreviewRequest {
+  return {
+    stateKey: request.stateKey,
+    layers: normalizeThumbnailPreviewLayers(request.layers),
+  };
+}
+
+function normalizeThumbnailPreviewLayers(layers?: BlockThumbnailLayer[]): BlockThumbnailLayer[] | undefined {
+  if (!layers || layers.length === 0) return undefined;
+
+  return layers.map((layer) => ({
+    stateKey: layer.stateKey,
+    offset: layer.offset ? [...layer.offset] as [number, number, number] : undefined,
+  }));
+}
+
+function normalizeThumbnailDisplayAdjustment(adjustment: ThumbnailDisplayAdjustment): ThumbnailDisplayAdjustment {
+  return {
+    scale: clamp(Math.round(adjustment.scale * 100) / 100, 0.5, 2.4),
+    rotateX: clamp(Math.round(adjustment.rotateX ?? 0), -60, 60),
+    rotateY: clamp(Math.round(adjustment.rotateY ?? 0), -60, 60),
+    previewStateKey: adjustment.previewStateKey,
+    previewLayers: normalizeThumbnailPreviewLayers(adjustment.previewLayers),
+  };
+}
+
+function isDefaultThumbnailDisplayAdjustment(adjustment: ThumbnailDisplayAdjustment): boolean {
+  return adjustment.scale === defaultThumbnailDisplayAdjustment.scale
+    && adjustment.rotateX === defaultThumbnailDisplayAdjustment.rotateX
+    && adjustment.rotateY === defaultThumbnailDisplayAdjustment.rotateY
+    && adjustment.previewStateKey === undefined
+    && adjustment.previewLayers === undefined;
+}
+
+function serializeThumbnailDisplayAdjustments(adjustments: ThumbnailDisplayAdjustmentMap): ThumbnailDisplayAdjustmentMap {
+  return Object.fromEntries(
+    Object.entries(adjustments)
+      .map(([key, adjustment]) => [key, normalizeThumbnailDisplayAdjustment(adjustment)] as const)
+      .filter(([, adjustment]) => !isDefaultThumbnailDisplayAdjustment(adjustment))
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function thumbnailPreviewRequestsEqual(left: ThumbnailPreviewRequest, right: ThumbnailPreviewRequest): boolean {
+  return left.stateKey === right.stateKey && thumbnailPreviewLayersEqual(left.layers, right.layers);
+}
+
+function thumbnailPreviewLayersEqual(left?: BlockThumbnailLayer[], right?: BlockThumbnailLayer[]): boolean {
+  if (!left?.length && !right?.length) return true;
+  if (!left || !right || left.length !== right.length) return false;
+
+  return left.every((layer, index) => {
+    const other = right[index];
+    if (!other || layer.stateKey !== other.stateKey) return false;
+    const leftOffset = layer.offset ?? [0, 0, 0];
+    const rightOffset = other.offset ?? [0, 0, 0];
+    return leftOffset[0] === rightOffset[0]
+      && leftOffset[1] === rightOffset[1]
+      && leftOffset[2] === rightOffset[2];
+  });
+}
+
+function rotateThumbnailPreviewRequestY(
+  request: ThumbnailPreviewRequest,
+  direction: RotationDirection,
+): ThumbnailPreviewRequest {
+  return normalizeThumbnailPreviewRequest({
+    stateKey: rotateBlockStateKeyY(request.stateKey, direction),
+    layers: request.layers?.map((layer) => ({
+      stateKey: rotateBlockStateKeyY(layer.stateKey, direction),
+      offset: layer.offset ? rotateThumbnailLayerOffsetY(layer.offset, direction) : undefined,
+    })),
+  });
+}
+
+function rotateThumbnailLayerOffsetY(
+  offset: [number, number, number],
+  direction: RotationDirection,
+): [number, number, number] {
+  const [x, y, z] = offset;
+  return direction === 'clockwise' ? [-z, y, x] : [z, y, -x];
+}
+
+function summarizeThumbnailOrientation(request: ThumbnailPreviewRequest): ThumbnailOrientationSummary {
+  const properties = parseMinecraftBlockStateKey(primaryThumbnailPreviewStateKey(request)).properties;
+  if (isDirection(properties.facing)) {
+    return { mode: 'facing', value: properties.facing, label: formatThumbnailDirectionLabel(properties.facing) };
+  }
+  if (isHorizontalDirection(properties.horizontal_facing)) {
+    return {
+      mode: 'horizontal_facing',
+      value: properties.horizontal_facing,
+      label: formatThumbnailDirectionLabel(properties.horizontal_facing),
+    };
+  }
+  if (isHorizontalDirection(properties.rotation)) {
+    return { mode: 'rotation', value: properties.rotation, label: formatThumbnailDirectionLabel(properties.rotation) };
+  }
+  if (properties.rotation && /^\d+$/.test(properties.rotation)) {
+    const direction = horizontalDirectionFromRotationValue(properties.rotation);
+    return { mode: 'rotation', value: properties.rotation, label: `${formatThumbnailDirectionLabel(direction)} (${properties.rotation})` };
+  }
+  if (properties.axis === 'x' || properties.axis === 'y' || properties.axis === 'z') {
+    return { mode: 'axis', value: properties.axis, label: `Axis ${properties.axis.toUpperCase()}` };
+  }
+
+  return { mode: null, value: null, label: null };
+}
+
+function primaryThumbnailPreviewStateKey(request: ThumbnailPreviewRequest): string {
+  return request.layers?.[0]?.stateKey ?? request.stateKey;
+}
+
+function supportsVerticalThumbnailDirection(request: ThumbnailPreviewRequest): boolean {
+  const stateKey = primaryThumbnailPreviewStateKey(request);
+  const normalized = parseMinecraftBlockStateKey(stateKey);
+  const facing = normalized.properties.facing;
+  if (facing === 'up' || facing === 'down') return true;
+  return thumbnailVerticalFacingBlockIds.has(normalized.id);
+}
+
+function canSetThumbnailPreviewRequestDirection(request: ThumbnailPreviewRequest, direction: Direction): boolean {
+  return !thumbnailPreviewRequestsEqual(request, setThumbnailPreviewRequestDirection(request, direction));
+}
+
+function setThumbnailPreviewRequestDirection(request: ThumbnailPreviewRequest, direction: Direction): ThumbnailPreviewRequest {
+  if (isHorizontalDirection(direction)) {
+    const currentDirection = summarizeThumbnailOrientation(request).mode === 'axis'
+      ? null
+      : thumbnailPreviewHorizontalDirection(request);
+    if (currentDirection) {
+      let next = request;
+      for (let turns = 0; turns < 4 && thumbnailPreviewHorizontalDirection(next) !== direction; turns += 1) {
+        next = rotateThumbnailPreviewRequestY(next, 'clockwise');
+      }
+      if (thumbnailPreviewHorizontalDirection(next) === direction) return next;
+    }
+  }
+
+  return normalizeThumbnailPreviewRequest({
+    stateKey: setBlockStateKeyDirection(request.stateKey, direction),
+    layers: request.layers?.map((layer) => ({
+      stateKey: setBlockStateKeyDirection(layer.stateKey, direction),
+      offset: layer.offset ? [...layer.offset] as [number, number, number] : undefined,
+    })),
+  });
+}
+
+function canSetThumbnailPreviewRequestAxis(request: ThumbnailPreviewRequest, axis: 'x' | 'y' | 'z'): boolean {
+  return !thumbnailPreviewRequestsEqual(request, setThumbnailPreviewRequestAxis(request, axis));
+}
+
+function setThumbnailPreviewRequestAxis(request: ThumbnailPreviewRequest, axis: 'x' | 'y' | 'z'): ThumbnailPreviewRequest {
+  return normalizeThumbnailPreviewRequest({
+    stateKey: setBlockStateKeyAxis(request.stateKey, axis),
+    layers: request.layers?.map((layer) => ({
+      stateKey: setBlockStateKeyAxis(layer.stateKey, axis),
+      offset: layer.offset ? [...layer.offset] as [number, number, number] : undefined,
+    })),
+  });
+}
+
+function thumbnailPreviewHorizontalDirection(
+  request: ThumbnailPreviewRequest,
+): 'north' | 'east' | 'south' | 'west' | null {
+  const properties = parseMinecraftBlockStateKey(primaryThumbnailPreviewStateKey(request)).properties;
+  if (isHorizontalDirection(properties.facing)) return properties.facing;
+  if (isHorizontalDirection(properties.horizontal_facing)) return properties.horizontal_facing;
+  if (isHorizontalDirection(properties.rotation)) return properties.rotation;
+  if (properties.rotation && /^\d+$/.test(properties.rotation)) return horizontalDirectionFromRotationValue(properties.rotation);
+  return null;
+}
+
+function setBlockStateKeyDirection(stateKey: string, direction: Direction): string {
+  const parsed = parseStateKey(stateKey);
+  const normalized = parseMinecraftBlockStateKey(stateKey);
+  const nextProperties = { ...normalized.properties };
+
+  if (nextProperties.facing !== undefined && (direction === 'up' || direction === 'down' || isHorizontalDirection(direction))) {
+    nextProperties.facing = direction;
+    return formatStateKey(normalized.id, nextProperties, parsed?.order ?? []);
+  }
+  if (isHorizontalDirection(direction) && nextProperties.horizontal_facing !== undefined) {
+    nextProperties.horizontal_facing = direction;
+    return formatStateKey(normalized.id, nextProperties, parsed?.order ?? []);
+  }
+  if (isHorizontalDirection(direction) && nextProperties.rotation !== undefined) {
+    if (isHorizontalDirection(nextProperties.rotation)) {
+      nextProperties.rotation = direction;
+    } else if (/^\d+$/.test(nextProperties.rotation)) {
+      nextProperties.rotation = rotationValueForHorizontalDirection(direction);
+    } else {
+      return stateKey;
+    }
+    return formatStateKey(normalized.id, nextProperties, parsed?.order ?? []);
+  }
+  if (nextProperties.axis !== undefined) {
+    nextProperties.axis = axisForDirection(direction);
+    return formatStateKey(normalized.id, nextProperties, parsed?.order ?? []);
+  }
+
+  return stateKey;
+}
+
+function setBlockStateKeyAxis(stateKey: string, axis: 'x' | 'y' | 'z'): string {
+  const parsed = parseStateKey(stateKey);
+  const normalized = parseMinecraftBlockStateKey(stateKey);
+  if (normalized.properties.axis === undefined) return stateKey;
+
+  return formatStateKey(normalized.id, { ...normalized.properties, axis }, parsed?.order ?? []);
+}
+
+function horizontalDirectionFromRotationValue(rotation: string): 'north' | 'east' | 'south' | 'west' {
+  const steps = ((Number.parseInt(rotation, 10) % 16) + 16) % 16;
+  const quarterTurn = Math.round(steps / 4) % 4;
+  return (['north', 'east', 'south', 'west'] as const)[quarterTurn];
+}
+
+function rotationValueForHorizontalDirection(direction: 'north' | 'east' | 'south' | 'west'): string {
+  switch (direction) {
+    case 'east':
+      return '4';
+    case 'south':
+      return '8';
+    case 'west':
+      return '12';
+    case 'north':
+    default:
+      return '0';
+  }
+}
+
+function axisForDirection(direction: Direction): 'x' | 'y' | 'z' {
+  if (direction === 'up' || direction === 'down') return 'y';
+  if (direction === 'east' || direction === 'west') return 'x';
+  return 'z';
+}
+
+function isDirection(value: string | undefined): value is Direction {
+  return value === 'up'
+    || value === 'down'
+    || value === 'north'
+    || value === 'south'
+    || value === 'east'
+    || value === 'west';
+}
+
+function formatThumbnailDirectionLabel(direction: Direction | string): string {
+  return direction.charAt(0).toUpperCase() + direction.slice(1);
 }
 
 function CuboidCornerControls({
@@ -3145,7 +5575,9 @@ function CuboidCornerControls({
 }) {
   return (
     <section className="cuboid-corner-group" aria-label={title}>
-      <h3>{title}</h3>
+      <h3 className={`cuboid-corner-badge cuboid-corner-badge-${corner}`}>
+        {corner.toUpperCase()}
+      </h3>
       {(['x', 'y', 'z'] as const).map((axis) => {
         const coordinate = point ? point[axis] : 0;
         const worldCoordinate = originCoordinate(model, axis) + coordinate;
@@ -3154,18 +5586,7 @@ function CuboidCornerControls({
 
         return (
           <div className="cuboid-axis-stepper" key={`${corner}-${axis}`}>
-            <span>{axis.toUpperCase()}</span>
-            <strong>{worldCoordinate}</strong>
             <div className="cuboid-axis-buttons">
-              <button
-                type="button"
-                onClick={() => onStep(corner, axis, 1)}
-                disabled={coordinate >= maxAllowed}
-                title={`Increase ${title} ${axis.toUpperCase()}`}
-                aria-label={`Increase ${title} ${axis.toUpperCase()}`}
-              >
-                <ChevronUp size={14} />
-              </button>
               <button
                 type="button"
                 onClick={() => onStep(corner, axis, -1)}
@@ -3173,7 +5594,17 @@ function CuboidCornerControls({
                 title={`Decrease ${title} ${axis.toUpperCase()}`}
                 aria-label={`Decrease ${title} ${axis.toUpperCase()}`}
               >
-                <ChevronDown size={14} />
+                <span aria-hidden="true">-</span>
+              </button>
+              <strong>{worldCoordinate}</strong>
+              <button
+                type="button"
+                onClick={() => onStep(corner, axis, 1)}
+                disabled={coordinate >= maxAllowed}
+                title={`Increase ${title} ${axis.toUpperCase()}`}
+                aria-label={`Increase ${title} ${axis.toUpperCase()}`}
+              >
+                <span aria-hidden="true">+</span>
               </button>
             </div>
           </div>
@@ -3187,6 +5618,26 @@ function materialIdForBlock(block: VoxelBlock): string {
   return materialIdForStateKey(block.stateKey);
 }
 
+function filterMaterials<T extends MaterialListItem>(materials: T[], search: string): T[] {
+  const query = search.trim().toLocaleLowerCase();
+  if (!query) return materials;
+
+  return materials.filter((material) => {
+    const label = material.label.toLocaleLowerCase();
+    const id = material.id.toLocaleLowerCase();
+    return label.includes(query) || id.includes(query);
+  });
+}
+
+function isAppEditableElement(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tagName = target.tagName;
+  return target.isContentEditable
+    || tagName === 'INPUT'
+    || tagName === 'TEXTAREA'
+    || tagName === 'SELECT';
+}
+
 function materialIdForStateKey(stateKey: string): string {
   const id = stripBlockStateProperties(stateKey);
   const path = id.replace(/^minecraft:/, '');
@@ -3194,6 +5645,12 @@ function materialIdForStateKey(stateKey: string): string {
   if (path === 'wall_hanging_sign') return id.replace(/wall_hanging_sign$/, 'hanging_sign');
   if (isWallSignStateKey(id)) return id.replace(/_wall_sign$/, '_sign');
   if (isWallHangingSignStateKey(id)) return id.replace(/_wall_hanging_sign$/, '_hanging_sign');
+  if (path === 'wall_torch') return 'minecraft:torch';
+  if (path === 'soul_wall_torch') return 'minecraft:soul_torch';
+  if (path === 'redstone_wall_torch') return 'minecraft:redstone_torch';
+  if (path === 'copper_wall_torch') return 'minecraft:copper_torch';
+  if (path === 'player_wall_head') return 'minecraft:player_head';
+  if (path === 'piglin_wall_head') return 'minecraft:piglin_head';
   return id;
 }
 
@@ -3699,9 +6156,31 @@ function summarizeMaterials(blocks: VoxelBlock[]): MaterialSummary[] {
   return Array.from(counts.values()).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 }
 
+function summarizeExtraMaterials(extraMaterials: SchematicModel['extraMaterials']): MaterialSummary[] {
+  if (!extraMaterials?.length) return [];
+
+  return extraMaterials
+    .filter((material) => material.count > 0)
+    .map((material) => {
+      const stateKey = material.stateKey ?? recipeItemStateKey(material.id);
+      const preview = createVoxelBlock(0, 0, 0, stateKey);
+
+      return {
+        id: material.id,
+        label: formatBlockName(material.id),
+        count: material.count,
+        color: preview.color,
+        stateKey,
+        thumbnailLayers: materialThumbnailLayers(stateKey),
+      };
+    });
+}
+
 function materialEntriesForBlock(block: VoxelBlock): Array<{ id: string; quantity: number; stateKey: string }> {
   const quantity = materialQuantityForBlock(block);
   if (quantity === 0) return [];
+
+  if (isFlowingWaterStateKey(block.stateKey)) return [];
 
   if (isWaterSourceStateKey(block.stateKey)) {
     return [{ id: 'water_bucket', quantity, stateKey: 'minecraft:water_bucket' }];
@@ -3720,6 +6199,14 @@ function materialEntriesForBlock(block: VoxelBlock): Array<{ id: string; quantit
       { id: 'flower_pot', quantity, stateKey: 'minecraft:flower_pot' },
       { id: pottedPlantId, quantity, stateKey: recipeItemStateKey(pottedPlantId) },
     ];
+  }
+
+  if (isWheatCropStateKey(block.stateKey)) {
+    return [{ id: 'wheat_seeds', quantity, stateKey: 'minecraft:wheat_seeds' }];
+  }
+
+  if (isDirtCountStateKey(block.stateKey)) {
+    return [{ id: 'dirt', quantity, stateKey: 'minecraft:dirt' }];
   }
 
   const id = materialIdForBlock(block);
@@ -3750,9 +6237,15 @@ function pottedPlantMaterialId(stateKey: string): string | null {
 
 function materialStateKeyForBlock(block: VoxelBlock): string {
   if (isFenceStateKey(block.stateKey)) return fenceMaterialStateKey(block.stateKey);
+  if (isFenceGateStateKey(block.stateKey)) return fenceGateMaterialStateKey(block.stateKey);
   if (isStairsStateKey(block.stateKey)) return stairMaterialStateKey(block.stateKey);
+  if (isTrapdoorStateKey(block.stateKey)) return trapdoorMaterialStateKey(block.stateKey);
+  if (isPaneStateKey(block.stateKey)) return paneMaterialStateKey(block.stateKey);
   if (isWallStateKey(block.stateKey)) return wallMaterialStateKey(block.stateKey);
   if (isPistonBaseStateKey(block.stateKey)) return pistonMaterialStateKey(block.stateKey);
+  if (isCampfireStateKey(block.stateKey)) return campfireMaterialStateKey(block.stateKey);
+  if (isWallTorchStateKey(block.stateKey)) return wallTorchMaterialStateKey(block.stateKey);
+  if (isDisplayHeadStateKey(block.stateKey)) return headMaterialStateKey(block);
   return block.stateKey;
 }
 
@@ -3769,6 +6262,18 @@ function fenceMaterialStateKey(stateKey: string): string {
   }, parsed.order);
 }
 
+function fenceGateMaterialStateKey(stateKey: string): string {
+  const parsed = parseStateKey(stateKey);
+  if (!parsed) return stateKey;
+
+  return formatStateKey(parsed.id, {
+    ...parsed.properties,
+    facing: 'east',
+    in_wall: 'false',
+    open: 'false',
+  }, parsed.order);
+}
+
 function stairMaterialStateKey(stateKey: string): string {
   const parsed = parseStateKey(stateKey);
   if (!parsed) return stateKey;
@@ -3781,6 +6286,29 @@ function stairMaterialStateKey(stateKey: string): string {
   }, parsed.order);
 }
 
+function trapdoorMaterialStateKey(stateKey: string): string {
+  const parsed = parseStateKey(stateKey);
+  if (!parsed) return stateKey;
+
+  return formatStateKey(parsed.id, {
+    ...parsed.properties,
+    open: 'false',
+  }, parsed.order);
+}
+
+function paneMaterialStateKey(stateKey: string): string {
+  const parsed = parseStateKey(stateKey);
+  if (!parsed) return stateKey;
+
+  return formatStateKey(parsed.id, {
+    ...parsed.properties,
+    east: 'true',
+    north: 'false',
+    south: 'false',
+    west: 'true',
+  }, parsed.order);
+}
+
 function pistonMaterialStateKey(stateKey: string): string {
   const parsed = parseStateKey(stateKey);
   if (!parsed) return stateKey;
@@ -3789,6 +6317,39 @@ function pistonMaterialStateKey(stateKey: string): string {
     ...parsed.properties,
     extended: 'false',
   }, parsed.order);
+}
+
+function campfireMaterialStateKey(stateKey: string): string {
+  const parsed = parseStateKey(stateKey);
+  if (!parsed) return stateKey;
+
+  return formatStateKey(parsed.id, {
+    ...parsed.properties,
+    lit: 'true',
+  }, parsed.order);
+}
+
+function wallTorchMaterialStateKey(stateKey: string): string {
+  const parsed = parseStateKey(stateKey);
+  const id = materialIdForStateKey(stateKey);
+  if (id === 'minecraft:redstone_torch') {
+    return withBlockStateProperties(id, { lit: parsed?.properties.lit ?? 'true' });
+  }
+  return id;
+}
+
+function headMaterialStateKey(block: VoxelBlock): string {
+  const parsed = parseStateKey(block.stateKey);
+  if (!parsed) return block.stateKey;
+
+  const id = materialIdForStateKey(block.stateKey);
+  const properties: Record<string, string> = { rotation: '0' };
+  const headTextureId = parsed.properties.SchematicEditor_head ?? block.playerHeadTexture?.id;
+  if (id === 'minecraft:player_head' && headTextureId) {
+    properties.SchematicEditor_head = headTextureId;
+  }
+
+  return formatStateKey(id, properties, ['rotation', 'SchematicEditor_head']);
 }
 
 function wallMaterialStateKey(stateKey: string): string {
@@ -3825,7 +6386,6 @@ function materialSummaryForRecipeItem(material: { id: string; count: number }, p
     count: material.count,
     color: preview.color,
     stateKey,
-    thumbnailLayers: materialThumbnailLayers(stateKey),
   };
 }
 
@@ -3835,6 +6395,52 @@ function recipeItemStateKey(id: string): string {
 
 function shoppingItemKey(scopeKey: string, material: MaterialSummary): string {
   return `${scopeKey}:${material.id}:${material.count}`;
+}
+
+const resourceCalculatorBaseUrl = 'https://resourcecalculator.com/minecraft/#';
+const resourceCalculatorNameOverrides: Record<string, string> = {
+  bamboo_block: 'Block of Bamboo',
+  stripped_bamboo_block: 'Block of Stripped Bamboo',
+  coal_block: 'Block of Coal',
+  iron_block: 'Block of Iron',
+  gold_block: 'Block of Gold',
+  redstone_block: 'Block of Redstone',
+  emerald_block: 'Block of Emerald',
+  lapis_block: 'Block of Lapis Lazuli',
+  diamond_block: 'Block of Diamond',
+  netherite_block: 'Block of Netherite',
+  quartz_block: 'Block of Quartz',
+  amethyst_block: 'Block of Amethyst',
+  copper_block: 'Block of Copper',
+  raw_iron_block: 'Block of Raw Iron',
+  raw_copper_block: 'Block of Raw Copper',
+  raw_gold_block: 'Block of Raw Gold',
+  resin_block: 'Block of Resin',
+};
+
+function resourceCalculatorUrlForMaterials(materials: MaterialSummary[]): string {
+  const counts = new Map<string, number>();
+  const params = new URLSearchParams();
+
+  for (const material of materials) {
+    if (!Number.isFinite(material.count) || material.count <= 0) continue;
+
+    const key = resourceCalculatorSimpleName(material.id);
+    if (key) counts.set(key, (counts.get(key) ?? 0) + Math.ceil(material.count));
+  }
+
+  for (const [key, count] of counts) {
+    params.set(key, count.toString());
+  }
+
+  return `${resourceCalculatorBaseUrl}${params.toString()}`;
+}
+
+function resourceCalculatorSimpleName(materialId: string): string {
+  const id = normalizeRecipeItemId(materialId);
+  const displayName = resourceCalculatorNameOverrides[id] ?? formatBlockName(id);
+
+  return displayName.toLocaleLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 function shoppingScopeKey(model: SchematicModel, scope: MaterialsScope, bounds: CuboidBounds | null): string {
@@ -3849,6 +6455,18 @@ function shoppingStorageKey(model: SchematicModel, scopeKey: string, materials: 
   return `${shoppingListStoragePrefix}:${identity}`;
 }
 
+function shulkerStorageKey(
+  model: SchematicModel,
+  scopeKey: string,
+  mode: string,
+  materials: MaterialSummary[],
+): string {
+  const dimensions = `${model.dimensions.width}x${model.dimensions.height}x${model.dimensions.length}`;
+  const materialHash = hashText(materials.map((material) => `${material.id}:${material.count}`).join('|'));
+  const identity = hashText(`${model.name}|${model.source}|${dimensions}|${scopeKey}|${mode}|${materialHash}`);
+  return `${shulkerViewStoragePrefix}:${identity}`;
+}
+
 function parseShoppingStorage(rawItems: string): string[] {
   try {
     const parsed = JSON.parse(rawItems);
@@ -3858,108 +6476,361 @@ function parseShoppingStorage(rawItems: string): string[] {
   }
 }
 
+function packMaterialsIntoShulkerBoxes(materials: MaterialSummary[], mode: ShulkerViewMode): ShulkerBoxPlan[] {
+  const groups = shulkerMaterialGroups(materials, mode);
+  const boxes: ShulkerBoxPlan[] = [];
+
+  groups.forEach((group, groupIndex) => {
+    let currentSlots: ShulkerBoxPlan['slots'] = [];
+    let boxInGroup = 1;
+    const groupBoxes: Array<Omit<ShulkerBoxPlan, 'label'>> = [];
+
+    const flushBox = () => {
+      if (currentSlots.length === 0) return;
+
+      const slots = [...currentSlots];
+      while (slots.length < shulkerInventorySlots) slots.push(null);
+
+      const id = `${group.id}-${boxInGroup}`;
+      const slotKeys = slots.map((slot, index) => (slot ? shulkerSlotKey(id, index, slot) : null));
+      const filledSlotKeys = slotKeys.filter((slotKey): slotKey is string => slotKey !== null);
+      const itemCount = slots.reduce((sum, slot) => sum + (slot?.count ?? 0), 0);
+      groupBoxes.push({
+        id,
+        groupLabel: group.label,
+        color: group.color ?? shulkerColorForIndex(groupIndex),
+        slots,
+        slotKeys,
+        filledSlotKeys,
+        itemCount,
+        usedSlots: filledSlotKeys.length,
+      });
+      currentSlots = [];
+      boxInGroup += 1;
+    };
+
+    for (const material of group.materials) {
+      const stackSize = materialStackSize(material.id);
+      let remaining = material.count;
+      while (remaining > 0) {
+        if (currentSlots.length === shulkerInventorySlots) flushBox();
+
+        const count = Math.min(stackSize, remaining);
+        currentSlots.push({ material, count });
+        remaining -= count;
+      }
+    }
+
+    flushBox();
+
+    groupBoxes.forEach((box, index) => {
+      const globalBoxNumber = boxes.length + 1;
+      boxes.push({
+        ...box,
+        label: shulkerBoxLabel(mode, group.label, globalBoxNumber, index + 1, groupBoxes.length),
+      });
+    });
+  });
+
+  return boxes;
+}
+
+function consolidateLesserFilledShulkerBoxes(boxes: ShulkerBoxPlan[]): ShulkerBoxPlan[] {
+  const candidates = boxes.filter(isLesserFilledShulkerBox);
+  if (candidates.length < 2) return boxes;
+
+  const candidateIds = new Set(candidates.map((box) => box.id));
+  const sourceGroupLabels = uniqueLabels(candidates.map((box) => box.groupLabel));
+  const consolidatedStacks = mergeShulkerStacks(candidates.flatMap((box) => box.slots.filter((slot): slot is ShulkerStack => Boolean(slot))));
+  if (consolidatedStacks.length === 0) return boxes;
+
+  const consolidatedBoxes: ShulkerBoxPlan[] = [];
+  for (let index = 0; index < consolidatedStacks.length; index += shulkerInventorySlots) {
+    const boxStacks = consolidatedStacks.slice(index, index + shulkerInventorySlots);
+    const slots: ShulkerBoxPlan['slots'] = [...boxStacks];
+    while (slots.length < shulkerInventorySlots) slots.push(null);
+
+    const id = `consolidated-${consolidatedBoxes.length + 1}`;
+    const slotKeys = slots.map((slot, slotIndex) => (slot ? shulkerSlotKey(id, slotIndex, slot) : null));
+    const filledSlotKeys = slotKeys.filter((slotKey): slotKey is string => slotKey !== null);
+    const materials = uniqueMaterials(boxStacks.map((stack) => stack.material));
+    consolidatedBoxes.push({
+      id,
+      label: consolidatedShulkerBoxLabel(sourceGroupLabels, consolidatedBoxes.length + 1, Math.ceil(consolidatedStacks.length / shulkerInventorySlots)),
+      groupLabel: 'Consolidated',
+      color: shulkerColorForMaterials(materials, 'purple'),
+      slots,
+      slotKeys,
+      filledSlotKeys,
+      itemCount: slots.reduce((sum, slot) => sum + (slot?.count ?? 0), 0),
+      usedSlots: filledSlotKeys.length,
+    });
+  }
+
+  let insertedConsolidatedBoxes = false;
+  return boxes.flatMap((box) => {
+    if (!candidateIds.has(box.id)) return [box];
+    if (insertedConsolidatedBoxes) return [];
+    insertedConsolidatedBoxes = true;
+    return consolidatedBoxes;
+  });
+}
+
+function isLesserFilledShulkerBox(box: ShulkerBoxPlan): boolean {
+  return box.usedSlots > 0 && box.usedSlots <= shulkerConsolidationSlotThreshold;
+}
+
+function mergeShulkerStacks(stacks: ShulkerStack[]): ShulkerStack[] {
+  const materials = new Map<string, MaterialSummary>();
+  const totals = new Map<string, number>();
+  const orderedIds: string[] = [];
+
+  for (const stack of stacks) {
+    if (!materials.has(stack.material.id)) {
+      materials.set(stack.material.id, stack.material);
+      orderedIds.push(stack.material.id);
+    }
+    totals.set(stack.material.id, (totals.get(stack.material.id) ?? 0) + stack.count);
+  }
+
+  return orderedIds.flatMap((materialId) => {
+    const material = materials.get(materialId);
+    if (!material) return [];
+
+    const stackSize = materialStackSize(materialId);
+    let remaining = totals.get(materialId) ?? 0;
+    const mergedStacks: ShulkerStack[] = [];
+    while (remaining > 0) {
+      const count = Math.min(stackSize, remaining);
+      mergedStacks.push({ material, count });
+      remaining -= count;
+    }
+    return mergedStacks;
+  });
+}
+
+function consolidatedShulkerBoxLabel(sourceGroupLabels: string[], boxNumber: number, boxCount: number): string {
+  const sourceLabel = consolidatedSourceLabel(sourceGroupLabels);
+  return boxCount > 1 ? `${sourceLabel} ${boxNumber}` : sourceLabel;
+}
+
+function consolidatedSourceLabel(sourceGroupLabels: string[]): string {
+  if (sourceGroupLabels.length === 0) return 'Mixed Items';
+  if (sourceGroupLabels.length === 1) return sourceGroupLabels[0];
+  if (sourceGroupLabels.length === 2) return `Mixed: ${sourceGroupLabels.join(' + ')}`;
+  return `Mixed: ${sourceGroupLabels[0]} + ${sourceGroupLabels.length - 1} types`;
+}
+
+function uniqueLabels(labels: string[]): string[] {
+  return Array.from(new Set(labels.filter(Boolean)));
+}
+
+function uniqueMaterials(materials: MaterialSummary[]): MaterialSummary[] {
+  const seen = new Set<string>();
+  return materials.filter((material) => {
+    if (seen.has(material.id)) return false;
+    seen.add(material.id);
+    return true;
+  });
+}
+
+function shulkerMaterialGroups(
+  materials: MaterialSummary[],
+  mode: ShulkerViewMode,
+): Array<{ id: string; label: string; color?: string; materials: MaterialSummary[] }> {
+  if (mode === 'box') {
+    return [{ id: 'all', label: 'All Materials', color: 'theme', materials }];
+  }
+
+  const groups = new Map<string, { id: string; label: string; color?: string; materials: MaterialSummary[] }>();
+  for (const material of materials) {
+    const group = shulkerTypeGroupForMaterial(material);
+    const current = groups.get(group.id) ?? { ...group, materials: [] };
+    current.materials.push(material);
+    groups.set(group.id, current);
+  }
+
+  const order = ['wood', 'stone', 'glass', 'redstone', 'nature', 'utility', 'decorative', 'other'];
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      color: group.id === 'redstone'
+        ? 'red'
+        : shulkerColorForMaterials(group.materials, group.color ?? shulkerColorForType(group.id)),
+      materials: [...group.materials].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
+    }))
+    .sort((a, b) => {
+      const orderDelta = order.indexOf(a.id) - order.indexOf(b.id);
+      return orderDelta || a.label.localeCompare(b.label);
+    });
+}
+
+function shulkerBoxLabel(
+  mode: ShulkerViewMode,
+  groupLabel: string,
+  globalBoxNumber: number,
+  boxInGroup: number,
+  groupBoxCount: number,
+): string {
+  if (mode === 'box') {
+    return groupBoxCount > 1 ? `Shulker Box ${globalBoxNumber}` : 'Shulker Box';
+  }
+
+  return groupBoxCount > 1 ? `${groupLabel} ${boxInGroup}` : groupLabel;
+}
+
+function shulkerTypeGroupForMaterial(material: MaterialSummary): { id: string; label: string; color: string } {
+  const category = shoppingCategoryForMaterial(material.id);
+  return { ...category, color: shulkerColorForType(category.id) };
+}
+
+function materialStackSize(materialId: string): number {
+  const id = stripBlockStateProperties(materialId).replace(/^minecraft:/, '');
+  if (/(_bucket|boat|chest_boat|raft|chest_raft|minecart)$/.test(id)) return 1;
+  if (/(sword|pickaxe|axe|shovel|hoe|helmet|chestplate|leggings|boots|elytra|shield|bow|crossbow|trident|saddle|horse_armor)$/.test(id)) return 1;
+  if (/^(bed|banner|cake|suspicious_stew|mushroom_stew|rabbit_stew|honey_bottle|potion|splash_potion|lingering_potion)$/.test(id)) return 1;
+  if (/(sign|hanging_sign|ender_pearl|snowball|egg)$/.test(id)) return 16;
+  return maxStackSize;
+}
+
+function shulkerSlotKey(boxId: string, slotIndex: number, slot: ShulkerStack): string {
+  return `${boxId}:${slotIndex}:${slot.material.id}:${slot.count}`;
+}
+
+function shulkerColorForType(typeId: string): string {
+  switch (typeId) {
+    case 'wood':
+      return 'brown';
+    case 'stone':
+      return 'gray';
+    case 'glass':
+      return 'light_blue';
+    case 'redstone':
+      return 'red';
+    case 'nature':
+      return 'green';
+    case 'utility':
+      return 'orange';
+    case 'decorative':
+      return 'magenta';
+    default:
+      return 'purple';
+  }
+}
+
+function shulkerColorForIndex(index: number): string {
+  const colors = ['purple', 'blue', 'cyan', 'green', 'yellow', 'orange', 'red', 'pink', 'magenta', 'light_gray', 'gray', 'brown'] as const;
+  return colors[index % colors.length];
+}
+
+function shulkerColorForMaterials(materials: MaterialSummary[], fallback: string): string {
+  const total = materials.reduce((sum, material) => sum + Math.max(material.count, 0), 0);
+  if (total <= 0) return fallback;
+
+  const weighted = materials.reduce((acc, material) => {
+    const weight = Math.max(material.count, 0);
+    acc.red += ((material.color >> 16) & 0xff) * weight;
+    acc.green += ((material.color >> 8) & 0xff) * weight;
+    acc.blue += (material.color & 0xff) * weight;
+    return acc;
+  }, { red: 0, green: 0, blue: 0 });
+
+  const color = (
+    (Math.round(weighted.red / total) << 16)
+    | (Math.round(weighted.green / total) << 8)
+    | Math.round(weighted.blue / total)
+  );
+
+  const { saturation, lightness } = rgbToHsl(color);
+  if (saturation < 0.08 || lightness < 0.16 || lightness > 0.9) return fallback;
+  return `#${color.toString(16).padStart(6, '0')}`;
+}
+
+function shulkerBoxStateKey(color: string): string {
+  const boxColor = shulkerBoxThumbnailColor(color);
+  return boxColor === 'natural' ? 'minecraft:shulker_box' : `minecraft:${boxColor}_shulker_box`;
+}
+
+function shulkerBoxPreviewColor(color: string): number {
+  return shulkerColorHex(shulkerBoxThumbnailColor(color));
+}
+
+function shulkerBoxThumbnailColor(color: string): string {
+  if (color === 'theme') return 'cyan';
+  if (color === 'natural' || shulkerBoxThumbnailColors.some((candidate) => candidate === color)) return color;
+  if (!/^#[0-9a-f]{6}$/i.test(color)) return 'purple';
+
+  const target = Number.parseInt(color.slice(1), 16);
+  let closestColor = 'purple';
+  let closestDistance = Number.POSITIVE_INFINITY;
+
+  for (const candidate of shulkerBoxThumbnailColors) {
+    const candidateColor = shulkerColorHex(candidate);
+    const redDelta = ((target >> 16) & 0xff) - ((candidateColor >> 16) & 0xff);
+    const greenDelta = ((target >> 8) & 0xff) - ((candidateColor >> 8) & 0xff);
+    const blueDelta = (target & 0xff) - (candidateColor & 0xff);
+    const distance = redDelta * redDelta + greenDelta * greenDelta + blueDelta * blueDelta;
+    if (distance < closestDistance) {
+      closestColor = candidate;
+      closestDistance = distance;
+    }
+  }
+
+  return closestColor;
+}
+
+function shulkerColorHex(color: string): number {
+  switch (color) {
+    case 'white':
+      return 0xf3f4f0;
+    case 'light_gray':
+      return 0x9d9d97;
+    case 'gray':
+      return 0x474f52;
+    case 'black':
+      return 0x1d1d21;
+    case 'brown':
+      return 0x835432;
+    case 'red':
+      return 0xb02e26;
+    case 'orange':
+      return 0xf9801d;
+    case 'yellow':
+      return 0xfed83d;
+    case 'green':
+      return 0x5e7c16;
+    case 'lime':
+      return 0x80c71f;
+    case 'cyan':
+      return 0x169c9c;
+    case 'light_blue':
+      return 0x3ab3da;
+    case 'blue':
+      return 0x3c44aa;
+    case 'purple':
+      return 0x8932b8;
+    case 'magenta':
+      return 0xc74ebd;
+    case 'pink':
+      return 0xf38baa;
+    default:
+      return 0x8e44ad;
+  }
+}
+
+function shulkerColorCss(color: string): string {
+  if (color === 'theme') return 'var(--brand-b)';
+  if (/^#[0-9a-f]{6}$/i.test(color)) return color;
+  return `#${shulkerColorHex(color).toString(16).padStart(6, '0')}`;
+}
+
 function hashText(text: string): string {
   let hash = 5381;
   for (let index = 0; index < text.length; index += 1) {
     hash = ((hash << 5) + hash) ^ text.charCodeAt(index);
   }
   return (hash >>> 0).toString(36);
-}
-
-function countCraftingSteps(nodes: BreakdownNode[]): number {
-  return nodes.reduce((sum, node) => (
-    sum
-      + (node.isRaw ? 0 : 1)
-      + countCraftingSteps(node.children)
-  ), 0);
-}
-
-function estimateChestCount(materials: MaterialSummary[]): number {
-  const slots = materials.reduce((sum, material) => (
-    sum + Math.ceil(material.count / itemStackSize(material.id))
-  ), 0);
-
-  return Math.ceil(slots / 27);
-}
-
-function resourceTreeMatchesSearch(node: BreakdownNode, query: string): boolean {
-  const id = node.id.toLocaleLowerCase();
-  const label = formatBlockName(node.id).toLocaleLowerCase();
-
-  return id.includes(query)
-    || label.includes(query)
-    || node.children.some((child) => resourceTreeMatchesSearch(child, query));
-}
-
-function groupResourceDependencyTrees(trees: BreakdownNode[]): ResourceGraphGroup[] {
-  const groups = new Map<string, ResourceGraphGroup>();
-
-  for (const tree of trees) {
-    const groupMeta = resourceGroupForTree(tree);
-    const paths = collectResourceFlowPaths(tree);
-    const existing = groups.get(groupMeta.id) ?? {
-      ...groupMeta,
-      paths: [],
-      maxColumns: 1,
-    };
-
-    existing.paths.push(...paths);
-    existing.maxColumns = Math.max(existing.maxColumns, ...paths.map((path) => path.length));
-    groups.set(groupMeta.id, existing);
-  }
-
-  return Array.from(groups.values()).sort((a, b) => (
-    resourceGroupRank(a.id) - resourceGroupRank(b.id)
-      || a.label.localeCompare(b.label)
-  ));
-}
-
-function collectResourceFlowPaths(node: BreakdownNode): BreakdownNode[][] {
-  const children = node.children.filter((child) => child.count > 0);
-
-  if (children.length === 0) return [[node]];
-
-  return children.flatMap((child) => (
-    collectResourceFlowPaths(child).map((path) => [...path, node])
-  ));
-}
-
-function resourceGroupForTree(node: BreakdownNode): { id: string; label: string; tone: string } {
-  const ids = flattenResourceTreeIds(node);
-  const wood = woodTypeOrder.find((candidate) => (
-    ids.some((id) => {
-      const normalized = id.replace(/^minecraft:/, '');
-      return normalized === candidate
-        || normalized.startsWith(`${candidate}_`)
-        || normalized.includes(`_${candidate}_`);
-    })
-  ));
-
-  if (wood) {
-    return {
-      id: wood,
-      label: formatBlockName(wood).toLocaleUpperCase(),
-      tone: 'wood',
-    };
-  }
-
-  const category = shoppingCategoryForMaterial(node.id);
-  return {
-    id: category.id,
-    label: category.label.toLocaleUpperCase(),
-    tone: category.id,
-  };
-}
-
-function flattenResourceTreeIds(node: BreakdownNode): string[] {
-  return [node.id, ...node.children.flatMap(flattenResourceTreeIds)];
-}
-
-function resourceGroupRank(id: string): number {
-  const woodRank = woodTypeOrder.indexOf(id);
-  if (woodRank >= 0) return woodRank;
-
-  return woodTypeOrder.length + shoppingCategoryRank(id);
 }
 
 function groupShoppingMaterials(materials: MaterialSummary[]): ShoppingMaterialGroup[] {
@@ -4016,6 +6887,8 @@ function shoppingCategoryRank(id: string): number {
 function materialQuantityForBlock(block: VoxelBlock): number {
   if (isDoorStateKey(block.stateKey) && parseStateKey(block.stateKey)?.properties.half === 'upper') return 0;
   if (isBedStateKey(block.stateKey) && parseStateKey(block.stateKey)?.properties.part === 'head') return 0;
+  if (isUpperHalfTallPlantStateKey(block.stateKey)) return 0;
+  if (isPitcherCropStateKey(block.stateKey) && parseStateKey(block.stateKey)?.properties.half === 'upper') return 0;
   if (isPistonHeadStateKey(block.stateKey)) return 0;
   return isDoubleSlabStateKey(block.stateKey) ? 2 : 1;
 }
@@ -4026,7 +6899,7 @@ function materialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] | unde
   if (isWallStateKey(stateKey)) return wallMaterialThumbnailLayers(stateKey);
   if (isBedStateKey(stateKey)) return bedMaterialThumbnailLayers(stateKey);
   if (isDoorStateKey(stateKey)) return doorMaterialThumbnailLayers(stateKey);
-  if (isTallGrassStateKey(stateKey)) return tallGrassMaterialThumbnailLayers(stateKey);
+  if (isTallPlantStateKey(stateKey)) return tallPlantMaterialThumbnailLayers(stateKey);
   if (isPitcherCropStateKey(stateKey)) return pitcherCropMaterialThumbnailLayers(stateKey);
   return undefined;
 }
@@ -4087,7 +6960,7 @@ function pitcherCropMaterialThumbnailLayers(stateKey: string): BlockThumbnailLay
   ];
 }
 
-function tallGrassMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {
+function tallPlantMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {
   const baseState = stripBlockStateProperties(stateKey);
 
   return [
@@ -4128,11 +7001,29 @@ function isStairsStateKey(stateKey: string): boolean {
 }
 
 function isTallGrassStateKey(stateKey: string): boolean {
-  return stripBlockStateProperties(stateKey) === 'minecraft:tall_grass';
+  const id = stripBlockStateProperties(stateKey);
+  return id === 'minecraft:tall_grass' || id === 'minecraft:tall_dry_grass';
+}
+
+function isTallPlantStateKey(stateKey: string): boolean {
+  const id = stripBlockStateProperties(stateKey);
+  return id === 'minecraft:large_fern'
+    || id === 'minecraft:lilac'
+    || id === 'minecraft:peony'
+    || id === 'minecraft:rose_bush'
+    || id === 'minecraft:sunflower'
+    || id === 'minecraft:tall_grass'
+    || id === 'minecraft:tall_dry_grass'
+    || id === 'minecraft:tall_seagrass';
 }
 
 function isWaterCauldronStateKey(stateKey: string): boolean {
   return stripBlockStateProperties(stateKey) === 'minecraft:water_cauldron';
+}
+
+function isFlowingWaterStateKey(stateKey: string): boolean {
+  const parsed = parseStateKey(stateKey);
+  return parsed?.id === 'minecraft:water' && parsed.properties.level !== undefined && parsed.properties.level !== '0';
 }
 
 function isWaterSourceStateKey(stateKey: string): boolean {
@@ -4163,9 +7054,53 @@ function isDoubleSlabStateKey(stateKey: string): boolean {
     && parseStateKey(stateKey)?.properties.type === 'double';
 }
 
+function isFenceGateStateKey(stateKey: string): boolean {
+  return stripBlockStateProperties(stateKey).replace(/^minecraft:/, '').endsWith('_fence_gate');
+}
+
 function isDoorStateKey(stateKey: string): boolean {
   const id = stripBlockStateProperties(stateKey).replace(/^minecraft:/, '');
   return id.endsWith('_door') && !id.endsWith('_trapdoor');
+}
+
+function isTrapdoorStateKey(stateKey: string): boolean {
+  return stripBlockStateProperties(stateKey).replace(/^minecraft:/, '').endsWith('_trapdoor');
+}
+
+function isPaneStateKey(stateKey: string): boolean {
+  const id = stripBlockStateProperties(stateKey).replace(/^minecraft:/, '');
+  return id.endsWith('_pane') || id.endsWith('_bars');
+}
+
+function isCampfireStateKey(stateKey: string): boolean {
+  const id = stripBlockStateProperties(stateKey).replace(/^minecraft:/, '');
+  return id === 'campfire' || id === 'soul_campfire';
+}
+
+function isWallTorchStateKey(stateKey: string): boolean {
+  const id = stripBlockStateProperties(stateKey).replace(/^minecraft:/, '');
+  return id === 'wall_torch' || id === 'soul_wall_torch' || id === 'redstone_wall_torch' || id === 'copper_wall_torch';
+}
+
+function isDisplayHeadStateKey(stateKey: string): boolean {
+  const id = stripBlockStateProperties(stateKey);
+  return id === 'minecraft:player_head'
+    || id === 'minecraft:player_wall_head'
+    || id === 'minecraft:piglin_head'
+    || id === 'minecraft:piglin_wall_head';
+}
+
+function isWheatCropStateKey(stateKey: string): boolean {
+  return stripBlockStateProperties(stateKey) === 'minecraft:wheat';
+}
+
+function isDirtCountStateKey(stateKey: string): boolean {
+  const id = stripBlockStateProperties(stateKey);
+  return id === 'minecraft:farmland' || id === 'minecraft:dirt_path';
+}
+
+function isUpperHalfTallPlantStateKey(stateKey: string): boolean {
+  return isTallPlantStateKey(stateKey) && parseStateKey(stateKey)?.properties.half === 'upper';
 }
 
 function isWallSignStateKey(stateKey: string): boolean {
@@ -4184,6 +7119,119 @@ function blockPositionKey(block: VoxelBlock): string {
 
 function emptyCuboidCorners(): CuboidCorners {
   return { a: null, b: null };
+}
+
+function cloneCuboidCorners(corners: CuboidCorners): CuboidCorners {
+  return {
+    a: corners.a ? { ...corners.a } : null,
+    b: corners.b ? { ...corners.b } : null,
+  };
+}
+
+function createSelectionArea(corners: CuboidCorners, index: number): SelectionArea {
+  const now = Date.now();
+  return {
+    id: createStableId('selection'),
+    name: `Area ${index}`,
+    corners: cloneCuboidCorners(corners),
+    updatedAt: now,
+  };
+}
+
+function createStableId(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function schematicStorageIdentity(model: SchematicModel): string {
+  const dimensions = `${model.dimensions.width}x${model.dimensions.height}x${model.dimensions.length}`;
+  return hashText(`${model.name}|${model.source}|${dimensions}|${model.paletteSize}`);
+}
+
+function selectionStorageKey(identity: string): string {
+  return `${selectionStoragePrefix}:${identity}`;
+}
+
+function cameraStorageKey(identity: string): string {
+  return `${cameraStoragePrefix}:${identity}`;
+}
+
+function parseSelectionAreas(raw: string | null): SelectionArea[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((item, index): SelectionArea[] => {
+      if (!item || typeof item !== 'object') return [];
+      const candidate = item as Partial<SelectionArea>;
+      const corners = parseCuboidCorners(candidate.corners);
+      if (!corners) return [];
+      return [{
+        id: typeof candidate.id === 'string' ? candidate.id : createStableId('selection'),
+        name: typeof candidate.name === 'string' ? candidate.name : `Area ${index + 1}`,
+        corners,
+        updatedAt: typeof candidate.updatedAt === 'number' ? candidate.updatedAt : Date.now(),
+      }];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function parseCuboidCorners(value: unknown): CuboidCorners | null {
+  if (!value || typeof value !== 'object') return null;
+  const corners = value as { a?: unknown; b?: unknown };
+  return {
+    a: parseCuboidPoint(corners.a),
+    b: parseCuboidPoint(corners.b),
+  };
+}
+
+function parseCuboidPoint(value: unknown): CuboidPoint | null {
+  if (!value || typeof value !== 'object') return null;
+  const point = value as Record<string, unknown>;
+  if (typeof point.x !== 'number' || typeof point.y !== 'number' || typeof point.z !== 'number') return null;
+  return { x: point.x, y: point.y, z: point.z };
+}
+
+function clampCuboidCornersToModel(corners: CuboidCorners, model: SchematicModel): CuboidCorners {
+  return {
+    a: corners.a ? clampPointToModel(corners.a, model) : null,
+    b: corners.b ? clampPointToModel(corners.b, model) : null,
+  };
+}
+
+function parseSavedCameraViews(raw: string | null): SavedCameraView[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((item, index): SavedCameraView[] => {
+      if (!item || typeof item !== 'object') return [];
+      const candidate = item as Partial<SavedCameraView>;
+      if (!isSavedCameraPosition(candidate.position)) return [];
+      return [{
+        id: typeof candidate.id === 'string' ? candidate.id : createStableId('camera'),
+        name: typeof candidate.name === 'string' ? candidate.name : `Camera ${index + 1}`,
+        position: candidate.position,
+        isDefault: Boolean(candidate.isDefault),
+        updatedAt: typeof candidate.updatedAt === 'number' ? candidate.updatedAt : Date.now(),
+      }];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function isSavedCameraPosition(value: unknown): value is SavedCameraPosition {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<SavedCameraPosition>;
+  return isNumberTuple3(candidate.position) && isNumberTuple3(candidate.target);
+}
+
+function isNumberTuple3(value: unknown): value is [number, number, number] {
+  return Array.isArray(value)
+    && value.length === 3
+    && value.every((item) => typeof item === 'number' && Number.isFinite(item));
 }
 
 function pointFromBlock(block: VoxelBlock): CuboidPoint {
@@ -4285,6 +7333,25 @@ function boundsInsideModel(bounds: CuboidBounds, model: SchematicModel): boolean
     && bounds.minZ >= 0
     && bounds.maxZ < model.dimensions.length
   );
+}
+
+function translatePoint(point: CuboidPoint, offset: CuboidPoint): CuboidPoint {
+  return {
+    x: point.x + offset.x,
+    y: point.y + offset.y,
+    z: point.z + offset.z,
+  };
+}
+
+function translateBounds(bounds: CuboidBounds, offset: CuboidPoint): CuboidBounds {
+  return {
+    minX: bounds.minX + offset.x,
+    minY: bounds.minY + offset.y,
+    minZ: bounds.minZ + offset.z,
+    maxX: bounds.maxX + offset.x,
+    maxY: bounds.maxY + offset.y,
+    maxZ: bounds.maxZ + offset.z,
+  };
 }
 
 function compareBlocks(a: VoxelBlock, b: VoxelBlock): number {
@@ -4541,433 +7608,58 @@ function formatBlockName(id: string): string {
     .join(' ');
 }
 
-function MaterialBreakdown({ materialId, count }: { materialId: string; count: number }) {
+function MaterialBreakdown({ materialId, count }: { materialId: string; count: number; compact?: boolean }) {
   const breakdown = storageBreakdown(materialId, count);
-  const label = `${count.toLocaleString()} items: ${breakdown.stacks.toLocaleString()} stacks of ${breakdown.stackSize.toLocaleString()} plus ${breakdown.remainder.toLocaleString()} items, ${breakdown.shulkerBoxes} shulker boxes`;
+  const showStackBreakdown = hasStackBreakdown(breakdown.stackSize, count);
+  const showShulkerBreakdown = hasShulkerBreakdown(breakdown.stackSize, count);
+  const labelParts = [];
+
+  if (showStackBreakdown) {
+    labelParts.push(`${breakdown.stacks.toLocaleString()} stacks and ${breakdown.remainder.toLocaleString()} remaining`);
+  }
+  if (showShulkerBreakdown) {
+    labelParts.push(`${breakdown.shulkerBoxes} ${breakdown.shulkerBoxesLabel}`);
+  }
+  if (labelParts.length === 0) return null;
+
+  const stackItemsLabel = `${breakdown.stacks.toLocaleString()} + ${breakdown.remainder.toLocaleString()}`;
+  const shulkerLabel = breakdown.shulkerBoxes;
+  const label = `${count.toLocaleString()} items: ${labelParts.join('; ')}`;
 
   return (
     <span className="material-breakdown-count" aria-label={label}>
-      <span className="material-breakdown-part">
-        <span className="material-breakdown-icon" data-tooltip="Stacks">
-          <Layers size={17} strokeWidth={2.6} aria-hidden="true" />
+      {showStackBreakdown && (
+        <span className="material-breakdown-group">
+          <Layers size={13} strokeWidth={2.2} aria-hidden="true" />
+          <strong>{stackItemsLabel}</strong>
         </span>
-        <strong>{breakdown.stacks.toLocaleString()}</strong>
-      </span>
-      <span className="material-breakdown-plus" aria-hidden="true">+</span>
-      <strong>{breakdown.remainder.toLocaleString()}</strong>
-      <span className="material-breakdown-separator" aria-hidden="true" />
-      <span className="material-breakdown-part">
-        <span className="material-breakdown-icon" data-tooltip="Shulker Boxes">
-          <ShulkerIcon />
+      )}
+      {showStackBreakdown && showShulkerBreakdown && <span className="material-breakdown-divider" aria-hidden="true" />}
+      {showShulkerBreakdown && (
+        <span className="material-breakdown-group">
+          <Box size={13} strokeWidth={2.2} aria-hidden="true" />
+          <small>{shulkerLabel}</small>
         </span>
-        <strong>{breakdown.shulkerBoxes}</strong>
-      </span>
+      )}
     </span>
   );
 }
 
-function RecipeTree({ node }: { node: BreakdownNode }) {
-  if (node.isRaw || node.children.length === 0) {
-    return (
-      <div className="recipe-tree is-leaf">
-        <span>Counted as raw</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="recipe-tree" aria-label={`${formatBlockName(node.id)} recipe tree`}>
-      <div className="recipe-tree-heading">
-        <Hammer size={14} aria-hidden="true" />
-        <span>{node.recipeUsed ? recipeTypeLabel(node.recipeUsed.type) : 'Recipe'}</span>
-        {node.surplus ? <strong>+{formatQuantity(node.surplus)} surplus</strong> : null}
-      </div>
-      <div className="recipe-tree-children">
-        {node.children.map((child) => (
-          <RecipeTreeRow node={child} key={`${child.id}:${child.count}`} depth={0} />
-        ))}
-      </div>
-    </div>
-  );
+function shouldShowCompactMaterialBreakdown(materialId: string, count: number): boolean {
+  const stackSize = itemStackSize(materialId);
+  return hasStackBreakdown(stackSize, count) || hasShulkerBreakdown(stackSize, count);
 }
 
-function RecipeTreeRow({ node, depth }: { node: BreakdownNode; depth: number }) {
-  const stateKey = recipeItemStateKey(node.id);
-  const preview = createVoxelBlock(0, 0, 0, stateKey);
-
-  return (
-    <div className="recipe-tree-row-wrap">
-      <div className="recipe-tree-row" style={{ '--recipe-depth': depth } as CSSProperties}>
-        <BlockPreview stateKey={stateKey} color={preview.color} />
-        <span>{formatBlockName(node.id)}</span>
-        <strong>{formatQuantity(node.count)}</strong>
-        <small>{node.isRaw ? 'Raw' : node.recipeUsed ? recipeTypeLabel(node.recipeUsed.type) : 'Recipe'}</small>
-      </div>
-      {!node.isRaw && node.children.length > 0 && (
-        <div className="recipe-tree-branch">
-          {node.children.map((child) => (
-            <RecipeTreeRow node={child} key={`${child.id}:${child.count}:${depth}`} depth={depth + 1} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
+function hasStackBreakdown(stackSize: number, count: number): boolean {
+  return count > stackSize;
 }
 
-function ResourceCalculatorBoard({
-  schematicName,
-  activeMaterialsLabel,
-  activeMaterials,
-  rawMaterials,
-  resourceStats,
-  filteredRecipeTrees,
-  shoppingSearch,
-  setShoppingSearch,
-  materialsScope,
-  setMaterialsScope,
-  cuboidBounds,
-  beginCuboidSelection,
-  setAppView,
-  setInspectorTab,
-  integerCrafting,
-  setIntegerCrafting,
-  openInspectorPanel,
-}: {
-  schematicName: string;
-  activeMaterialsLabel: string;
-  activeMaterials: MaterialSummary[];
-  rawMaterials: MaterialSummary[];
-  resourceStats: ResourceCalculatorStats;
-  filteredRecipeTrees: BreakdownNode[];
-  shoppingSearch: string;
-  setShoppingSearch: (value: string) => void;
-  materialsScope: MaterialsScope;
-  setMaterialsScope: (scope: MaterialsScope) => void;
-  cuboidBounds: CuboidBounds | null;
-  beginCuboidSelection: () => void;
-  setAppView: (view: AppView) => void;
-  setInspectorTab: (tab: InspectorTab) => void;
-  integerCrafting: boolean;
-  setIntegerCrafting: (value: boolean) => void;
-  openInspectorPanel: (tab: InspectorTab) => void;
-}) {
-  return (
-    <section className="resource-board" aria-label="Resource Calculator">
-      <aside className="resource-sidebar" aria-label="Resource summary">
-        <div className="resource-file-card">
-          <p className="eyebrow">Schematic</p>
-          <strong>{schematicName}</strong>
-          <span>{activeMaterialsLabel}</span>
-        </div>
-
-        <div className="resource-output-card">
-          <p className="eyebrow">Total Output</p>
-          <strong>{resourceStats.totalOutputItems.toLocaleString()}</strong>
-          <span>Total crafted items</span>
-        </div>
-
-        <dl className="resource-stat-list">
-          <div>
-            <dt>Total Items</dt>
-            <dd>{resourceStats.totalOutputItems.toLocaleString()}</dd>
-          </div>
-          <div>
-            <dt>Unique Items</dt>
-            <dd>{resourceStats.uniqueOutputItems.toLocaleString()}</dd>
-          </div>
-          <div>
-            <dt>Crafting Steps</dt>
-            <dd>{resourceStats.craftingSteps.toLocaleString()}</dd>
-          </div>
-          <div>
-            <dt>Chests Needed</dt>
-            <dd>{resourceStats.chestsNeeded.toLocaleString()}</dd>
-          </div>
-        </dl>
-
-        <ResourceMaterialSummary
-          title="Final Materials"
-          materials={activeMaterials}
-          emptyLabel="No final materials."
-        />
-
-        <ResourceMaterialSummary
-          title="Base Ingredients"
-          materials={rawMaterials}
-          emptyLabel="No base ingredients."
-        />
-      </aside>
-
-      <section className="resource-tree-panel" aria-label="Dependency tree">
-        <div className="resource-tree-header">
-          <div>
-            <p className="eyebrow">Dependency Tree</p>
-            <h2>Resource Calculator</h2>
-          </div>
-          <div className="resource-tree-actions">
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => openInspectorPanel('materials')}
-            >
-              <Cuboid size={16} />
-              Materials
-            </button>
-          </div>
-        </div>
-
-        <div className="resource-toolbar">
-          <div className="segmented-control shopping-scope" role="group" aria-label="Resource Calculator scope">
-            <button
-              type="button"
-              className={materialsScope === 'build' ? 'is-active' : ''}
-              onClick={() => setMaterialsScope('build')}
-            >
-              Entire Build
-            </button>
-            <button
-              type="button"
-              className={materialsScope === 'cuboid' ? 'is-active' : ''}
-              onClick={() => {
-                if (cuboidBounds) {
-                  setMaterialsScope('cuboid');
-                } else {
-                  beginCuboidSelection();
-                  setAppView('inspect');
-                  setInspectorTab('selection');
-                }
-              }}
-            >
-              Selected Area
-            </button>
-          </div>
-
-          <label className="toggle-row compact-toggle">
-            <input
-              type="checkbox"
-              checked={integerCrafting}
-              onChange={(event) => setIntegerCrafting(event.target.checked)}
-            />
-            <span>Whole crafts</span>
-          </label>
-
-          <label className="material-search shopping-search">
-            <Search size={16} aria-hidden="true" />
-            <input
-              type="search"
-              value={shoppingSearch}
-              onChange={(event) => setShoppingSearch(event.target.value)}
-              placeholder="Search dependencies"
-              aria-label="Search dependencies"
-            />
-          </label>
-        </div>
-
-        <div className="resource-metrics">
-          <div>
-            <span>Raw Items</span>
-            <strong>{resourceStats.rawMaterialItems.toLocaleString()}</strong>
-          </div>
-          <div>
-            <span>Base Ingredients</span>
-            <strong>{resourceStats.uniqueRawMaterials.toLocaleString()}</strong>
-          </div>
-          <div>
-            <span>Crafting Steps</span>
-            <strong>{resourceStats.craftingSteps.toLocaleString()}</strong>
-          </div>
-          <div>
-            <span>Missing Recipes</span>
-            <strong>{resourceStats.unresolvedItems.toLocaleString()}</strong>
-          </div>
-        </div>
-
-        <div className="resource-tree-scroll">
-          <ResourceDependencyGraph
-            trees={filteredRecipeTrees}
-            placedMaterials={activeMaterials}
-          />
-
-          {filteredRecipeTrees.length === 0 && (
-            <p className="material-empty">
-              {shoppingSearch.trim()
-                ? `No dependencies match "${shoppingSearch.trim()}".`
-                : 'No dependencies to show.'}
-            </p>
-          )}
-        </div>
-      </section>
-    </section>
-  );
+function hasShulkerBreakdown(stackSize: number, count: number): boolean {
+  return count > halfShulkerBoxItemCount(stackSize);
 }
 
-function ResourceMaterialSummary({
-  title,
-  materials,
-  emptyLabel,
-}: {
-  title: string;
-  materials: MaterialSummary[];
-  emptyLabel: string;
-}) {
-  return (
-    <section className="resource-list-card" aria-label={title}>
-      <div className="resource-list-heading">
-        <span>{title}</span>
-        <strong>{materials.length.toLocaleString()}</strong>
-      </div>
-
-      <div className="resource-mini-list">
-        {materials.slice(0, 16).map((material) => (
-          <div className="resource-mini-row" key={`${title}:${material.id}`}>
-            <BlockPreview
-              stateKey={material.stateKey}
-              color={material.color}
-              layers={material.thumbnailLayers}
-            />
-            <span>{material.label}</span>
-            <strong>{formatQuantity(material.count)}</strong>
-          </div>
-        ))}
-
-        {materials.length === 0 && <p>{emptyLabel}</p>}
-        {materials.length > 16 && (
-          <p className="resource-mini-more">+{(materials.length - 16).toLocaleString()} more</p>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function ResourceDependencyGraph({
-  trees,
-  placedMaterials,
-}: {
-  trees: BreakdownNode[];
-  placedMaterials: MaterialSummary[];
-}) {
-  const groups = useMemo(() => groupResourceDependencyTrees(trees), [trees]);
-
-  return (
-    <div className="resource-graph" aria-label="Material dependency graph">
-      {groups.map((group) => (
-        <section
-          className={`resource-graph-group is-${group.tone}`}
-          key={group.id}
-          aria-label={`${group.label} dependencies`}
-          style={{ '--resource-flow-columns': group.maxColumns } as CSSProperties}
-        >
-          <div className="resource-group-label">{group.label}</div>
-
-          <div className="resource-flow-stack">
-            {group.paths.map((path, index) => (
-              <ResourceFlowRow
-                key={`${group.id}:${index}:${path.map((node) => `${node.id}-${node.count}`).join('>')}`}
-                path={path}
-                maxColumns={group.maxColumns}
-                placedMaterials={placedMaterials}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
-    </div>
-  );
-}
-
-function ResourceFlowRow({
-  path,
-  maxColumns,
-  placedMaterials,
-}: {
-  path: BreakdownNode[];
-  maxColumns: number;
-  placedMaterials: MaterialSummary[];
-}) {
-  return (
-    <div
-      className="resource-flow-row"
-      style={{ '--resource-flow-columns': maxColumns } as CSSProperties}
-    >
-      {path.map((node, index) => {
-        const column = index + 1;
-        const isTerminal = index === path.length - 1;
-
-        return (
-          <div
-            className={`resource-flow-node${isTerminal ? ' is-terminal' : ''}`}
-            key={`${node.id}:${node.count}:${index}`}
-            style={{ gridColumn: column } as CSSProperties}
-          >
-            <ResourceFlowCard
-              node={node}
-              placedMaterials={placedMaterials}
-              isTerminal={isTerminal}
-            />
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function ResourceFlowCard({
-  node,
-  placedMaterials,
-  isTerminal,
-}: {
-  node: BreakdownNode;
-  placedMaterials: MaterialSummary[];
-  isTerminal: boolean;
-}) {
-  const material = materialSummaryForRecipeItem({ id: node.id, count: node.count }, placedMaterials);
-  const crafts = node.recipeUsed
-    ? (node.count + (node.surplus ?? 0)) / node.recipeUsed.output
-    : 0;
-
-  return (
-    <article className={`resource-flow-card${node.isRaw ? ' is-raw' : ''}${isTerminal ? ' is-output' : ''}`}>
-      <BlockPreview
-        stateKey={material.stateKey}
-        color={material.color}
-        layers={material.thumbnailLayers}
-      />
-
-      <div className="resource-flow-copy">
-        <strong>{material.label}</strong>
-        <span>{formatQuantity(node.count)}</span>
-        {node.recipeUsed ? (
-          <small>
-            {recipeTypeLabel(node.recipeUsed.type)} {formatQuantity(crafts)}x
-            {node.surplus ? ` - +${formatQuantity(node.surplus)} surplus` : ''}
-          </small>
-        ) : (
-          <small>Base ingredient</small>
-        )}
-      </div>
-
-      {!node.isRaw && node.recipeUsed && (
-        <span className="resource-recipe-pill">
-          {node.recipeUsed.output}x
-        </span>
-      )}
-    </article>
-  );
-}
-
-function ShulkerIcon() {
-  return (
-    <svg className="shulker-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 2.8 21 8v9.1l-9 5.1-9-5.1V8l9-5.2Z" />
-      <path d="M3.6 8.3 12 13.1l8.4-4.8" />
-      <path d="M12 13.1v8.3" />
-      <path d="m3.2 12.4 4.2 2.4v1.5" />
-      <path d="m7.4 14.8 4.6 2.6 4.6-2.6" />
-      <path d="M12 17.4v1.7" />
-      <path d="m16.6 14.8 4.2-2.4" />
-      <path d="M16.6 14.8v1.5" />
-    </svg>
-  );
+function halfShulkerBoxItemCount(stackSize: number): number {
+  return (stackSize * shulkerInventorySlots) / 2;
 }
 
 function formatQuantity(value: number): string {
@@ -4981,6 +7673,7 @@ function storageBreakdown(materialId: string, count: number): {
   stacks: number;
   remainder: number;
   shulkerBoxes: string;
+  shulkerBoxesLabel: string;
 } {
   const stackSize = itemStackSize(materialId);
   const stacks = Math.floor(count / stackSize);
@@ -4992,6 +7685,7 @@ function storageBreakdown(materialId: string, count: number): {
     stacks,
     remainder,
     shulkerBoxes: formatShulkerBoxes(shulkerBoxes),
+    shulkerBoxesLabel: shulkerBoxes === 1 ? 'shulker box' : 'shulker boxes',
   };
 }
 

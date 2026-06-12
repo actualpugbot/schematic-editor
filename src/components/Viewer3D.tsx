@@ -13,17 +13,19 @@ interface Viewer3DProps {
   model: SchematicModel | null;
   cameraMode: CameraMode;
   spectatorSpeed: number;
-  visibleLayer: number;
-  singleLayer: boolean;
+  visibleBottomLayer: number;
+  visibleTopLayer: number;
   hiddenMaterialIds: Set<string>;
   playerHeadSelections: Record<string, string>;
   autoRotate: boolean;
   showGrid: boolean;
   theme: 'light' | 'dark';
+  stageBackgroundColor?: string;
   selectedBlock: VoxelBlock | null;
   placementPreviewBlock: VoxelBlock | null;
   cuboidBounds?: CuboidBounds | null;
   cuboidCorners?: CuboidCornerPoints | null;
+  showCuboidCornerLabels?: boolean;
   rotationTarget?: 'block' | 'cuboid' | null;
   rotationControlRef?: MutableRefObject<HTMLDivElement | null>;
   textureAdjustments?: TextureAdjustmentMap;
@@ -71,12 +73,19 @@ export interface AxisGizmoVector {
 export interface Viewer3DHandle {
   spinOnce: () => void;
   resetCamera: () => void;
+  getCameraPosition: () => SavedCameraPosition | null;
+  applyCameraPosition: (position: SavedCameraPosition) => void;
 }
 
 export type SelectionButton = 'primary' | 'secondary';
 export type CameraMode = 'orbit' | 'spectator';
 export type PlacementPoint = CuboidCornerPoint;
 export type TextureAdjustmentMap = Record<string, TextureFaceAdjustment>;
+
+export interface SavedCameraPosition {
+  position: [number, number, number];
+  target: [number, number, number];
+}
 
 export interface TextureFaceAdjustment {
   offsetU: number;
@@ -100,6 +109,13 @@ interface SpectatorCameraState {
   baseSpeed: number;
   fastMultiplier: number;
   pointerLocked: boolean;
+}
+
+interface StageBackgroundTransition {
+  from: THREE.Color;
+  to: THREE.Color;
+  start: number;
+  duration: number;
 }
 
 interface InternalViewerProps extends Viewer3DProps {
@@ -140,8 +156,11 @@ const hiddenMaterial = new THREE.MeshBasicMaterial({
 const horizontalFaces = new Set<ModelFaceName>(['north', 'south', 'west', 'east']);
 const cuboidOverlayPadding = 0.018;
 const cornerLabelOffset = 0.86;
+const defaultSchematicRotationY = -Math.PI / 2;
+const meshBuildYieldInterval = 180;
 const labelProjectionVector = new THREE.Vector3();
 const rotationControlProjectionVector = new THREE.Vector3();
+const stageBackgroundTransitionDurationMs = 220;
 
 export function Viewer3D(props: InternalViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -149,12 +168,15 @@ export function Viewer3D(props: InternalViewerProps) {
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
+  const displayGroupRef = useRef<THREE.Group | null>(null);
   const modelGroupRef = useRef<THREE.Group | null>(null);
   const gridRef = useRef<THREE.Group | null>(null);
   const floorRef = useRef<THREE.Mesh | null>(null);
+  const floorShadowRef = useRef<THREE.Mesh | null>(null);
   const selectionBoxRef = useRef<THREE.LineSegments | null>(null);
   const placementPreviewRef = useRef<THREE.LineSegments | null>(null);
   const cuboidOverlayRef = useRef<THREE.Group | null>(null);
+  const stageBackgroundTransitionRef = useRef<StageBackgroundTransition | null>(null);
   const cornerLabelRefs = useRef<Record<'a' | 'b', HTMLSpanElement | null>>({ a: null, b: null });
   const frameRef = useRef<number | null>(null);
   const spinRef = useRef<{ start: number; duration: number; from: number; to: number } | null>(null);
@@ -164,6 +186,7 @@ export function Viewer3D(props: InternalViewerProps) {
   const latestPlacementPreviewBlockRef = useRef<VoxelBlock | null>(props.placementPreviewBlock);
   const latestCuboidBoundsRef = useRef<CuboidBounds | null | undefined>(props.cuboidBounds);
   const latestCuboidCornersRef = useRef<CuboidCornerPoints | null | undefined>(props.cuboidCorners);
+  const latestShowCuboidCornerLabelsRef = useRef(Boolean(props.showCuboidCornerLabels));
   const latestRotationTargetRef = useRef<'block' | 'cuboid' | null | undefined>(props.rotationTarget);
   const textureEditModeRef = useRef(Boolean(props.textureEditMode));
   const cameraModeRef = useRef<CameraMode>(props.cameraMode);
@@ -193,9 +216,10 @@ export function Viewer3D(props: InternalViewerProps) {
     if (!props.model) return [];
     return props.model.blocks.filter((block) =>
       !props.hiddenMaterialIds.has(blockMaterialId(block))
-      && (props.singleLayer ? block.y === props.visibleLayer : block.y <= props.visibleLayer),
+      && block.y >= props.visibleBottomLayer
+      && block.y <= props.visibleTopLayer,
     );
-  }, [props.hiddenMaterialIds, props.model, props.singleLayer, props.visibleLayer]);
+  }, [props.hiddenMaterialIds, props.model, props.visibleBottomLayer, props.visibleTopLayer]);
 
   useEffect(() => {
     latestModelRef.current = props.model;
@@ -217,6 +241,10 @@ export function Viewer3D(props: InternalViewerProps) {
   useEffect(() => {
     latestCuboidCornersRef.current = props.cuboidCorners;
   }, [props.cuboidCorners]);
+
+  useEffect(() => {
+    latestShowCuboidCornerLabelsRef.current = Boolean(props.showCuboidCornerLabels);
+  }, [props.showCuboidCornerLabels]);
 
   useEffect(() => {
     latestRotationTargetRef.current = props.rotationTarget;
@@ -262,7 +290,7 @@ export function Viewer3D(props: InternalViewerProps) {
 
     const scene = new THREE.Scene();
     const colors = sceneThemeColors(props.theme);
-    scene.background = new THREE.Color(colors.background);
+    scene.background = new THREE.Color(props.stageBackgroundColor ?? colors.background);
     scene.fog = null;
     sceneRef.current = scene;
 
@@ -303,33 +331,47 @@ export function Viewer3D(props: InternalViewerProps) {
 
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(400, 400),
-      new THREE.MeshStandardMaterial({ color: colors.floor, roughness: 0.94, metalness: 0.02 }),
+      new THREE.MeshBasicMaterial({ color: colors.floor }),
     );
     floorRef.current = floor;
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.56;
-    floor.receiveShadow = true;
     scene.add(floor);
+
+    const floorShadow = new THREE.Mesh(
+      new THREE.PlaneGeometry(400, 400),
+      new THREE.ShadowMaterial({ color: 0x000000, opacity: floorShadowOpacity(props.theme) }),
+    );
+    floorShadowRef.current = floorShadow;
+    floorShadow.rotation.x = -Math.PI / 2;
+    floorShadow.position.y = -0.559;
+    floorShadow.receiveShadow = true;
+    scene.add(floorShadow);
+
+    const displayGroup = new THREE.Group();
+    displayGroup.rotation.y = defaultSchematicRotationY;
+    displayGroupRef.current = displayGroup;
+    scene.add(displayGroup);
 
     const modelGroup = new THREE.Group();
     modelGroupRef.current = modelGroup;
-    scene.add(modelGroup);
+    displayGroup.add(modelGroup);
 
     const gridGroup = new THREE.Group();
     gridRef.current = gridGroup;
-    scene.add(gridGroup);
+    displayGroup.add(gridGroup);
 
     const selectionBox = createSelectionBox();
     selectionBoxRef.current = selectionBox;
-    scene.add(selectionBox);
+    displayGroup.add(selectionBox);
 
     const placementPreview = createPlacementPreviewBox();
     placementPreviewRef.current = placementPreview;
-    scene.add(placementPreview);
+    displayGroup.add(placementPreview);
 
     const cuboidOverlay = createCuboidOverlay(props.theme);
     cuboidOverlayRef.current = cuboidOverlay;
-    scene.add(cuboidOverlay);
+    displayGroup.add(cuboidOverlay);
 
     const resize = () => {
       const rect = container.getBoundingClientRect();
@@ -351,7 +393,7 @@ export function Viewer3D(props: InternalViewerProps) {
       pointerStart.y = event.clientY;
       renderer.domElement.focus();
       if (textureEditModeRef.current && event.button === 0 && cameraModeRef.current !== 'spectator') {
-        const hit = pickTextureFace(event, renderer, camera, modelGroup);
+        const hit = pickTextureFace(event, renderer, camera, modelGroup, displayGroup);
         if (hit) {
           event.preventDefault();
           textureDragStart = { x: event.clientX, y: event.clientY, hit };
@@ -385,6 +427,7 @@ export function Viewer3D(props: InternalViewerProps) {
         renderer,
         camera,
         modelGroup,
+        displayGroup,
         latestModelRef.current,
         latestBlockKeysRef.current,
       );
@@ -407,6 +450,7 @@ export function Viewer3D(props: InternalViewerProps) {
           renderer,
           camera,
           modelGroup,
+          displayGroup,
           latestModelRef.current,
           latestBlockKeysRef.current,
         ),
@@ -480,16 +524,19 @@ export function Viewer3D(props: InternalViewerProps) {
       if (controlsRef.current && cameraModeRef.current !== 'spectator') {
         const latestModel = latestModelRef.current;
         if (spinRef.current && latestModel) {
-          updateSpin(time, latestModel.dimensions, controlsRef.current, camera, spinRef);
+          updateSpin(time, cameraFitDimensions(latestModel), controlsRef.current, camera, spinRef);
         }
         controlsRef.current.update();
       }
 
+      updateStageBackgroundTransition(scene, time, stageBackgroundTransitionRef);
       onAxisOrientationChangeRef.current?.(projectAxisOrientation(camera));
       updateCuboidCornerLabels(
         cornerLabelRefs.current,
         latestCuboidCornersRef.current,
+        latestShowCuboidCornerLabelsRef.current && Boolean(latestCuboidBoundsRef.current),
         latestModelRef.current,
+        displayGroup,
         camera,
         renderer,
       );
@@ -499,6 +546,7 @@ export function Viewer3D(props: InternalViewerProps) {
         latestSelectedBlockRef.current,
         latestCuboidBoundsRef.current ?? null,
         latestModelRef.current,
+        displayGroup,
         camera,
         renderer,
       );
@@ -520,7 +568,20 @@ export function Viewer3D(props: InternalViewerProps) {
       resetCamera: () => {
         const model = latestModelRef.current;
         if (!model) return;
-        fitCameraToModel(model.dimensions, camera, controls);
+        fitCameraToModel(cameraFitDimensions(model), camera, controls);
+        syncSpectatorStateFromCamera(camera, spectatorStateRef.current);
+      },
+      getCameraPosition: () => ({
+        position: [camera.position.x, camera.position.y, camera.position.z],
+        target: [controls.target.x, controls.target.y, controls.target.z],
+      }),
+      applyCameraPosition: (position) => {
+        camera.position.set(...position.position);
+        controls.target.set(...position.target);
+        camera.near = 0.03;
+        camera.far = Math.max(camera.far, camera.position.distanceTo(controls.target) * 8, 500);
+        camera.updateProjectionMatrix();
+        controls.update();
         syncSpectatorStateFromCamera(camera, spectatorStateRef.current);
       },
     };
@@ -556,7 +617,9 @@ export function Viewer3D(props: InternalViewerProps) {
       cameraRef.current = null;
       rendererRef.current = null;
       controlsRef.current = null;
+      displayGroupRef.current = null;
       floorRef.current = null;
+      floorShadowRef.current = null;
       selectionBoxRef.current = null;
       placementPreviewRef.current = null;
       cuboidOverlayRef.current = null;
@@ -566,19 +629,29 @@ export function Viewer3D(props: InternalViewerProps) {
   useEffect(() => {
     const colors = sceneThemeColors(props.theme);
     if (sceneRef.current) {
-      sceneRef.current.background = new THREE.Color(colors.background);
+      transitionStageBackground(
+        sceneRef.current,
+        props.stageBackgroundColor ?? colors.background,
+        stageBackgroundTransitionRef,
+      );
     }
 
     const floorMaterial = floorRef.current?.material;
-    if (floorMaterial instanceof THREE.MeshStandardMaterial) {
+    if (floorMaterial instanceof THREE.MeshBasicMaterial) {
       floorMaterial.color.setHex(colors.floor);
       floorMaterial.needsUpdate = true;
+    }
+
+    const floorShadowMaterial = floorShadowRef.current?.material;
+    if (floorShadowMaterial instanceof THREE.ShadowMaterial) {
+      floorShadowMaterial.opacity = floorShadowOpacity(props.theme);
+      floorShadowMaterial.needsUpdate = true;
     }
 
     if (cuboidOverlayRef.current) {
       applyCuboidOverlayColors(cuboidOverlayRef.current, props.theme);
     }
-  }, [props.theme]);
+  }, [props.stageBackgroundColor, props.theme]);
 
   useEffect(() => {
     if (!controlsRef.current) return;
@@ -610,23 +683,34 @@ export function Viewer3D(props: InternalViewerProps) {
     const group = modelGroupRef.current;
     if (!group) return;
 
-    clearGroup(group, false);
-
-    if (!props.model) return;
+    if (!props.model) {
+      clearGroup(group, false);
+      return;
+    }
 
     let cancelled = false;
+    const abortController = new AbortController();
 
-    void createBlockMeshes(filteredBlocks, props.playerHeadSelections, props.textureAdjustments ?? {}).then((meshes) => {
-      if (cancelled) return;
+    void createBlockMeshes(
+      filteredBlocks,
+      props.playerHeadSelections,
+      props.textureAdjustments ?? {},
+      abortController.signal,
+    ).then((meshes) => {
+      if (cancelled || abortController.signal.aborted) return;
       clearGroup(group, false);
       for (const mesh of meshes) {
         group.add(mesh);
       }
       centerGroup(group, props.model!.dimensions);
+    }).catch((error: unknown) => {
+      if (isAbortError(error)) return;
+      console.error('Could not build schematic mesh.', error);
     });
 
     return () => {
       cancelled = true;
+      abortController.abort();
     };
   }, [filteredBlocks, props.model, props.playerHeadSelections, props.textureAdjustments]);
 
@@ -655,7 +739,8 @@ export function Viewer3D(props: InternalViewerProps) {
 
     const isVisible =
       !props.hiddenMaterialIds.has(blockMaterialId(block))
-      && (props.singleLayer ? block.y === props.visibleLayer : block.y <= props.visibleLayer);
+      && block.y >= props.visibleBottomLayer
+      && block.y <= props.visibleTopLayer;
     if (!isVisible) {
       selectionBox.visible = false;
       return;
@@ -689,8 +774,8 @@ export function Viewer3D(props: InternalViewerProps) {
     props.model,
     props.playerHeadSelections,
     props.selectedBlock,
-    props.singleLayer,
-    props.visibleLayer,
+    props.visibleBottomLayer,
+    props.visibleTopLayer,
   ]);
 
   useEffect(() => {
@@ -705,7 +790,7 @@ export function Viewer3D(props: InternalViewerProps) {
 
     if (!model || !camera || !controls) return;
 
-    fitCameraToModel(model.dimensions, camera, controls);
+    fitCameraToModel(cameraFitDimensions(model), camera, controls);
     syncSpectatorStateFromCamera(camera, spectatorStateRef.current);
   }, [cameraFitKey]);
 
@@ -724,7 +809,7 @@ export function Viewer3D(props: InternalViewerProps) {
   return (
     <div className="viewer-canvas" data-camera-mode={props.cameraMode} data-testid="viewer-canvas" ref={containerRef}>
       <span
-        className="cuboid-corner-label cuboid-corner-label-a"
+        className="cuboid-corner-tag cuboid-corner-tag-a"
         aria-hidden="true"
         ref={(node) => {
           cornerLabelRefs.current.a = node;
@@ -733,7 +818,7 @@ export function Viewer3D(props: InternalViewerProps) {
         A
       </span>
       <span
-        className="cuboid-corner-label cuboid-corner-label-b"
+        className="cuboid-corner-tag cuboid-corner-tag-b"
         aria-hidden="true"
         ref={(node) => {
           cornerLabelRefs.current.b = node;
@@ -964,7 +1049,10 @@ async function createBlockMeshes(
   blocks: VoxelBlock[],
   playerHeadSelections: Record<string, string>,
   textureAdjustments: TextureAdjustmentMap = {},
+  signal?: AbortSignal,
 ): Promise<THREE.InstancedMesh[]> {
+  throwIfAborted(signal);
+
   const groups = new Map<
     string,
     {
@@ -976,13 +1064,16 @@ async function createBlockMeshes(
   >();
   const states = Array.from(new Set(blocks.map((block) => renderStateKeyForBlock(block, playerHeadSelections))));
   const resolvedStates = await Promise.all(states.map(async (state) => [state, await resolveBlockParts(state)] as const));
+  throwIfAborted(signal);
   const partsByState = new Map(resolvedStates);
   const occludingFacesByBlock = new Map<string, Set<ModelFaceName>>();
   const boundaryFacesByBlock = new Map<string, Set<ModelFaceName>>();
   const translucentBoundaryFacesByBlock = new Map<string, Set<ModelFaceName>>();
   const partsByBlock = new Map<string, ResolvedBlockPart[]>();
 
-  for (const block of blocks) {
+  for (let index = 0; index < blocks.length; index += 1) {
+    if (index > 0 && index % meshBuildYieldInterval === 0) await yieldToMainThread(signal);
+    const block = blocks[index];
     const parts = partsByState.get(renderStateKeyForBlock(block, playerHeadSelections)) ?? [];
     partsByBlock.set(blockPositionKey(block), parts);
     occludingFacesByBlock.set(blockPositionKey(block), occludingFacesForParts(parts));
@@ -990,7 +1081,9 @@ async function createBlockMeshes(
     translucentBoundaryFacesByBlock.set(blockPositionKey(block), boundaryFacesForParts(parts, true));
   }
 
-  for (const block of blocks) {
+  for (let index = 0; index < blocks.length; index += 1) {
+    if (index > 0 && index % meshBuildYieldInterval === 0) await yieldToMainThread(signal);
+    const block = blocks[index];
     const parts = partsByState.get(renderStateKeyForBlock(block, playerHeadSelections)) ?? [];
 
     for (const part of parts) {
@@ -1023,29 +1116,55 @@ async function createBlockMeshes(
   const matrix = new THREE.Matrix4();
   const meshes: THREE.InstancedMesh[] = [];
 
-  for (const group of groups.values()) {
-    const geometry = geometryForPart(group.part, textureAdjustments);
-    const materials = materialsForPart(group.part, group.fallbackColor, group.hiddenFaces);
-    const mesh = new THREE.InstancedMesh(geometry, materials, group.blocks.length);
-    mesh.castShadow = false;
-    mesh.receiveShadow = true;
-    mesh.renderOrder = partHasTranslucentFaces(group.part) ? 10 : 0;
+  try {
+    for (const group of groups.values()) {
+      throwIfAborted(signal);
 
-    const quaternion = new THREE.Quaternion().setFromEuler(variantEuler(group.part));
-    const scale = new THREE.Vector3(1, 1, 1);
+      const geometry = geometryForPart(group.part, textureAdjustments);
+      const materials = materialsForPart(group.part, group.fallbackColor, group.hiddenFaces);
+      const mesh = new THREE.InstancedMesh(geometry, materials, group.blocks.length);
+      mesh.castShadow = false;
+      mesh.receiveShadow = true;
+      mesh.renderOrder = partHasTranslucentFaces(group.part) ? 10 : 0;
 
-    group.blocks.forEach((block, index) => {
-      matrix.compose(new THREE.Vector3(block.x, block.y, block.z), quaternion, scale);
-      mesh.setMatrixAt(index, matrix);
-    });
+      const quaternion = new THREE.Quaternion().setFromEuler(variantEuler(group.part));
+      const scale = new THREE.Vector3(1, 1, 1);
 
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.userData.blocks = group.blocks;
-    mesh.userData.part = group.part;
-    meshes.push(mesh);
+      for (let index = 0; index < group.blocks.length; index += 1) {
+        if (index > 0 && index % meshBuildYieldInterval === 0) await yieldToMainThread(signal);
+        const block = group.blocks[index];
+        matrix.compose(new THREE.Vector3(block.x, block.y, block.z), quaternion, scale);
+        mesh.setMatrixAt(index, matrix);
+      }
+
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.userData.blocks = group.blocks;
+      mesh.userData.part = group.part;
+      meshes.push(mesh);
+    }
+  } catch (error) {
+    meshes.length = 0;
+    throw error;
   }
 
   return meshes;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  throw new DOMException('Mesh build aborted.', 'AbortError');
+}
+
+async function yieldToMainThread(signal?: AbortSignal): Promise<void> {
+  throwIfAborted(signal);
+  await new Promise<void>((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
+  throwIfAborted(signal);
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
 }
 
 function blockPositionKey(block: VoxelBlock): string {
@@ -1357,14 +1476,16 @@ function updateCuboidOverlay(
 function updateCuboidCornerLabels(
   labels: Record<'a' | 'b', HTMLSpanElement | null>,
   corners: CuboidCornerPoints | null | undefined,
+  shouldShow: boolean,
   model: SchematicModel | null,
+  displayGroup: THREE.Group,
   camera: THREE.PerspectiveCamera,
   renderer: THREE.WebGLRenderer,
 ) {
   for (const corner of ['a', 'b'] as const) {
     const label = labels[corner];
     const point = corners?.[corner];
-    if (!label || !point || !model) {
+    if (!label || !shouldShow || !point || !model) {
       if (label) label.classList.remove('is-visible');
       continue;
     }
@@ -1374,6 +1495,7 @@ function updateCuboidCornerLabels(
       point.y + cornerLabelOffset,
       point.z - (model.dimensions.length - 1) / 2,
     );
+    displayGroup.localToWorld(labelProjectionVector);
     labelProjectionVector.project(camera);
 
     if (
@@ -1400,6 +1522,7 @@ function updateRotationControlPosition(
   selectedBlock: VoxelBlock | null,
   cuboidBounds: CuboidBounds | null,
   model: SchematicModel | null,
+  displayGroup: THREE.Group,
   camera: THREE.PerspectiveCamera,
   renderer: THREE.WebGLRenderer,
 ) {
@@ -1432,6 +1555,7 @@ function updateRotationControlPosition(
     );
   }
 
+  displayGroup.localToWorld(rotationControlProjectionVector);
   rotationControlProjectionVector.project(camera);
 
   if (
@@ -1551,6 +1675,7 @@ function pickTextureFace(
   renderer: THREE.WebGLRenderer,
   camera: THREE.PerspectiveCamera,
   modelGroup: THREE.Group,
+  displayGroup: THREE.Group,
 ): TextureFaceHit | null {
   const hit = pickModelIntersection(event, renderer, camera, modelGroup);
   if (!hit || hit.instanceId === undefined) return null;
@@ -1564,7 +1689,7 @@ function pickTextureFace(
   const materialIndex = hit.face?.materialIndex;
   const face = typeof materialIndex === 'number' && faceOrder[materialIndex]
     ? faceOrder[materialIndex]
-    : faceFromIntersectionNormal(hit, mesh);
+    : faceFromIntersectionNormal(hit, mesh, displayGroup);
 
   return {
     block,
@@ -1579,6 +1704,7 @@ function pickPlacementPoint(
   renderer: THREE.WebGLRenderer,
   camera: THREE.PerspectiveCamera,
   modelGroup: THREE.Group,
+  displayGroup: THREE.Group,
   model: SchematicModel | null,
   occupiedBlockKeys: Set<string>,
 ): PlacementPoint | null {
@@ -1592,7 +1718,7 @@ function pickPlacementPoint(
   const block = blocks?.[hit.instanceId];
   if (!block) return null;
 
-  const face = faceFromIntersectionNormal(hit, mesh);
+  const face = faceFromIntersectionNormal(hit, mesh, displayGroup);
   const offset = faceOffsets[face];
   const point = {
     x: block.x + offset[0],
@@ -1641,14 +1767,21 @@ function pickModelIntersection(
   return intersections.find((intersection) => intersection.instanceId !== undefined) ?? null;
 }
 
-function faceFromIntersectionNormal(hit: THREE.Intersection, mesh: THREE.InstancedMesh): ModelFaceName {
+function faceFromIntersectionNormal(
+  hit: THREE.Intersection,
+  mesh: THREE.InstancedMesh,
+  displayGroup: THREE.Group,
+): ModelFaceName {
   const normal = hit.face?.normal.clone() ?? new THREE.Vector3(0, 1, 0);
   const matrix = new THREE.Matrix4();
+  const displayRotation = new THREE.Quaternion();
   if (hit.instanceId !== undefined) {
     mesh.getMatrixAt(hit.instanceId, matrix);
     normal.transformDirection(matrix);
   }
   normal.transformDirection(mesh.matrixWorld).normalize();
+  displayGroup.getWorldQuaternion(displayRotation);
+  normal.applyQuaternion(displayRotation.invert()).normalize();
 
   let bestFace: ModelFaceName = 'up';
   let bestDot = -Infinity;
@@ -2025,7 +2158,7 @@ function textureMaterial(
   const water = isWaterTexture(textureId);
   const transparent = textureRendersTransparent(textureId, translucent);
   const opacity = transparent ? translucentTextureOpacity(textureId) : 1;
-  const side = THREE.FrontSide;
+  const side = cutoutTextureNeedsDoubleSide(textureId) ? THREE.DoubleSide : THREE.FrontSide;
 
   const material = shade
     ? new THREE.MeshStandardMaterial({
@@ -2173,6 +2306,26 @@ function isCrossPlaneFlowerTexture(path: string): boolean {
   return /^block\/(allium|azure_bluet|blue_orchid|dandelion|golden_dandelion|lily_of_the_valley|oxeye_daisy|poppy|.*_tulip)$/.test(path);
 }
 
+function cutoutTextureNeedsDoubleSide(textureId: string): boolean {
+  const path = textureId.replace(/^minecraft:/, '');
+  return (
+    path.includes('grass')
+    || path.includes('fern')
+    || path.includes('bush')
+    || path.includes('roots')
+    || path.includes('vines')
+    || path.includes('flower')
+    || isCrossPlaneFlowerTexture(path)
+    || /(^|\/)(wheat|carrots|potatoes|beetroots|nether_wart)_stage\d+$/.test(path)
+    || path.includes('crop')
+    || path.includes('sapling')
+    || path.includes('coral')
+    || path.includes('mushroom')
+    || path.includes('amethyst_bud')
+    || path.includes('dripstone')
+  );
+}
+
 function isGlassTexture(textureId: string): boolean {
   const path = textureId.replace(/^minecraft:/, '');
   return path === 'block/glass' || /(^|\/).+_stained_glass(_pane_top)?$/.test(path) || path === 'block/tinted_glass';
@@ -2258,19 +2411,38 @@ function fitCameraToModel(
   controls: OrbitControls,
 ) {
   const target = new THREE.Vector3(0, Math.max(0, dimensions.height / 2 - 0.5), 0);
-  const radius = Math.max(dimensions.width, dimensions.length, dimensions.height, 8);
+  const horizontalRadius = Math.hypot(dimensions.width, dimensions.length) * 0.5;
+  const verticalRadius = Math.max(1, dimensions.height * 0.62);
+  const radius = Math.max(horizontalRadius, verticalRadius, 6);
+  const distance = radius / Math.sin(THREE.MathUtils.degToRad(camera.fov * 0.5)) * 1.06;
+  const direction = new THREE.Vector3(-0.92, 0.64, -1).normalize();
   controls.target.copy(target);
-  controls.maxDistance = Math.max(240, radius * 6);
-  camera.position.set(radius * -1.35, radius * 0.95 + dimensions.height * 0.4, radius * -1.45);
+  controls.maxDistance = Math.max(240, distance * 4);
+  camera.position.copy(target).add(direction.multiplyScalar(distance));
   camera.near = 0.03;
-  camera.far = Math.max(500, radius * 12);
+  camera.far = Math.max(500, distance * 8);
   camera.updateProjectionMatrix();
+  camera.lookAt(target);
   controls.update();
 }
 
 function modelCameraFitKey(model: SchematicModel): string {
   const { width, height, length } = model.dimensions;
-  return `${width}x${height}x${length}`;
+  return `${width}x${height}x${length}:${cameraFitDimensions(model).height}`;
+}
+
+function cameraFitDimensions(model: SchematicModel): SchematicDimensions {
+  let occupiedTopLayer = -1;
+
+  for (const block of model.blocks) {
+    occupiedTopLayer = Math.max(occupiedTopLayer, block.y);
+  }
+
+  return {
+    width: model.dimensions.width,
+    height: occupiedTopLayer >= 0 ? occupiedTopLayer + 1 : model.dimensions.height,
+    length: model.dimensions.length,
+  };
 }
 
 function updateSpin(
@@ -2304,8 +2476,60 @@ function centerGroup(group: THREE.Group, dimensions: SchematicDimensions) {
 
 function sceneThemeColors(theme: 'light' | 'dark') {
   return theme === 'dark'
-    ? { background: 0x101719, floor: 0x131d1f, grid: 0x6f8987, cuboidFill: 0x28c4bd, cuboidEdge: 0x62e4df }
-    : { background: 0xf4f8f8, floor: 0xe8eeee, grid: 0x4d5b54, cuboidFill: 0x0f7f80, cuboidEdge: 0x086f74 };
+    ? { background: 0x25303a, floor: 0x303c45, grid: 0x6f8987, cuboidFill: 0x28c4bd, cuboidEdge: 0x62e4df }
+    : { background: 0xf1f5f8, floor: 0xf1f5f8, grid: 0x4d5b54, cuboidFill: 0x0f7f80, cuboidEdge: 0x086f74 };
+}
+
+function floorShadowOpacity(theme: 'light' | 'dark') {
+  return theme === 'dark' ? 0.3 : 0.16;
+}
+
+function transitionStageBackground(
+  scene: THREE.Scene,
+  target: string | number,
+  transitionRef: MutableRefObject<StageBackgroundTransition | null>,
+  delayMs = 0,
+) {
+  const next = new THREE.Color(target);
+  const current = scene.background instanceof THREE.Color
+    ? scene.background.clone()
+    : next.clone();
+
+  if (current.equals(next)) {
+    scene.background = next;
+    transitionRef.current = null;
+    return;
+  }
+
+  transitionRef.current = {
+    from: current,
+    to: next,
+    start: performance.now() + delayMs,
+    duration: stageBackgroundTransitionDurationMs,
+  };
+}
+
+function updateStageBackgroundTransition(
+  scene: THREE.Scene,
+  time: number,
+  transitionRef: MutableRefObject<StageBackgroundTransition | null>,
+) {
+  const transition = transitionRef.current;
+  if (!transition) return;
+
+  if (time < transition.start) {
+    scene.background = transition.from.clone();
+    return;
+  }
+
+  const progress = Math.min(1, (time - transition.start) / transition.duration);
+  const eased = 1 - Math.pow(1 - progress, 3);
+  scene.background = transition.from.clone().lerp(transition.to, eased);
+
+  if (progress >= 1) {
+    scene.background = transition.to.clone();
+    transitionRef.current = null;
+  }
 }
 
 function createFootprintGrid(dimensions: SchematicDimensions, theme: 'light' | 'dark'): THREE.LineSegments {
