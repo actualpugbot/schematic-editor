@@ -1,7 +1,6 @@
 import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   Box,
-  BoxSelect,
   Brush,
   Check,
   CheckCircle2,
@@ -3578,16 +3577,24 @@ function App() {
                   {shulkerViewMode === 'type' && (
                     <button
                       type="button"
-                      className={`secondary-button shulker-consolidate-button${shulkerTypeAutoConsolidated ? ' is-active' : ''}`}
+                      className={`shulker-consolidate-button${shulkerTypeAutoConsolidated ? ' is-active' : ''}`}
                       onClick={() => setShulkerTypeAutoConsolidated((current) => !current)}
                       disabled={shulkerConsolidatableBoxCount < 2}
-                      aria-pressed={shulkerTypeAutoConsolidated}
+                      role="switch"
+                      aria-checked={shulkerTypeAutoConsolidated}
                       title={shulkerConsolidatableBoxCount < 2
                         ? 'At least two boxes under half full are needed'
                         : 'Combine boxes with fewer than half their slots filled'}
                     >
-                      <BoxSelect size={16} aria-hidden="true" />
-                      {shulkerTypeAutoConsolidated ? 'Consolidated' : 'Auto-consolidate'}
+                      <span className="shulker-consolidate-copy">
+                        <span className="shulker-consolidate-label">Auto-consolidate</span>
+                        <span className="shulker-consolidate-subtitle">Group similar items</span>
+                      </span>
+                      <span className="shulker-consolidate-switch" aria-hidden="true">
+                        <span className="shulker-consolidate-thumb">
+                          <Check size={13} strokeWidth={3} />
+                        </span>
+                      </span>
                     </button>
                   )}
                   <div className="segmented-control shulker-mode-toggle" role="group" aria-label="Organize shulker boxes">
