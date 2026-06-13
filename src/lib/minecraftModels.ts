@@ -1581,16 +1581,19 @@ function syntheticBannerParts(
     y: variantRotation.y + (wallMounted ? horizontalFacingRotation(properties.facing) : headRotationFromProperty(properties.rotation)),
   };
   // Vanilla banners stand roughly two blocks tall (the cloth is a 20x40 entity
-  // flag scaled 2/3). A wall banner hides the pole, hangs against the +Z (south)
-  // wall for facing=north, and drops down into the block below.
+  // flag scaled 2/3). The standing cloth hangs flush against the front (−Z) face
+  // of the pole rather than slicing through its centre, just like the vanilla
+  // flag. A wall banner's cloth hangs in front of a short wooden bracket that
+  // reaches back to the +Z (south) support wall (authored for facing=north); the
+  // cloth covers the bracket from the front and drops down into the block below.
   const cloth = wallMounted
     ? syntheticCuboidPart(id, properties, `banner:wall:${bannerTexture}`, [1.5, -11, 14], [14.5, 14, 15], bannerTexture, rotation)
-    : syntheticCuboidPart(id, properties, `banner:standing:${bannerTexture}`, [1.5, 1, 7.9], [14.5, 28.5, 8.45], bannerTexture, rotation);
+    : syntheticCuboidPart(id, properties, `banner:standing:${bannerTexture}`, [1.5, 1, 6.7], [14.5, 28.5, 7.25], bannerTexture, rotation);
 
   if (wallMounted) {
     return [
       cloth,
-      syntheticCuboidPart(id, properties, `banner:wall-bar:${poleTexture}`, [1.5, 14, 14], [14.5, 15.5, 15], poleTexture, rotation),
+      syntheticCuboidPart(id, properties, `banner:wall-bracket:${poleTexture}`, [1.5, 12, 15], [14.5, 14, 16], poleTexture, rotation),
     ];
   }
 
