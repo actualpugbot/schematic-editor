@@ -100,6 +100,7 @@ export type ModelFaceUv = [number, number, number, number];
 
 const assetRoot = `${import.meta.env.BASE_URL}minecraft-assets/assets/minecraft`;
 const playerHeadTexturePrefix = 'SchematicEditor:entity/player/head/';
+const endPortalTextureId = 'SchematicEditor:block/end_portal';
 const solidTexturePrefix = 'SchematicEditor:block/solid/';
 const blockstateCache = new Map<string, Promise<BlockstateJson | null>>();
 const modelCache = new Map<string, Promise<ModelJson | null>>();
@@ -125,6 +126,30 @@ const defaultPlayerSkinSvg = `
   <rect x="40" y="0" width="8" height="8" fill="#4d2e1d" opacity=".95"/>
   <rect x="48" y="0" width="8" height="8" fill="#2f1a10" opacity=".95"/>
   <rect x="40" y="8" width="8" height="3" fill="#2f1a10" opacity=".95"/>
+</svg>`.trim();
+// The end portal/gateway have no block model; vanilla draws them with a
+// star-field shader. We can't reproduce the shader, so approximate it with a
+// dark star-field tile that reads as "deep space" rather than a missing block.
+const endPortalSvg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges">
+  <rect width="16" height="16" fill="#0a0a18"/>
+  <rect x="1" y="2" width="1" height="1" fill="#c9bdff"/>
+  <rect x="4" y="0" width="1" height="1" fill="#ffffff" opacity=".8"/>
+  <rect x="6" y="3" width="1" height="1" fill="#8fd6ff"/>
+  <rect x="9" y="1" width="1" height="1" fill="#ffffff"/>
+  <rect x="12" y="2" width="1" height="1" fill="#b7a6ff" opacity=".9"/>
+  <rect x="14" y="4" width="1" height="1" fill="#ffffff" opacity=".7"/>
+  <rect x="2" y="6" width="1" height="1" fill="#9ad7ff" opacity=".8"/>
+  <rect x="7" y="7" width="1" height="1" fill="#ffffff"/>
+  <rect x="11" y="6" width="1" height="1" fill="#d3c6ff" opacity=".85"/>
+  <rect x="0" y="10" width="1" height="1" fill="#ffffff" opacity=".7"/>
+  <rect x="5" y="11" width="1" height="1" fill="#a9c4ff"/>
+  <rect x="9" y="10" width="1" height="1" fill="#ffffff" opacity=".85"/>
+  <rect x="13" y="9" width="1" height="1" fill="#bca7ff"/>
+  <rect x="3" y="14" width="1" height="1" fill="#ffffff" opacity=".75"/>
+  <rect x="8" y="13" width="1" height="1" fill="#8fd6ff" opacity=".9"/>
+  <rect x="12" y="14" width="1" height="1" fill="#ffffff" opacity=".8"/>
+  <rect x="15" y="12" width="1" height="1" fill="#cabfff" opacity=".8"/>
 </svg>`.trim();
 
 export function parseBlockStateKey(stateKey: string): BlockStateInfo {
@@ -1528,6 +1553,9 @@ function syntheticBlockParts(
   const barrierParts = syntheticBarrierParts(id, properties, variantRotation);
   if (barrierParts.length > 0) return barrierParts;
 
+  const endPortalParts = syntheticEndPortalParts(id, properties, variantRotation);
+  if (endPortalParts.length > 0) return endPortalParts;
+
   const piglinHeadParts = syntheticPiglinHeadParts(id, properties, variantRotation);
   if (piglinHeadParts.length > 0) return piglinHeadParts;
 
@@ -1609,6 +1637,27 @@ function syntheticBarrierParts(
   // so only the centered symbol shows and the block still reads as empty.
   return [
     syntheticCuboidPart(id, properties, 'barrier:icon', [0, 0, 0], [16, 16, 16], 'minecraft:item/barrier', variantRotation),
+  ];
+}
+
+// The end portal and end gateway have empty block models — vanilla draws them
+// with TheEndPortalRenderer (a star-field shader), so without help they fall
+// back to the missing-block cube. Approximate the surface with a star-field
+// texture. The portal occupies its collision band (y 6-12); the gateway fills
+// the whole block.
+function syntheticEndPortalParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (id !== 'minecraft:end_portal' && id !== 'minecraft:end_gateway') return [];
+
+  const isGateway = id === 'minecraft:end_gateway';
+  const from: [number, number, number] = isGateway ? [0, 0, 0] : [0, 6, 0];
+  const to: [number, number, number] = isGateway ? [16, 16, 16] : [16, 12, 16];
+
+  return [
+    syntheticCuboidPart(id, properties, 'end-portal:surface', from, to, endPortalTextureId, variantRotation),
   ];
 }
 
@@ -3043,6 +3092,10 @@ export function textureUrl(textureId: string): string {
 
   if (normalized === 'SchematicEditor:entity/player/default') {
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(defaultPlayerSkinSvg)}`;
+  }
+
+  if (normalized === endPortalTextureId) {
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(endPortalSvg)}`;
   }
 
   if (normalized.startsWith(playerHeadTexturePrefix)) {
