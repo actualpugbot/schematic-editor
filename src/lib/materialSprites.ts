@@ -1,4 +1,4 @@
-const assetRoot = `${import.meta.env.BASE_URL}minecraft-assets/assets/minecraft`;
+import { textureUrl } from './minecraftModels';
 
 let materialSpriteLookup: Record<string, string> = {};
 let materialSpriteLookupPromise: Promise<void> | null = null;
@@ -23,6 +23,5 @@ function normalizeMaterialSpriteId(stateKey: string): string {
 }
 
 function textureRefToUrl(textureRef: string): string {
-  const normalized = textureRef.replace(/^minecraft:/, '');
-  return `${assetRoot}/textures/${normalized}.png`;
+  return textureUrl(textureRef);
 }

@@ -8,7 +8,11 @@ const blockstatesRoot = process.argv[2]
 const outputPath = path.join(process.cwd(), 'src/lib/data/block_ids.generated.json');
 
 async function main() {
-  const files = (await readdir(blockstatesRoot)).filter((file) => file.endsWith('.json')).sort();
+  // `*_asset.json` files are ad-blocker-safe alias copies of real blockstates
+  // (see adBlockedAssetAliases in src/lib/minecraftModels.ts), not blocks.
+  const files = (await readdir(blockstatesRoot))
+    .filter((file) => file.endsWith('.json') && !file.endsWith('_asset.json'))
+    .sort();
   const blockIds = files.map((file) => `minecraft:${file.slice(0, -5)}`);
 
   await mkdir(path.dirname(outputPath), { recursive: true });

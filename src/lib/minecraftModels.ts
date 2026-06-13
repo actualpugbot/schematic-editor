@@ -2722,7 +2722,7 @@ async function loadBlockstate(id: string): Promise<BlockstateJson | null> {
   const cached = blockstateCache.get(normalized);
   if (cached) return cached;
 
-  const promise = fetchJson<BlockstateJson>(`${assetRoot}/blockstates/${resourcePath(normalized)}.json`);
+  const promise = fetchJson<BlockstateJson>(`${assetRoot}/${adSafeAssetPath('blockstates', resourcePath(normalized))}.json`);
   blockstateCache.set(normalized, promise);
   return promise;
 }
@@ -2732,7 +2732,7 @@ async function loadModel(id: string): Promise<ModelJson | null> {
   const cached = modelCache.get(normalized);
   if (cached) return cached;
 
-  const promise = fetchJson<ModelJson>(`${assetRoot}/models/${resourcePath(normalized)}.json`);
+  const promise = fetchJson<ModelJson>(`${assetRoot}/${adSafeAssetPath('models', resourcePath(normalized))}.json`);
   modelCache.set(normalized, promise);
   return promise;
 }
@@ -2767,6 +2767,21 @@ function resourcePath(id: string): string {
   return path;
 }
 
+// Ad-blocker filter lists block URLs whose file name starts with "beacon."
+// (EasyPrivacy's "/beacon.js" rule also matches "/beacon.json"), which makes
+// the beacon render as a fallback cube for anyone running an ad blocker.
+// Fetch those assets through alias copies whose names no filter matches.
+const adBlockedAssetAliases = new Map<string, string>([
+  ['blockstates/beacon', 'blockstates/beacon_asset'],
+  ['models/block/beacon', 'models/block/beacon_asset'],
+  ['textures/block/beacon', 'textures/block/beacon_asset'],
+]);
+
+function adSafeAssetPath(folder: 'blockstates' | 'models' | 'textures', resource: string): string {
+  const path = `${folder}/${resource}`;
+  return adBlockedAssetAliases.get(path) ?? path;
+}
+
 export function textureUrl(textureId: string): string {
   const normalized = normalizeResourceId(textureId, 'block');
   if (normalized.startsWith(solidTexturePrefix)) {
@@ -2787,5 +2802,5 @@ export function textureUrl(textureId: string): string {
     return `https://textures.minecraft.net/texture/${normalized.slice(playerHeadTexturePrefix.length)}`;
   }
 
-  return `${assetRoot}/textures/${resourcePath(normalized)}.png`;
+  return `${assetRoot}/${adSafeAssetPath('textures', resourcePath(normalized))}.png`;
 }
