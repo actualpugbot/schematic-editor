@@ -2249,13 +2249,21 @@ function textureShouldWriteDepth(textureId: string, translucent: boolean, part: 
 }
 
 function configureMinecraftTexture(texture: THREE.Texture, textureId: string) {
-  const cutout = isAlphaCutoutTexture(textureId);
+  // Entity textures (skins, skulls, chests, beds, …) are atlases that the
+  // block-entity models sample by sub-region. Mipmapping averages a region
+  // with its neighbours, so a small head bleeds the adjacent body/shirt colour
+  // onto its edges. Vanilla never mipmaps entity textures — match that.
+  const noMipmaps = isAlphaCutoutTexture(textureId) || isEntityTexture(textureId);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.magFilter = THREE.NearestFilter;
-  texture.minFilter = cutout ? THREE.NearestFilter : THREE.NearestMipmapNearestFilter;
-  texture.generateMipmaps = !cutout;
+  texture.minFilter = noMipmaps ? THREE.NearestFilter : THREE.NearestMipmapNearestFilter;
+  texture.generateMipmaps = !noMipmaps;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
+}
+
+function isEntityTexture(textureId: string): boolean {
+  return textureId.includes('entity/');
 }
 
 function cropAnimatedTextureToFirstFrame(texture: THREE.Texture) {

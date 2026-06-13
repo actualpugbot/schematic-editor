@@ -100,7 +100,6 @@ export type ModelFaceUv = [number, number, number, number];
 
 const assetRoot = `${import.meta.env.BASE_URL}minecraft-assets/assets/minecraft`;
 const playerHeadTexturePrefix = 'SchematicEditor:entity/player/head/';
-const piglinHeadTextureId = 'SchematicEditor:entity/piglin/default';
 const solidTexturePrefix = 'SchematicEditor:block/solid/';
 const blockstateCache = new Map<string, Promise<BlockstateJson | null>>();
 const modelCache = new Map<string, Promise<ModelJson | null>>();
@@ -126,28 +125,6 @@ const defaultPlayerSkinSvg = `
   <rect x="40" y="0" width="8" height="8" fill="#4d2e1d" opacity=".95"/>
   <rect x="48" y="0" width="8" height="8" fill="#2f1a10" opacity=".95"/>
   <rect x="40" y="8" width="8" height="3" fill="#2f1a10" opacity=".95"/>
-</svg>`.trim();
-const defaultPiglinHeadSvg = `
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" shape-rendering="crispEdges">
-  <rect width="64" height="64" fill="none"/>
-  <rect x="0" y="8" width="8" height="8" fill="#d49a6a"/>
-  <rect x="8" y="8" width="8" height="8" fill="#e4ac76"/>
-  <rect x="16" y="8" width="8" height="8" fill="#c9815f"/>
-  <rect x="24" y="8" width="8" height="8" fill="#8f523f"/>
-  <rect x="8" y="0" width="8" height="8" fill="#b56f55"/>
-  <rect x="16" y="0" width="8" height="8" fill="#c9815f"/>
-  <rect x="8" y="8" width="8" height="2" fill="#8f523f"/>
-  <rect x="9" y="11" width="2" height="2" fill="#2b2020"/>
-  <rect x="13" y="11" width="2" height="2" fill="#2b2020"/>
-  <rect x="10" y="13" width="4" height="2" fill="#c46c75"/>
-  <rect x="10" y="15" width="1" height="1" fill="#7a3a3e"/>
-  <rect x="13" y="15" width="1" height="1" fill="#7a3a3e"/>
-  <rect x="32" y="8" width="8" height="8" fill="#9e6b50" opacity=".95"/>
-  <rect x="40" y="8" width="8" height="8" fill="#c18362" opacity=".95"/>
-  <rect x="48" y="8" width="8" height="8" fill="#935845" opacity=".95"/>
-  <rect x="56" y="8" width="8" height="8" fill="#6f4334" opacity=".95"/>
-  <rect x="40" y="0" width="8" height="8" fill="#aa6f56" opacity=".95"/>
-  <rect x="48" y="0" width="8" height="8" fill="#7d4838" opacity=".95"/>
 </svg>`.trim();
 
 export function parseBlockStateKey(stateKey: string): BlockStateInfo {
@@ -1827,6 +1804,47 @@ function skullRotation(
   };
 }
 
+// A cube from a Minecraft entity model: the box's min corner + size in model
+// units, its texture offset, and an optional per-cube rotation.
+interface EntityModelCube {
+  name: string;
+  from: [number, number, number];
+  size: [number, number, number];
+  texOffs: [number, number];
+  rotation?: { axis: 'x' | 'y' | 'z'; angle: number; pivot: [number, number, number] };
+}
+
+// Convert an entity-model cube into a block-space cuboid. Entity models build
+// downward (+Y points down, which the skull renderer flips), so block Y is
+// negated; X/Z are translated by the offset to seat the head in the block. The
+// offset also selects the mount: floor heads sit on the block bottom, wall
+// heads are raised and pushed against the +Z support wall (then rotated to the
+// facing by skullRotation). Sizes and texOffs come straight from the model, so
+// entityCubeUvs maps each face to the correct region of the entity texture.
+function entityModelCuboid(cube: EntityModelCube, offset: [number, number, number]): BlockEntityCuboid {
+  const [ox, oy, oz] = offset;
+  const [fx, fy, fz] = cube.from;
+  const [w, h, d] = cube.size;
+  const from: [number, number, number] = [fx + ox, oy - fy - h, fz + oz];
+  const to: [number, number, number] = [fx + w + ox, oy - fy, fz + d + oz];
+
+  let elementRotation: ModelElementRotation | undefined;
+  if (cube.rotation) {
+    const [px, py, pz] = cube.rotation.pivot;
+    // The Y flip mirrors the model, reversing the sense of X/Z rotations.
+    const angle = cube.rotation.axis === 'y' ? cube.rotation.angle : -cube.rotation.angle;
+    elementRotation = { axis: cube.rotation.axis, angle, origin: [px + ox, oy - py, pz + oz] };
+  }
+
+  return { name: cube.name, from, to, textureOrigin: cube.texOffs, elementRotation };
+}
+
+// Mount offsets shared by the model-based heads (piglin, dragon). Floor heads
+// sit on the block bottom; wall heads are raised by 4 and pushed back by 4 so
+// they hang on the +Z support wall (matching the skull/player wall geometry).
+const floorHeadOffset: [number, number, number] = [8, 0, 8];
+const wallHeadOffset: [number, number, number] = [8, 4, 12];
+
 function syntheticPlayerHeadParts(
   id: string,
   properties: Record<string, string>,
@@ -1839,10 +1857,12 @@ function syntheticPlayerHeadParts(
   const baseCuboid: BlockEntityCuboid = wallMounted
     ? { name: 'base', from: [4, 4, 8], to: [12, 12, 16], textureOrigin: [0, 0] }
     : { name: 'base', from: [4, 0, 4], to: [12, 8, 12], textureOrigin: [0, 0] };
-  // Hat overlay: head box inflated 0.25px on every face (vanilla CubeDeformation 0.25).
+  // Hat overlay: head box inflated 0.25px on every face (vanilla CubeDeformation
+  // 0.25). The geometry grows but the texture region stays the original 8x8x8
+  // hat box at (32, 0) — without uvSize the UVs would overreach into the body.
   const hatCuboid: BlockEntityCuboid = wallMounted
-    ? { name: 'hat', from: [3.75, 3.75, 7.75], to: [12.25, 12.25, 16.25], textureOrigin: [32, 0] }
-    : { name: 'hat', from: [3.75, -0.25, 3.75], to: [12.25, 8.25, 12.25], textureOrigin: [32, 0] };
+    ? { name: 'hat', from: [3.75, 3.75, 7.75], to: [12.25, 12.25, 16.25], textureOrigin: [32, 0], uvSize: [8, 8, 8] }
+    : { name: 'hat', from: [3.75, -0.25, 3.75], to: [12.25, 8.25, 12.25], textureOrigin: [32, 0], uvSize: [8, 8, 8] };
   const texture = playerHeadTextureId(properties.SchematicEditor_head);
 
   return [baseCuboid, hatCuboid].map((cuboid) =>
@@ -1904,10 +1924,19 @@ function isWallSkullBlock(id: string): boolean {
   return path.endsWith('_wall_skull') || path.endsWith('_wall_head');
 }
 
-// The ender dragon head reuses the dragon entity model's head + jaw. We
-// approximate it with the head's main cuboids (cranium, snout, jaw, two horns)
-// drawn from the 256x256 dragon texture. The snout/jaw protrude past the front
-// face (negative Z) and the horns poke above the block, matching the entity.
+// The ender dragon head/jaw, straight from the EnderDragon entity model (head
+// faces -Z). The snout and jaw protrude well past the front face, the cranium
+// fills the block, and the horns poke above it — matching the vanilla block.
+const DRAGON_HEAD_CUBES: EntityModelCube[] = [
+  { name: 'cranium', from: [-8, -8, -10], size: [16, 16, 16], texOffs: [112, 30] },
+  { name: 'snout', from: [-6, -1, -24], size: [12, 5, 16], texOffs: [176, 44] },
+  { name: 'jaw', from: [-6, 4, -24], size: [12, 5, 16], texOffs: [176, 65] },
+  { name: 'left-horn', from: [-5, -12, -4], size: [2, 4, 6], texOffs: [0, 0] },
+  { name: 'right-horn', from: [3, -12, -4], size: [2, 4, 6], texOffs: [0, 0] },
+  { name: 'left-nostril', from: [-5, -3, -22], size: [2, 2, 4], texOffs: [112, 0] },
+  { name: 'right-nostril', from: [3, -3, -22], size: [2, 2, 4], texOffs: [112, 0] },
+];
+
 function syntheticDragonHeadParts(
   id: string,
   properties: Record<string, string>,
@@ -1917,20 +1946,35 @@ function syntheticDragonHeadParts(
 
   const wallMounted = id === 'minecraft:dragon_wall_head';
   const rotation = skullRotation(wallMounted, properties, variantRotation);
-  const texture = 'minecraft:entity/enderdragon/dragon';
-  const size: [number, number] = [256, 256];
-  const cuboids: BlockEntityCuboid[] = [
-    { name: 'cranium', from: [2, 4, 1], to: [14, 16, 13], textureOrigin: [112, 30] },
-    { name: 'snout', from: [3, 6, -9], to: [13, 11, 1], textureOrigin: [176, 44] },
-    { name: 'jaw', from: [3, 1, -9], to: [13, 5, 1], textureOrigin: [176, 65] },
-    { name: 'horn-left', from: [2, 16, 7], to: [4, 19, 12], textureOrigin: [0, 0] },
-    { name: 'horn-right', from: [12, 16, 7], to: [14, 19, 12], textureOrigin: [0, 0] },
-  ];
+  // The dragon cranium is centred on the model origin (unlike the skull head,
+  // which hangs below it), so seat it a half-cube higher than a normal head.
+  const offset: [number, number, number] = wallMounted ? [8, 12, 12] : [8, 8, 8];
 
-  return cuboids.map((cuboid) =>
-    blockEntityCuboidPart(id, properties, `dragon-head:${wallMounted ? 'wall' : 'floor'}:${cuboid.name}`, cuboid, texture, rotation, size),
+  return DRAGON_HEAD_CUBES.map((cube) =>
+    blockEntityCuboidPart(
+      id,
+      properties,
+      `dragon-head:${wallMounted ? 'wall' : 'floor'}:${cube.name}`,
+      entityModelCuboid(cube, offset),
+      'minecraft:entity/enderdragon/dragon',
+      rotation,
+      [256, 256],
+    ),
   );
 }
+
+// The piglin head, straight from the piglin entity model (64x64 texture, head
+// faces -Z): a 10-wide head, the flat snout, two tusks poking forward, and two
+// ears tilted out from the sides. No synthetic geometry — every part is the
+// real model cube textured from the vanilla piglin skin.
+const PIGLIN_HEAD_CUBES: EntityModelCube[] = [
+  { name: 'head', from: [-5, -8, -4], size: [10, 8, 8], texOffs: [0, 0] },
+  { name: 'nose', from: [-2, -4, -5], size: [4, 4, 1], texOffs: [31, 1] },
+  { name: 'left-tusk', from: [2, -2, -7], size: [1, 2, 4], texOffs: [2, 4] },
+  { name: 'right-tusk', from: [-3, -2, -7], size: [1, 2, 4], texOffs: [2, 0] },
+  { name: 'left-ear', from: [4.5, -6, -2], size: [1, 5, 4], texOffs: [51, 6], rotation: { axis: 'z', angle: -30, pivot: [4.5, -6, 0] } },
+  { name: 'right-ear', from: [-5.5, -6, -2], size: [1, 5, 4], texOffs: [39, 6], rotation: { axis: 'z', angle: 30, pivot: [-4.5, -6, 0] } },
+];
 
 function syntheticPiglinHeadParts(
   id: string,
@@ -1940,49 +1984,20 @@ function syntheticPiglinHeadParts(
   if (id !== 'minecraft:piglin_head' && id !== 'minecraft:piglin_wall_head') return [];
 
   const wallMounted = id === 'minecraft:piglin_wall_head';
-  const headRotation = {
-    x: variantRotation.x,
-    y: variantRotation.y + (wallMounted ? horizontalFacingRotation(properties.facing) : headRotationFromProperty(properties.rotation)),
-  };
-  const texture = piglinHeadTextureId;
-  const earTexture = solidColorTexture(0xcf8f68);
-  const snoutTexture = solidColorTexture(0xcc7c76);
+  const headRotation = skullRotation(wallMounted, properties, variantRotation);
+  const offset = wallMounted ? wallHeadOffset : floorHeadOffset;
 
-  const parts: ResolvedBlockPart[] = [
+  return PIGLIN_HEAD_CUBES.map((cube) =>
     blockEntityCuboidPart(
       id,
       properties,
-      `piglin-head:${wallMounted ? 'wall' : 'floor'}:base`,
-      wallMounted
-        ? { name: 'base', from: [4, 4, 8], to: [12, 12, 16], textureOrigin: [0, 0] }
-        : { name: 'base', from: [4, 0, 4], to: [12, 8, 12], textureOrigin: [0, 0] },
-      texture,
+      `piglin-head:${wallMounted ? 'wall' : 'floor'}:${cube.name}`,
+      entityModelCuboid(cube, offset),
+      'minecraft:entity/piglin/piglin',
       headRotation,
+      [64, 64],
     ),
-  ];
-
-  const appendPiglinPart = (
-    key: string,
-    from: [number, number, number],
-    to: [number, number, number],
-    partTexture: string,
-  ) => {
-    parts.push(syntheticCuboidPart(id, properties, key, from, to, partTexture, headRotation));
-  };
-
-  if (wallMounted) {
-    // Wall head sits on the +Z (south) wall and faces -Z (north): snout pokes
-    // out the north face, ears on the head's sides.
-    appendPiglinPart('piglin-head:wall:snout', [5.5, 5.5, 5.5], [10.5, 8.5, 8], snoutTexture);
-    appendPiglinPart('piglin-head:wall:ear-left', [2, 6, 9.5], [4, 10, 11.5], earTexture);
-    appendPiglinPart('piglin-head:wall:ear-right', [12, 6, 9.5], [14, 10, 11.5], earTexture);
-  } else {
-    appendPiglinPart('piglin-head:floor:snout', [5.5, 1.5, 12], [10.5, 4.5, 14.5], snoutTexture);
-    appendPiglinPart('piglin-head:floor:ear-left', [2, 2, 5.5], [4, 6, 7.5], earTexture);
-    appendPiglinPart('piglin-head:floor:ear-right', [12, 2, 5.5], [14, 6, 7.5], earTexture);
-  }
-
-  return parts;
+  );
 }
 
 function isPlayerHeadBlock(id: string): boolean {
@@ -2449,6 +2464,11 @@ interface BlockEntityCuboid {
   from: [number, number, number];
   to: [number, number, number];
   textureOrigin: [number, number];
+  // Texture box dimensions [w, h, d] in texels for the entity-cube UV unwrap.
+  // Defaults to the geometric size. Set this when the geometry is inflated
+  // (e.g. a hat/overlay grown by a CubeDeformation) but the texture region is
+  // the original, smaller box — otherwise the UVs overreach into neighbours.
+  uvSize?: [number, number, number];
   faceUvs?: Partial<Record<ModelFaceName, ModelFaceUv>>;
   faceUvOffsets?: Partial<Record<ModelFaceName, { u: number; v: number }>>;
   hiddenFaces?: ModelFaceName[];
@@ -2527,9 +2547,10 @@ function blockEntityCuboidPart(
   const width = cuboid.to[0] - cuboid.from[0];
   const height = cuboid.to[1] - cuboid.from[1];
   const depth = cuboid.to[2] - cuboid.from[2];
+  const [uvWidth, uvHeight, uvDepth] = cuboid.uvSize ?? [width, height, depth];
   const hiddenFaces = new Set(cuboid.hiddenFaces ?? []);
   const faceTextures = cubeTextures(texture);
-  const faceUvs = entityCubeUvs(cuboid.textureOrigin[0], cuboid.textureOrigin[1], width, height, depth, hiddenFaces);
+  const faceUvs = entityCubeUvs(cuboid.textureOrigin[0], cuboid.textureOrigin[1], uvWidth, uvHeight, uvDepth, hiddenFaces);
 
   for (const face of hiddenFaces) {
     faceTextures[face] = null;
@@ -3003,10 +3024,6 @@ export function textureUrl(textureId: string): string {
 
   if (normalized === 'SchematicEditor:entity/player/default') {
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(defaultPlayerSkinSvg)}`;
-  }
-
-  if (normalized === piglinHeadTextureId) {
-    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(defaultPiglinHeadSvg)}`;
   }
 
   if (normalized.startsWith(playerHeadTexturePrefix)) {
