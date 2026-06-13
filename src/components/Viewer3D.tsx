@@ -2360,6 +2360,9 @@ function isAlphaCutoutTexture(textureId: string): boolean {
     || path.endsWith('_chain')
     || path.startsWith('entity/decorated_pot/')
     || path === 'block/cobweb'
+    // Barriers stamp the no-entry icon on a full cube; cut away its transparent
+    // background so only the symbol shows and the block stays "invisible".
+    || path === 'item/barrier'
   );
 }
 

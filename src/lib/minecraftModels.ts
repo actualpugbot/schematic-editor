@@ -1525,6 +1525,9 @@ function syntheticBlockParts(
   const conduitParts = syntheticConduitParts(id, properties, variantRotation);
   if (conduitParts.length > 0) return conduitParts;
 
+  const barrierParts = syntheticBarrierParts(id, properties, variantRotation);
+  if (barrierParts.length > 0) return barrierParts;
+
   const piglinHeadParts = syntheticPiglinHeadParts(id, properties, variantRotation);
   if (piglinHeadParts.length > 0) return piglinHeadParts;
 
@@ -1590,6 +1593,22 @@ function syntheticConduitParts(
 
   return [
     syntheticCuboidPart(id, properties, 'conduit:core', [3, 3, 3], [13, 13, 13], 'minecraft:block/conduit', variantRotation),
+  ];
+}
+
+function syntheticBarrierParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (id !== 'minecraft:barrier') return [];
+
+  // Barriers are invisible in-game; mirror how Minecraft reveals them while a
+  // barrier item is held by stamping the red no-entry icon on a full cube. The
+  // icon's transparent background is alpha-cut away (see isAlphaCutoutTexture),
+  // so only the centered symbol shows and the block still reads as empty.
+  return [
+    syntheticCuboidPart(id, properties, 'barrier:icon', [0, 0, 0], [16, 16, 16], 'minecraft:item/barrier', variantRotation),
   ];
 }
 
