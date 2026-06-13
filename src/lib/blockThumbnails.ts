@@ -632,6 +632,7 @@ function isAlphaCutoutTexture(textureId: string): boolean {
     || path.includes('mushroom')
     || path.includes('amethyst_bud')
     || path.includes('dripstone')
+    || path.endsWith('_chain')
     || path.startsWith('entity/decorated_pot/')
     || path === 'block/cobweb'
   );

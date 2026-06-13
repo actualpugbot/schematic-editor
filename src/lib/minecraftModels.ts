@@ -1716,23 +1716,77 @@ function syntheticHangingSignParts(
     x: variantRotation.x,
     y: variantRotation.y + (wallMounted ? horizontalFacingRotation(properties.facing) : headRotationFromProperty(properties.rotation)),
   };
-  // The board hangs in the lower portion of the block, centred in Z; chains
+  // The board hangs in the lower portion of the block, centred in Z. Iron chains
   // connect its top corners up to the ceiling (free-hanging) or to a top bar
   // mounted on the wall (wall-hanging).
+  const barBottom = 14;
+  const chainTop = wallMounted ? barBottom : 16;
   const parts = [
     syntheticCuboidPart(id, properties, `hanging-sign:${wallMounted ? 'wall' : 'ceiling'}:board:${texture}`, [1, 2, 7], [15, 12, 9], texture, rotation),
-    syntheticCuboidPart(id, properties, `hanging-sign:chain-left:${texture}`, [4, 12, 7.5], [5, wallMounted ? 13 : 16, 8.5], texture, rotation),
-    syntheticCuboidPart(id, properties, `hanging-sign:chain-right:${texture}`, [11, 12, 7.5], [12, wallMounted ? 13 : 16, 8.5], texture, rotation),
+    ...hangingSignChainParts(id, properties, 'left', 4.5, 12, chainTop, rotation),
+    ...hangingSignChainParts(id, properties, 'right', 11.5, 12, chainTop, rotation),
   ];
 
   if (wallMounted) {
-    // Horizontal bar across the top that the sign hangs from, mounted on the wall.
+    // Horizontal bracket bar across the top that the sign hangs from, mounted on the wall.
     parts.push(
-      syntheticCuboidPart(id, properties, `hanging-sign:wall:bar:${texture}`, [0, 13, 6.5], [16, 15.5, 9.5], texture, rotation),
+      syntheticCuboidPart(id, properties, `hanging-sign:wall:bar:${texture}`, [0, barBottom, 6.5], [16, 16, 9.5], texture, rotation),
     );
   }
 
   return parts;
+}
+
+// Hanging signs dangle from iron chains, not wood. Render each connector as two
+// crossed planes textured with block/iron_chain (an alpha-cutout texture),
+// mirroring the vanilla chain block model (block/template_chain): two 3px-wide
+// quads perpendicular to each other, rotated 45deg about the vertical axis
+// through the chain's centre. The chain texture is 16px tall = 16 model units,
+// so we sample a vertical slice equal to the connector's height to keep the
+// links at the chain block's native scale.
+function hangingSignChainParts(
+  id: string,
+  properties: Record<string, string>,
+  side: string,
+  centerX: number,
+  bottomY: number,
+  topY: number,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  const texture = 'minecraft:block/iron_chain';
+  const z = 8;
+  const half = 1.5;
+  const elementRotation: ModelElementRotation = { origin: [centerX, 8, z], axis: 'y', angle: 45 };
+  // Sample one clean link from the iron_chain texture (rows 2-6 hold a single
+  // closed link) so a short connector still reads as a chain. The two crossed
+  // planes split the link's left (cols 0-3) and right (cols 3-6) halves, exactly
+  // as the vanilla chain block model does.
+  const vTop = 2;
+  const vBottom = 6;
+  return [
+    syntheticCuboidPart(
+      id,
+      properties,
+      `hanging-sign:chain-${side}:ns`,
+      [centerX - half, bottomY, z],
+      [centerX + half, topY, z],
+      { down: null, up: null, west: null, east: null, north: texture, south: texture },
+      variantRotation,
+      undefined,
+      { elementRotation, shade: false, faceUvs: { north: [3, vTop, 0, vBottom], south: [0, vTop, 3, vBottom] } },
+    ),
+    syntheticCuboidPart(
+      id,
+      properties,
+      `hanging-sign:chain-${side}:we`,
+      [centerX, bottomY, z - half],
+      [centerX, topY, z + half],
+      { down: null, up: null, north: null, south: null, west: texture, east: texture },
+      variantRotation,
+      undefined,
+      { elementRotation, shade: false, faceUvs: { west: [6, vTop, 3, vBottom], east: [3, vTop, 6, vBottom] } },
+    ),
+  ];
 }
 
 function signTexture(id: string): string {
@@ -2673,6 +2727,11 @@ function syntheticCuboidPart(
   textures: string | Record<ModelFaceName, string | null>,
   variantRotation: { x: number; y: number },
   faceTranslucencies?: Record<ModelFaceName, boolean>,
+  options?: {
+    elementRotation?: ModelElementRotation;
+    faceUvs?: Partial<Record<ModelFaceName, ModelFaceUv>>;
+    shade?: boolean;
+  },
 ): ResolvedBlockPart {
   const faceTextures = typeof textures === 'string' ? cubeTextures(textures) : textures;
 
@@ -2683,8 +2742,9 @@ function syntheticCuboidPart(
     from,
     to,
     textureSize: [16, 16],
-    shade: true,
+    shade: options?.shade ?? true,
     uvLock: false,
+    elementRotation: options?.elementRotation,
     variantRotation,
     faceTextures,
     faceTints: {
@@ -2696,12 +2756,12 @@ function syntheticCuboidPart(
       east: null,
     },
     faceUvs: {
-      down: null,
-      up: null,
-      north: null,
-      south: null,
-      west: null,
-      east: null,
+      down: options?.faceUvs?.down ?? null,
+      up: options?.faceUvs?.up ?? null,
+      north: options?.faceUvs?.north ?? null,
+      south: options?.faceUvs?.south ?? null,
+      west: options?.faceUvs?.west ?? null,
+      east: options?.faceUvs?.east ?? null,
     },
     faceRotations: {
       down: 0,
