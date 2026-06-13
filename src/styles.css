@@ -1454,6 +1454,7 @@ html[data-theme='dark'] .material-pick {
 }
 .block-preview[data-shape='sprite'] {
   background-size: 82% 82%;
+  image-rendering: pixelated;
   transform: none;
   transform-origin: center;
 }
