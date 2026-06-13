@@ -1221,7 +1221,40 @@ async function resolveBlockPartsUncached(stateKey: string): Promise<ResolvedBloc
     }
   }
 
+  // The bell's metal body is a block entity, not part of the block-model JSON
+  // (which only supplies the bar and posts), so append it to the vanilla parts.
+  if (state.id === 'minecraft:bell') {
+    parts.push(...syntheticBellBodyParts(state.id, state.properties));
+  }
+
   return parts;
+}
+
+function syntheticBellBodyParts(id: string, properties: Record<string, string>): ResolvedBlockPart[] {
+  const texture = 'minecraft:entity/bell/bell_body';
+  const rotation = { x: 0, y: 0 };
+  const size: [number, number] = [32, 32];
+
+  return [
+    blockEntityCuboidPart(
+      id,
+      properties,
+      'bell:body',
+      { name: 'body', from: [5, 3, 5], to: [11, 10, 11], textureOrigin: [0, 0] },
+      texture,
+      rotation,
+      size,
+    ),
+    blockEntityCuboidPart(
+      id,
+      properties,
+      'bell:lip',
+      { name: 'lip', from: [4, 1, 4], to: [12, 3, 12], textureOrigin: [0, 13] },
+      texture,
+      rotation,
+      size,
+    ),
+  ];
 }
 
 function normalizeModelElementForBlock(id: string, element: ModelElement): ModelElement {
@@ -1521,6 +1554,12 @@ function syntheticBlockParts(
   const playerHeadParts = syntheticPlayerHeadParts(id, properties, variantRotation);
   if (playerHeadParts.length > 0) return playerHeadParts;
 
+  const dragonHeadParts = syntheticDragonHeadParts(id, properties, variantRotation);
+  if (dragonHeadParts.length > 0) return dragonHeadParts;
+
+  const mobSkullParts = syntheticMobSkullParts(id, properties, variantRotation);
+  if (mobSkullParts.length > 0) return mobSkullParts;
+
   const movingPistonParts = syntheticMovingPistonParts(id, properties, variantRotation);
   if (movingPistonParts.length > 0) return movingPistonParts;
 
@@ -1541,16 +1580,24 @@ function syntheticBannerParts(
     x: variantRotation.x,
     y: variantRotation.y + (wallMounted ? horizontalFacingRotation(properties.facing) : headRotationFromProperty(properties.rotation)),
   };
-  const banner = wallMounted
-    ? syntheticCuboidPart(id, properties, `banner:wall:${bannerTexture}`, [3, 4, 0.75], [13, 15, 1.25], bannerTexture, rotation)
-    : syntheticCuboidPart(id, properties, `banner:standing:${bannerTexture}`, [3, 4, 7.75], [13, 15, 8.25], bannerTexture, rotation);
+  // Vanilla banners stand roughly two blocks tall (the cloth is a 20x40 entity
+  // flag scaled 2/3). A wall banner hides the pole, hangs against the +Z (south)
+  // wall for facing=north, and drops down into the block below.
+  const cloth = wallMounted
+    ? syntheticCuboidPart(id, properties, `banner:wall:${bannerTexture}`, [1.5, -11, 14], [14.5, 14, 15], bannerTexture, rotation)
+    : syntheticCuboidPart(id, properties, `banner:standing:${bannerTexture}`, [1.5, 1, 7.9], [14.5, 28.5, 8.45], bannerTexture, rotation);
 
-  if (wallMounted) return [banner];
+  if (wallMounted) {
+    return [
+      cloth,
+      syntheticCuboidPart(id, properties, `banner:wall-bar:${poleTexture}`, [1.5, 14, 14], [14.5, 15.5, 15], poleTexture, rotation),
+    ];
+  }
 
   return [
-    banner,
-    syntheticCuboidPart(id, properties, `banner:crossbar:${poleTexture}`, [2.5, 14, 7.5], [13.5, 15, 8.5], poleTexture, rotation),
-    syntheticCuboidPart(id, properties, `banner:pole:${poleTexture}`, [7.25, 0, 7.25], [8.75, 15, 8.75], poleTexture, rotation),
+    cloth,
+    syntheticCuboidPart(id, properties, `banner:crossbar:${poleTexture}`, [1.5, 28.5, 7.25], [14.5, 30, 8.75], poleTexture, rotation),
+    syntheticCuboidPart(id, properties, `banner:pole:${poleTexture}`, [7.25, 0, 7.25], [8.75, 30, 8.75], poleTexture, rotation),
   ];
 }
 
@@ -1666,22 +1713,22 @@ function syntheticHangingSignParts(
     x: variantRotation.x,
     y: variantRotation.y + (wallMounted ? horizontalFacingRotation(properties.facing) : headRotationFromProperty(properties.rotation)),
   };
+  // The board hangs in the lower portion of the block, centred in Z; chains
+  // connect its top corners up to the ceiling (free-hanging) or to a top bar
+  // mounted on the wall (wall-hanging).
   const parts = [
-    syntheticCuboidPart(id, properties, `hanging-sign:${wallMounted ? 'wall' : 'ceiling'}:board:${texture}`, [1, 3, 7], [15, 13, 9], texture, rotation),
+    syntheticCuboidPart(id, properties, `hanging-sign:${wallMounted ? 'wall' : 'ceiling'}:board:${texture}`, [1, 2, 7], [15, 12, 9], texture, rotation),
+    syntheticCuboidPart(id, properties, `hanging-sign:chain-left:${texture}`, [4, 12, 7.5], [5, wallMounted ? 13 : 16, 8.5], texture, rotation),
+    syntheticCuboidPart(id, properties, `hanging-sign:chain-right:${texture}`, [11, 12, 7.5], [12, wallMounted ? 13 : 16, 8.5], texture, rotation),
   ];
 
   if (wallMounted) {
+    // Horizontal bar across the top that the sign hangs from, mounted on the wall.
     parts.push(
-      syntheticCuboidPart(id, properties, `hanging-sign:wall:bracket-left:${texture}`, [2, 13, 3], [4, 15, 8], texture, rotation),
-      syntheticCuboidPart(id, properties, `hanging-sign:wall:bracket-right:${texture}`, [12, 13, 3], [14, 15, 8], texture, rotation),
+      syntheticCuboidPart(id, properties, `hanging-sign:wall:bar:${texture}`, [0, 13, 6.5], [16, 15.5, 9.5], texture, rotation),
     );
-    return parts;
   }
 
-  parts.push(
-    syntheticCuboidPart(id, properties, `hanging-sign:ceiling:chain-left:${texture}`, [2, 13, 7], [4, 16, 9], texture, rotation),
-    syntheticCuboidPart(id, properties, `hanging-sign:ceiling:chain-right:${texture}`, [12, 13, 7], [14, 16, 9], texture, rotation),
-  );
   return parts;
 }
 
@@ -1704,6 +1751,25 @@ function signWoodType(id: string): string {
   return match?.groups?.wood ?? 'oak';
 }
 
+// Skull/head orientation. The carved face is authored on the model's NORTH
+// face (entityCubeUvs maps the front-of-skull texture region to the north
+// face). Floor skulls face SOUTH at rotation=0, so add 180deg on top of the
+// rotation property. Wall skulls face the direction `facing` points, with the
+// body mounted against the opposite (support) wall — authored for facing=north
+// on the +Z half and rotated about the block centre for the other facings.
+function skullRotation(
+  wallMounted: boolean,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): { x: number; y: number } {
+  return {
+    x: variantRotation.x,
+    y: variantRotation.y + (wallMounted
+      ? horizontalFacingRotation(properties.facing)
+      : 180 + headRotationFromProperty(properties.rotation)),
+  };
+}
+
 function syntheticPlayerHeadParts(
   id: string,
   properties: Record<string, string>,
@@ -1712,20 +1778,100 @@ function syntheticPlayerHeadParts(
   if (!isPlayerHeadBlock(id)) return [];
 
   const wallMounted = id === 'minecraft:player_wall_head';
-  const headRotation = {
-    x: variantRotation.x,
-    y: variantRotation.y + (wallMounted ? horizontalFacingRotation(properties.facing) : headRotationFromProperty(properties.rotation)),
-  };
+  const headRotation = skullRotation(wallMounted, properties, variantRotation);
   const baseCuboid: BlockEntityCuboid = wallMounted
-    ? { name: 'base', from: [4, 4, 0], to: [12, 12, 8], textureOrigin: [0, 0] }
+    ? { name: 'base', from: [4, 4, 8], to: [12, 12, 16], textureOrigin: [0, 0] }
     : { name: 'base', from: [4, 0, 4], to: [12, 8, 12], textureOrigin: [0, 0] };
+  // Hat overlay: head box inflated 0.25px on every face (vanilla CubeDeformation 0.25).
   const hatCuboid: BlockEntityCuboid = wallMounted
-    ? { name: 'hat', from: [3.5, 3.5, -0.5], to: [12.5, 12.5, 8.5], textureOrigin: [32, 0] }
-    : { name: 'hat', from: [3.5, -0.5, 3.5], to: [12.5, 8.5, 12.5], textureOrigin: [32, 0] };
+    ? { name: 'hat', from: [3.75, 3.75, 7.75], to: [12.25, 12.25, 16.25], textureOrigin: [32, 0] }
+    : { name: 'hat', from: [3.75, -0.25, 3.75], to: [12.25, 8.25, 12.25], textureOrigin: [32, 0] };
   const texture = playerHeadTextureId(properties.SchematicEditor_head);
 
   return [baseCuboid, hatCuboid].map((cuboid) =>
-    blockEntityCuboidPart(id, properties, `player-head:${wallMounted ? 'wall' : 'floor'}:${cuboid.name}`, cuboid, texture, headRotation),
+    blockEntityCuboidPart(id, properties, `player-head:${wallMounted ? 'wall' : 'floor'}:${cuboid.name}`, cuboid, texture, headRotation, [64, 64]),
+  );
+}
+
+// Skeleton / wither skeleton / zombie / creeper skulls render from the vanilla
+// SkullModel (a single 8x8x8 head cube). They resolve to the empty block/skull
+// model, so we synthesise the head here instead of falling back to a cube.
+function syntheticMobSkullParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  const skull = mobSkullTexture(id);
+  if (!skull) return [];
+
+  const wallMounted = isWallSkullBlock(id);
+  const headRotation = skullRotation(wallMounted, properties, variantRotation);
+  const cuboid: BlockEntityCuboid = wallMounted
+    ? { name: 'head', from: [4, 4, 8], to: [12, 12, 16], textureOrigin: [0, 0] }
+    : { name: 'head', from: [4, 0, 4], to: [12, 8, 12], textureOrigin: [0, 0] };
+
+  return [
+    blockEntityCuboidPart(
+      id,
+      properties,
+      `mob-skull:${wallMounted ? 'wall' : 'floor'}:${skull.texture}`,
+      cuboid,
+      skull.texture,
+      headRotation,
+      skull.size,
+    ),
+  ];
+}
+
+function mobSkullTexture(id: string): { texture: string; size: [number, number] } | null {
+  switch (id.replace(/^minecraft:/, '')) {
+    case 'skeleton_skull':
+    case 'skeleton_wall_skull':
+      return { texture: 'minecraft:entity/skeleton/skeleton', size: [64, 32] };
+    case 'wither_skeleton_skull':
+    case 'wither_skeleton_wall_skull':
+      return { texture: 'minecraft:entity/skeleton/wither_skeleton', size: [64, 32] };
+    case 'zombie_head':
+    case 'zombie_wall_head':
+      return { texture: 'minecraft:entity/zombie/zombie', size: [64, 64] };
+    case 'creeper_head':
+    case 'creeper_wall_head':
+      return { texture: 'minecraft:entity/creeper/creeper', size: [64, 32] };
+    default:
+      return null;
+  }
+}
+
+function isWallSkullBlock(id: string): boolean {
+  const path = id.replace(/^minecraft:/, '');
+  return path.endsWith('_wall_skull') || path.endsWith('_wall_head');
+}
+
+// The ender dragon head reuses the dragon entity model's head + jaw. We
+// approximate it with the head's main cuboids (cranium, snout, jaw, two horns)
+// drawn from the 256x256 dragon texture. The snout/jaw protrude past the front
+// face (negative Z) and the horns poke above the block, matching the entity.
+function syntheticDragonHeadParts(
+  id: string,
+  properties: Record<string, string>,
+  variantRotation: { x: number; y: number },
+): ResolvedBlockPart[] {
+  if (id !== 'minecraft:dragon_head' && id !== 'minecraft:dragon_wall_head') return [];
+
+  const wallMounted = id === 'minecraft:dragon_wall_head';
+  const rotation = skullRotation(wallMounted, properties, variantRotation);
+  const texture = 'minecraft:entity/enderdragon/dragon';
+  const size: [number, number] = [256, 256];
+  const cuboids: BlockEntityCuboid[] = [
+    { name: 'cranium', from: [2, 4, 1], to: [14, 16, 13], textureOrigin: [112, 30] },
+    { name: 'snout', from: [3, 6, -9], to: [13, 11, 1], textureOrigin: [176, 44] },
+    { name: 'jaw', from: [3, 1, -9], to: [13, 5, 1], textureOrigin: [176, 65] },
+    { name: 'horn-left', from: [2, 16, 7], to: [4, 19, 12], textureOrigin: [0, 0] },
+    { name: 'horn-right', from: [12, 16, 7], to: [14, 19, 12], textureOrigin: [0, 0] },
+  ];
+
+  return cuboids.map((cuboid) =>
+    blockEntityCuboidPart(id, properties, `dragon-head:${wallMounted ? 'wall' : 'floor'}:${cuboid.name}`, cuboid, texture, rotation, size),
   );
 }
 
@@ -1751,7 +1897,7 @@ function syntheticPiglinHeadParts(
       properties,
       `piglin-head:${wallMounted ? 'wall' : 'floor'}:base`,
       wallMounted
-        ? { name: 'base', from: [4, 4, 0], to: [12, 12, 8], textureOrigin: [0, 0] }
+        ? { name: 'base', from: [4, 4, 8], to: [12, 12, 16], textureOrigin: [0, 0] }
         : { name: 'base', from: [4, 0, 4], to: [12, 8, 12], textureOrigin: [0, 0] },
       texture,
       headRotation,
@@ -1768,9 +1914,11 @@ function syntheticPiglinHeadParts(
   };
 
   if (wallMounted) {
-    appendPiglinPart('piglin-head:wall:snout', [5.5, 5.5, 8], [10.5, 8.5, 10.5], snoutTexture);
-    appendPiglinPart('piglin-head:wall:ear-left', [2, 6, 2], [4, 10, 4], earTexture);
-    appendPiglinPart('piglin-head:wall:ear-right', [12, 6, 2], [14, 10, 4], earTexture);
+    // Wall head sits on the +Z (south) wall and faces -Z (north): snout pokes
+    // out the north face, ears on the head's sides.
+    appendPiglinPart('piglin-head:wall:snout', [5.5, 5.5, 5.5], [10.5, 8.5, 8], snoutTexture);
+    appendPiglinPart('piglin-head:wall:ear-left', [2, 6, 9.5], [4, 10, 11.5], earTexture);
+    appendPiglinPart('piglin-head:wall:ear-right', [12, 6, 9.5], [14, 10, 11.5], earTexture);
   } else {
     appendPiglinPart('piglin-head:floor:snout', [5.5, 1.5, 12], [10.5, 4.5, 14.5], snoutTexture);
     appendPiglinPart('piglin-head:floor:ear-left', [2, 2, 5.5], [4, 6, 7.5], earTexture);
@@ -1785,7 +1933,7 @@ function isPlayerHeadBlock(id: string): boolean {
 }
 
 function playerHeadTextureId(textureHash: string | undefined): string {
-  return textureHash ? `${playerHeadTexturePrefix}${textureHash}` : 'SchematicEditor:entity/player/default';
+  return textureHash ? `${playerHeadTexturePrefix}${textureHash}` : 'minecraft:entity/player/wide/steve';
 }
 
 function headRotationFromProperty(rotation: string | undefined): number {

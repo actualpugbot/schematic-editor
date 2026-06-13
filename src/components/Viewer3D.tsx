@@ -2182,6 +2182,10 @@ function materialsForPart(
       part.shade,
       part.faceTranslucencies[face],
       textureShouldWriteDepth(textureId, part.faceTranslucencies[face], part),
+      // Rails are a single flat quad with the down face hidden to avoid
+      // z-fighting; render the surviving quad double-sided so the rail stays
+      // visible when the camera looks up at it from below.
+      isRailPart(part),
     );
   });
 }
@@ -2192,8 +2196,9 @@ function textureMaterial(
   shade: boolean,
   translucent: boolean,
   depthWrite: boolean,
+  forceDoubleSide = false,
 ): THREE.Material {
-  const key = `texture::${textureId}::${tintColor ?? 'none'}::shade:${shade}::translucent:${translucent}::depth:${depthWrite}`;
+  const key = `texture::${textureId}::${tintColor ?? 'none'}::shade:${shade}::translucent:${translucent}::depth:${depthWrite}::double:${forceDoubleSide}`;
   const cached = materialCache.get(key);
   if (cached) return cached;
 
@@ -2206,7 +2211,7 @@ function textureMaterial(
   const water = isWaterTexture(textureId);
   const transparent = textureRendersTransparent(textureId, translucent);
   const opacity = transparent ? translucentTextureOpacity(textureId) : 1;
-  const side = cutoutTextureNeedsDoubleSide(textureId) ? THREE.DoubleSide : THREE.FrontSide;
+  const side = forceDoubleSide || cutoutTextureNeedsDoubleSide(textureId) ? THREE.DoubleSide : THREE.FrontSide;
 
   const material = shade
     ? new THREE.MeshStandardMaterial({
