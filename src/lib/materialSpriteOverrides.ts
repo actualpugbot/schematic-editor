@@ -9,6 +9,7 @@ const exactSpriteStateKeys = new Set([
   'minecraft:bamboo',
   'minecraft:blaze_rod',
   'minecraft:bricks',
+  'minecraft:bucket',
   'minecraft:coal',
   'minecraft:chorus_fruit',
   'minecraft:clay_ball',
@@ -22,11 +23,13 @@ const exactSpriteStateKeys = new Set([
   'minecraft:skeleton_skull',
   'minecraft:stick',
   'minecraft:tall_grass',
-  'minecraft:water_bucket',
   'minecraft:wheat',
 ]);
 
+// Buckets are items with no blockstate; rendering them through the block
+// thumbnail pipeline would 404 on the blockstate fetch.
 const spriteStateKeySuffixes = [
+  '_bucket',
   '_dye',
   '_ingot',
 ];

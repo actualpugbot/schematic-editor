@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { getCachedBlockThumbnail, createBlockThumbnail } from '../lib/blockThumbnails';
 import type { BlockThumbnailLayer } from '../lib/blockThumbnails';
+import { alwaysMaterialSpriteStateKey } from '../lib/materialSpriteOverrides';
+import { materialSpriteUrlForStateKey } from '../lib/materialSprites';
 
 export interface CelebrationMaterial {
   stateKey: string;
@@ -87,8 +89,13 @@ export function ShoppingCelebration({ materials, onDone }: Props) {
       imgElements.push(img);
     };
 
+    const spriteUrl = (m: CelebrationMaterial): string | null => {
+      const spriteStateKey = alwaysMaterialSpriteStateKey(m.stateKey);
+      return spriteStateKey ? materialSpriteUrlForStateKey(spriteStateKey) : null;
+    };
+
     for (const m of materials) {
-      const url = getCachedBlockThumbnail(m.stateKey, m.color, m.thumbnailLayers);
+      const url = spriteUrl(m) ?? getCachedBlockThumbnail(m.stateKey, m.color, m.thumbnailLayers);
       if (url) addUrl(url);
     }
 
@@ -96,7 +103,7 @@ export function ShoppingCelebration({ materials, onDone }: Props) {
     if (imgElements.length < materials.length) {
       void Promise.allSettled(
         materials
-          .filter((m) => !getCachedBlockThumbnail(m.stateKey, m.color, m.thumbnailLayers))
+          .filter((m) => !spriteUrl(m) && !getCachedBlockThumbnail(m.stateKey, m.color, m.thumbnailLayers))
           .slice(0, 30)
           .map((m) => createBlockThumbnail(m.stateKey, m.color, m.thumbnailLayers).then((url) => {
             if (url) addUrl(url);

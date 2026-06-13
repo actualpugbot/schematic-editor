@@ -1036,7 +1036,7 @@ function App() {
   ), [shulkerBoxes, visibleShulkerBoxCount]);
   const visibleShulkerThumbnailQueue = useMemo(() => (
     visibleShulkerBoxes.flatMap((box) => (
-      box.slots.flatMap((slot) => (slot
+      box.slots.flatMap((slot) => (slot && !alwaysMaterialSpriteStateKey(slot.material.stateKey)
         ? [{
           stateKey: slot.material.stateKey,
           color: slot.material.color,
@@ -1321,11 +1321,13 @@ function App() {
         const preview = createVoxelBlock(0, 0, 0, stateKey);
         return { stateKey, color: preview.color };
       }),
-      ...materials.slice(0, 64).map((material) => ({
-        stateKey: material.stateKey,
-        color: material.color,
-        layers: material.thumbnailLayers,
-      })),
+      ...materials.slice(0, 64)
+        .filter((material) => !alwaysMaterialSpriteStateKey(material.stateKey))
+        .map((material) => ({
+          stateKey: material.stateKey,
+          color: material.color,
+          layers: material.thumbnailLayers,
+        })),
       ...blockLibraryItems
         .filter((item) => item.category === 'building_blocks')
         .slice(0, 180),
