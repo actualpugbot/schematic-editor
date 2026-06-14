@@ -286,15 +286,13 @@ export function ShoppingCelebration({ materials, onDone }: Props) {
   return (
     <canvas
       ref={canvasRef}
-      onClick={() => onDoneRef.current()}
-      title="Click to dismiss"
       style={{
         position: 'fixed',
         inset: 0,
         width: '100%',
         height: '100%',
         zIndex: 1000,
-        cursor: 'pointer',
+        pointerEvents: 'none',
       }}
     />
   );
