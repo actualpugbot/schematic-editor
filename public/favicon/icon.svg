@@ -1,0 +1,16 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Build Planner">
+  <title>Build Planner</title>
+  <defs>
+    <linearGradient id="bp-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b82f6" />
+      <stop offset="1" stop-color="#1fb6ac" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bp-bg)" />
+  <!-- Isometric building block: bright top, stepped face tints read as 3D. -->
+  <g>
+    <polygon points="256,133 374,192 256,251 138,192" fill="#ffffff" />
+    <polygon points="138,192 256,251 256,381 138,322" fill="#dbeafe" />
+    <polygon points="256,251 374,192 374,322 256,381" fill="#b6d3f2" />
+  </g>
+</svg>

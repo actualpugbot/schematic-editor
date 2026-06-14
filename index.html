@@ -10,7 +10,7 @@
     <meta name="color-scheme" content="light dark" />
     <link rel="canonical" href="https://actualpugbot.github.io/schematic-editor/" />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="Schematic Editor" />
+    <meta property="og:title" content="Build Planner" />
     <meta
       property="og:description"
       content="Inspect and edit Minecraft schematic files in a 3D browser viewer with layer controls and 360 degree orbit. Files never leave your machine."
@@ -21,6 +21,7 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="icon" type="image/svg+xml" href="/favicon/icon.svg" />
     <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
     <link rel="manifest" href="/favicon/site.webmanifest" />
     <link rel="preload" href="/fonts/hanken-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
@@ -41,11 +42,13 @@
     </style>
     <script>
       (() => {
-        const storageKey = 'schematic-editor-theme';
+        const storageKey = 'build-planner-theme';
+        const legacyStorageKey = 'schematic-editor-theme';
         const root = document.documentElement;
 
         try {
-          const savedTheme = window.localStorage.getItem(storageKey);
+          const savedTheme =
+            window.localStorage.getItem(storageKey) ?? window.localStorage.getItem(legacyStorageKey);
           if (savedTheme === 'light' || savedTheme === 'dark') {
             root.dataset.theme = savedTheme;
             return;
@@ -59,7 +62,7 @@
         }
       })();
     </script>
-    <title>Schematic Editor</title>
+    <title>Build Planner</title>
   </head>
   <body>
     <div id="root"></div>

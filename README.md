@@ -1,12 +1,12 @@
-# Schematic Editor
+# Build Planner
 
 **Live app: <https://actualpugbot.github.io/schematic-editor/>**
 
-![Schematic Editor viewing the featured Mossy Roof House build](public/og-image.png)
+![Build Planner viewing the featured Mossy Roof House build](public/og-image.png)
 
-A browser-based Minecraft schematic editor. Open on a default featured build, use `New` to start from a blank build platform, or upload a `.litematic`, `.schem`, `.schematic`, or NBT schematic file and inspect or edit it as a 3D Minecraft model with orbit controls, layer-by-layer viewing, and one-click 360 degree rotation.
+A browser-based Minecraft build planner. Open on a default featured build, use `New` to start from a blank build platform, or upload a `.litematic`, `.schem`, `.schematic`, or NBT schematic file and inspect or edit it as a 3D Minecraft model with orbit controls, layer-by-layer viewing, and one-click 360 degree rotation.
 
-Schematic Editor runs entirely in the browser — schematic files are parsed locally and never leave your machine.
+Build Planner runs entirely in the browser — schematic files are parsed locally and never leave your machine.
 
 ## Features
 

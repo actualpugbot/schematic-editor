@@ -258,8 +258,8 @@ export function createLitematicSchematicDocument(model: SchematicModel, name: st
       SubVersion: 1,
       Metadata: {
         Name: name,
-        Author: 'Schematic Editor',
-        Description: 'Created in Schematic Editor',
+        Author: 'Build Planner',
+        Description: 'Created in Build Planner',
         RegionCount: 1,
         TimeCreated: timestamp,
         TimeModified: timestamp,

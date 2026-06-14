@@ -369,15 +369,55 @@ type ColorGroupId =
   | 'pink';
 
 const schematicFileExtensions = new Set(['.litematic', '.schem', '.schematic', '.nbt']);
-const themeStorageKey = 'schematic-editor-theme';
-const leftRailCollapsedStorageKey = 'schematic-editor-left-rail-collapsed';
-const controlRailSideStorageKey = 'schematic-editor-control-rail-side';
-const stageBackgroundColorStorageKey = 'schematic-editor-stage-background-color';
-const materialBaseStorageKey = 'schematic-editor-material-bases';
-const shoppingListStoragePrefix = 'schematic-editor-shopping-list';
-const shulkerViewStoragePrefix = 'schematic-editor-shulker-view';
-const selectionStoragePrefix = 'schematic-editor-selections';
-const cameraStoragePrefix = 'schematic-editor-cameras';
+const themeStorageKey = 'build-planner-theme';
+const leftRailCollapsedStorageKey = 'build-planner-left-rail-collapsed';
+const controlRailSideStorageKey = 'build-planner-control-rail-side';
+const stageBackgroundColorStorageKey = 'build-planner-stage-background-color';
+const materialBaseStorageKey = 'build-planner-material-bases';
+const shoppingListStoragePrefix = 'build-planner-shopping-list';
+const shulkerViewStoragePrefix = 'build-planner-shulker-view';
+const selectionStoragePrefix = 'build-planner-selections';
+const cameraStoragePrefix = 'build-planner-cameras';
+const legacyStoragePrefix = 'schematic-editor-';
+const storagePrefix = 'build-planner-';
+
+// One-time rebrand migration: copy any saved state from the old `schematic-editor-`
+// keys (theme, saved cameras, selections, shopping/shulker lists) onto the new
+// `build-planner-` keys so existing users keep their settings. Runs at module load,
+// before any state initializer reads storage. Legacy keys are left in place.
+function migrateLegacyStorage(): void {
+  try {
+    const storage = window.localStorage;
+    const migratedFlag = `${storagePrefix}storage-migrated`;
+    if (storage.getItem(migratedFlag) === '1') return;
+
+    const legacyKeys: string[] = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key && key.startsWith(legacyStoragePrefix)) {
+        legacyKeys.push(key);
+      }
+    }
+
+    for (const legacyKey of legacyKeys) {
+      const nextKey = `${storagePrefix}${legacyKey.slice(legacyStoragePrefix.length)}`;
+      // Don't clobber anything the rebranded app has already written.
+      if (storage.getItem(nextKey) === null) {
+        const value = storage.getItem(legacyKey);
+        if (value !== null) {
+          storage.setItem(nextKey, value);
+        }
+      }
+    }
+
+    storage.setItem(migratedFlag, '1');
+  } catch {
+    // localStorage can be unavailable (privacy mode); skip migration silently.
+  }
+}
+
+migrateLegacyStorage();
+
 const emptyBuildBlock = 'minecraft:air';
 const shulkerInventorySlots = 27;
 const shulkerConsolidationSlotThreshold = Math.floor(shulkerInventorySlots / 2);
@@ -2611,7 +2651,7 @@ function App() {
       };
     });
     const payload = {
-      kind: 'schematic-editor-texture-adjustments',
+      kind: 'build-planner-texture-adjustments',
       version: 1,
       selectedBlock: selectedTextureBlock,
       adjustments,
@@ -3022,7 +3062,7 @@ function App() {
             <div className="brand-mark" aria-hidden="true">
               <Box size={20} strokeWidth={2.4} />
             </div>
-            <strong>Schematic Editor</strong>
+            <strong>Build Planner</strong>
             <span className="brand-beta">Beta</span>
           </div>
           <div className="topbar-divider" aria-hidden="true" />

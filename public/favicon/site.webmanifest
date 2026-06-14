@@ -1,7 +1,7 @@
 {
-  "name": "Schematic Editor",
-  "short_name": "Schematic Editor",
-  "description": "Inspect and edit Minecraft schematic files in a 3D browser viewer.",
+  "name": "Build Planner",
+  "short_name": "Build Planner",
+  "description": "Plan and edit Minecraft builds from schematic files in a 3D browser viewer.",
   "start_url": "../",
   "display": "standalone",
   "background_color": "#eef0ed",
