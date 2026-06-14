@@ -26,6 +26,11 @@ export interface ResolvedBlockPart {
   faceRotations: Record<ModelFaceName, number>;
   faceCullfaces: Record<ModelFaceName, ModelFaceName | null>;
   faceTranslucencies: Record<ModelFaceName, boolean>;
+  // Per-corner top-surface heights in px [nw, ne, sw, se] for sloped fluids.
+  // When set, the renderer lifts the top vertices of the up/side faces to these
+  // heights so flowing water/lava tilts down away from its source. Computed from
+  // neighbouring fluid by the scene builder, so it lives outside resolveBlockParts.
+  fluidCorners?: [number, number, number, number];
 }
 
 interface BlockstateJson {
@@ -151,6 +156,17 @@ const endPortalSvg = `
   <rect x="8" y="13" width="1" height="1" fill="#8fd6ff" opacity=".9"/>
   <rect x="12" y="14" width="1" height="1" fill="#ffffff" opacity=".8"/>
   <rect x="15" y="12" width="1" height="1" fill="#cabfff" opacity=".8"/>
+</svg>`.trim();
+
+// Lit candles wear an animated flame particle in-game, which a still schematic
+// can't reproduce. Approximate it with a small emissive teardrop flame. The
+// `_emissive` suffix makes both render pipelines treat it as a glowing texture.
+const candleFlameTextureId = 'SchematicEditor:block/candle_flame_emissive';
+const candleFlameSvg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <path d="M8 1 C 12 5 13 9 12 12 C 11 15.5 5 15.5 4 12 C 3 9.5 4 5.5 8 1 Z" fill="#ff7a16"/>
+  <path d="M8 4 C 10.6 6.5 10.9 9.6 10 12 C 9.3 14 6.7 14 6 12 C 5.1 9.8 5.7 7 8 4 Z" fill="#ffce33"/>
+  <ellipse cx="8" cy="11.7" rx="1.7" ry="2.3" fill="#fff4b8"/>
 </svg>`.trim();
 
 export function parseBlockStateKey(stateKey: string): BlockStateInfo {
@@ -1207,6 +1223,31 @@ async function resolveBlockPartsUncached(stateKey: string): Promise<ResolvedBloc
     parts.push(...syntheticBellBodyParts(state.id, state.properties));
   }
 
+  // The enchanting table's floating book is a block entity drawn on top of the
+  // (vanilla-modelled) 3/4-height base.
+  if (state.id === 'minecraft:enchanting_table') {
+    parts.push(...enchantingTableBookParts(state.id, state.properties));
+  }
+
+  // Lit candles/candle cakes carry a flame particle in-game. Swap each model's
+  // dark wick quad (the only rotated element) for a small emissive flame.
+  if (state.properties.lit === 'true' && (isCandleBlock(state.id) || isCandleCakeBlock(state.id))) {
+    const flames = candleFlameParts(state.id, state.properties, parts);
+    for (let i = parts.length - 1; i >= 0; i -= 1) {
+      if (parts[i].elementRotation) parts.splice(i, 1);
+    }
+    parts.push(...flames);
+  }
+
+  // Waterlogged blocks (stairs, slabs, fences, sea pickles, …) hold a water
+  // source in the same cell. Fill the cell with translucent water behind the
+  // block's own geometry. The opaque parts draw first (renderOrder 0) and the
+  // translucent water after (renderOrder 10), so the block reads as submerged.
+  if (state.id !== 'minecraft:water' && state.properties.waterlogged === 'true') {
+    const water = syntheticFluidPart('minecraft:water', { level: '0' }, { x: 0, y: 0 });
+    if (water) parts.push(water);
+  }
+
   return parts;
 }
 
@@ -1266,6 +1307,108 @@ async function resolveInventoryModelPartsUncached(
   if (!model || model.elements.length === 0) return [];
 
   return modelVariantParts(key, state.id, state.properties, { model: modelId }, model);
+}
+
+// A candle's wax cylinder is a ~2×2 column at least 3px tall with no rotation;
+// the wick quad is a tiny rotated cross and the candle-cake base is full-width.
+function isCandleWaxPart(part: ResolvedBlockPart): boolean {
+  const width = part.to[0] - part.from[0];
+  const height = part.to[1] - part.from[1];
+  const depth = part.to[2] - part.from[2];
+  return !part.elementRotation && width >= 1.5 && width <= 3 && depth >= 1.5 && depth <= 3 && height >= 3;
+}
+
+function candleFlameParts(
+  id: string,
+  properties: Record<string, string>,
+  candleParts: ResolvedBlockPart[],
+): ResolvedBlockPart[] {
+  const flames: ResolvedBlockPart[] = [];
+  let index = 0;
+  for (const part of candleParts) {
+    if (!isCandleWaxPart(part)) continue;
+    const centerX = (part.from[0] + part.to[0]) / 2;
+    const centerZ = (part.from[2] + part.to[2]) / 2;
+    const top = part.to[1];
+    // Crossed billboard so the flame reads from every horizontal angle.
+    flames.push(
+      flameBillboardPart(id, properties, `${index}:xy`, [centerX - 1.6, top - 1.2, centerZ], [centerX + 1.6, top + 3.4, centerZ], ['north', 'south']),
+      flameBillboardPart(id, properties, `${index}:zy`, [centerX, top - 1.2, centerZ - 1.6], [centerX, top + 3.4, centerZ + 1.6], ['east', 'west']),
+    );
+    index += 1;
+  }
+  return flames;
+}
+
+function flameBillboardPart(
+  id: string,
+  properties: Record<string, string>,
+  key: string,
+  from: [number, number, number],
+  to: [number, number, number],
+  faces: ModelFaceName[],
+): ResolvedBlockPart {
+  const onFace = <T,>(value: T): Record<ModelFaceName, T | null> => ({
+    down: faces.includes('down') ? value : null,
+    up: faces.includes('up') ? value : null,
+    north: faces.includes('north') ? value : null,
+    south: faces.includes('south') ? value : null,
+    west: faces.includes('west') ? value : null,
+    east: faces.includes('east') ? value : null,
+  });
+
+  return {
+    key: `candle-flame::${id}::${key}`,
+    blockId: id,
+    blockProperties: properties,
+    from,
+    to,
+    textureSize: [16, 16],
+    shade: true,
+    uvLock: false,
+    variantRotation: { x: 0, y: 0 },
+    faceTextures: onFace(candleFlameTextureId),
+    faceTints: { down: null, up: null, north: null, south: null, west: null, east: null },
+    faceUvs: onFace([0, 0, 16, 16] as ModelFaceUv),
+    faceRotations: { down: 0, up: 0, north: 0, south: 0, west: 0, east: 0 },
+    faceCullfaces: { down: null, up: null, north: null, south: null, west: null, east: null },
+    faceTranslucencies: { down: false, up: false, north: false, south: false, west: false, east: false },
+  };
+}
+
+function enchantingTableBookParts(id: string, properties: Record<string, string>): ResolvedBlockPart[] {
+  const texture = 'minecraft:entity/enchantment/enchanting_table_book';
+  const size: [number, number] = [64, 32];
+  const rotation = { x: 0, y: 0 };
+  // An open book floating above the pedestal: the spine stands vertically at the
+  // block centre and the two halves splay open. The covers (leather) open wider
+  // than the pages tucked inside them. Authored statically (vanilla spins/bobs
+  // the book, but a schematic is a still frame).
+  const spineY = 15;
+  const cover = (
+    key: string,
+    from: [number, number, number],
+    to: [number, number, number],
+    textureOrigin: [number, number],
+    uvSize: [number, number, number],
+    angle: number,
+  ): ResolvedBlockPart =>
+    blockEntityCuboidPart(
+      id,
+      properties,
+      key,
+      { name: key, from, to, textureOrigin, uvSize, elementRotation: { origin: [8, spineY, 8], axis: 'y', angle } },
+      texture,
+      rotation,
+      size,
+    );
+
+  return [
+    cover('enchant-book:left-lid', [8, 12, 7.8], [12.2, 18.4, 8.2], [0, 0], [6, 10, 0], 52),
+    cover('enchant-book:right-lid', [3.8, 12, 7.8], [8, 18.4, 8.2], [16, 0], [6, 10, 0], -52),
+    cover('enchant-book:left-page', [8, 12.6, 7.9], [11.5, 17.6, 8.1], [0, 10], [5, 8, 0], 34),
+    cover('enchant-book:right-page', [4.5, 12.6, 7.9], [8, 17.6, 8.1], [12, 10], [5, 8, 0], -34),
+  ];
 }
 
 function syntheticBellBodyParts(id: string, properties: Record<string, string>): ResolvedBlockPart[] {
@@ -1655,8 +1798,20 @@ function syntheticConduitParts(
 ): ResolvedBlockPart[] {
   if (id !== 'minecraft:conduit') return [];
 
+  // The conduit has no block-model geometry; vanilla draws it as a block entity.
+  // When inactive it is the small closed "shell" — a 6×6×6 cube floating at the
+  // block centre, textured from the 32×16 entity/conduit/base atlas with the
+  // standard box unwrap (texOffs 0,0).
   return [
-    syntheticCuboidPart(id, properties, 'conduit:core', [3, 3, 3], [13, 13, 13], 'minecraft:block/conduit', variantRotation),
+    blockEntityCuboidPart(
+      id,
+      properties,
+      'conduit:shell',
+      { name: 'shell', from: [5, 5, 5], to: [11, 11, 11], textureOrigin: [0, 0] },
+      'minecraft:entity/conduit/base',
+      variantRotation,
+      [32, 16],
+    ),
   ];
 }
 
@@ -3178,6 +3333,10 @@ export function textureUrl(textureId: string): string {
 
   if (normalized === endPortalTextureId) {
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(endPortalSvg)}`;
+  }
+
+  if (normalized === candleFlameTextureId) {
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(candleFlameSvg)}`;
   }
 
   if (normalized.startsWith(playerHeadTexturePrefix)) {

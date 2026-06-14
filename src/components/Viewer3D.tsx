@@ -1134,7 +1134,10 @@ async function createBlockMeshes(
     const block = blocks[index];
     const parts = partsByState.get(renderStateKeyForBlock(block, playerHeadSelections)) ?? [];
 
-    for (const part of parts) {
+    for (const rawPart of parts) {
+      // Flowing fluid slopes down away from its source; the corner heights need
+      // the neighbours, so derive the sloped part here rather than in resolveBlockParts.
+      const part = fluidSlopePart(block, rawPart, partsByBlock);
       const hiddenFaces = hiddenFacesForPart(
         block,
         part,
@@ -1875,7 +1878,7 @@ function geometryForPart(part: ResolvedBlockPart, textureAdjustments: TextureAdj
       : 'none'
   }::${part.uvLock ? 'uvlock' : 'freeuv'}::${uvKey}::texture:${textureSizeKey}::faces:${
     part.isFallback ? 'fallback' : faceOrder.filter((face) => part.faceTextures[face]).join(',')
-  }`;
+  }::fluid:${part.fluidCorners ? part.fluidCorners.join(',') : 'none'}`;
   const cached = geometryCache.get(key);
   if (cached) return cached;
 
@@ -1960,6 +1963,24 @@ function createModelElementGeometry(part: ResolvedBlockPart, textureAdjustments:
 const faceCornerOrder = [0, 1, 2, 3];
 
 function modelFacePositions(part: ResolvedBlockPart, face: ModelFaceName): Array<[number, number, number]> {
+  const base = boxFacePositions(part, face);
+  if (!part.fluidCorners) return base;
+
+  // Sloped fluid: lift every top vertex (y === to.y) to its corner height.
+  const x2 = part.to[0] / 16 - 0.5;
+  const y2 = part.to[1] / 16 - 0.5;
+  const z2 = part.to[2] / 16 - 0.5;
+  const [nw, ne, sw, se] = part.fluidCorners;
+  return base.map(([x, y, z]) => {
+    if (Math.abs(y - y2) > 1e-6) return [x, y, z];
+    const isEast = Math.abs(x - x2) < 1e-6;
+    const isSouth = Math.abs(z - z2) < 1e-6;
+    const heightPx = isSouth ? (isEast ? se : sw) : (isEast ? ne : nw);
+    return [x, heightPx / 16 - 0.5, z];
+  });
+}
+
+function boxFacePositions(part: ResolvedBlockPart, face: ModelFaceName): Array<[number, number, number]> {
   const x1 = part.from[0] / 16 - 0.5;
   const y1 = part.from[1] / 16 - 0.5;
   const z1 = part.from[2] / 16 - 0.5;
@@ -2291,6 +2312,91 @@ function isWaterPart(part: ResolvedBlockPart): boolean {
   return part.blockId === 'minecraft:water';
 }
 
+const fluidBlockIds = new Set(['minecraft:water', 'minecraft:lava']);
+
+// The full-cell fluid quad produced by syntheticFluidPart (a waterlogged block
+// adds one too). Distinguishes the fluid surface from the host block's geometry.
+function isFluidSurfacePart(part: ResolvedBlockPart): boolean {
+  return (
+    fluidBlockIds.has(part.blockId)
+    && part.from[0] === 0 && part.from[1] === 0 && part.from[2] === 0
+    && part.to[0] === 16 && part.to[2] === 16
+  );
+}
+
+function fluidHeightAt(
+  x: number,
+  y: number,
+  z: number,
+  fluidId: string,
+  partsByBlock: Map<string, ResolvedBlockPart[]>,
+): number | null {
+  const here = partsByBlock.get(`${x},${y},${z}`);
+  const fluid = here?.find((part) => part.blockId === fluidId && isFluidSurfacePart(part));
+  if (!fluid) return null;
+  // Fluid stacked directly above fills this cell to the top.
+  const above = partsByBlock.get(`${x},${y + 1},${z}`);
+  if (above?.some((part) => part.blockId === fluidId && isFluidSurfacePart(part))) return 16;
+  return fluid.to[1];
+}
+
+// Vanilla corner-height blend: near-full samples (source, fluid-above) dominate
+// (weight 10) so pools stay flat at their edges while flowing fluid tapers.
+function fluidCornerHeight(self: number, a: number | null, b: number | null, diag: number | null): number {
+  const samples = [self];
+  if (a != null) samples.push(a);
+  if (b != null) samples.push(b);
+  if (diag != null && (a != null || b != null)) samples.push(diag);
+
+  let sum = 0;
+  let weight = 0;
+  for (const height of samples) {
+    if (height >= 12.8) {
+      sum += height * 10;
+      weight += 10;
+    } else {
+      sum += height;
+      weight += 1;
+    }
+  }
+  return weight > 0 ? sum / weight : self;
+}
+
+function fluidSlopePart(
+  block: VoxelBlock,
+  part: ResolvedBlockPart,
+  partsByBlock: Map<string, ResolvedBlockPart[]>,
+): ResolvedBlockPart {
+  if (!isFluidSurfacePart(part)) return part;
+
+  const fluidId = part.blockId;
+  const { x, y, z } = block;
+  const self = fluidHeightAt(x, y, z, fluidId, partsByBlock) ?? part.to[1];
+  const at = (dx: number, dz: number) => fluidHeightAt(x + dx, y, z + dz, fluidId, partsByBlock);
+  const north = at(0, -1);
+  const south = at(0, 1);
+  const west = at(-1, 0);
+  const east = at(1, 0);
+
+  const round = (value: number) => Math.round(value * 4) / 4;
+  const corners: [number, number, number, number] = [
+    round(fluidCornerHeight(self, north, west, at(-1, -1))),
+    round(fluidCornerHeight(self, north, east, at(1, -1))),
+    round(fluidCornerHeight(self, south, west, at(-1, 1))),
+    round(fluidCornerHeight(self, south, east, at(1, 1))),
+  ];
+
+  if (corners.every((height) => Math.abs(height - part.to[1]) < 0.02)) return part;
+
+  const maxHeight = Math.max(...corners);
+  return {
+    ...part,
+    to: [part.to[0], maxHeight, part.to[2]],
+    fluidCorners: corners,
+    key: `${part.key}::slope:${corners.join(',')}`,
+  };
+}
+
 function isRailPart(part: ResolvedBlockPart): boolean {
   const path = part.blockId.replace(/^minecraft:/, '');
   return path === 'rail' || path.endsWith('_rail');
@@ -2350,7 +2456,12 @@ function isAlphaCutoutTexture(textureId: string): boolean {
     || path.includes('fern')
     || path.includes('bush')
     || path.includes('roots')
-    || path.includes('vines')
+    // Matches vine, weeping/twisting/cave vines, and sculk_vein — all flat,
+    // gappy attachments. The old `vines` (plural) check silently missed the
+    // singular `block/vine` and `block/sculk_vein`, so their transparent gaps
+    // rendered as opaque squares.
+    || path.includes('vine')
+    || path.includes('vein')
     || path.includes('flower')
     || isCrossPlaneFlowerTexture(path)
     || path.includes('coral')
@@ -2377,7 +2488,8 @@ function cutoutTextureNeedsDoubleSide(textureId: string): boolean {
     || path.includes('fern')
     || path.includes('bush')
     || path.includes('roots')
-    || path.includes('vines')
+    || path.includes('vine')
+    || path.includes('vein')
     || path.includes('flower')
     || isCrossPlaneFlowerTexture(path)
     || /(^|\/)(wheat|carrots|potatoes|beetroots|nether_wart)_stage\d+$/.test(path)
