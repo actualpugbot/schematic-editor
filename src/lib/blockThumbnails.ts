@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {
   resolveBlockParts,
+  resolveInventoryModelParts,
   textureUrl,
   type ModelFaceName,
   type ModelFaceUv,
@@ -59,6 +60,10 @@ interface PreparedThumbnailPart {
 export interface BlockThumbnailLayer {
   stateKey: string;
   offset?: [number, number, number];
+  // When set, the thumbnail renders this model file directly instead of the
+  // block's placed-state blockstate (e.g. `block/oak_fence_inventory`, which
+  // shows the two-post item silhouette rather than a connected fence post).
+  modelId?: string;
 }
 
 export interface BlockThumbnailRenderOptions {
@@ -166,7 +171,7 @@ function thumbnailCacheKey(
   if (!layers || layers.length === 0) return `${stateKey}::${fallbackColor}::${resolution}`;
 
   const layerKey = layers
-    .map((layer) => `${layer.stateKey}@${(layer.offset ?? [0, 0, 0]).join(',')}`)
+    .map((layer) => `${layer.stateKey}@${(layer.offset ?? [0, 0, 0]).join(',')}#${layer.modelId ?? ''}`)
     .join('|');
   return `${stateKey}::${fallbackColor}::${layerKey}::${resolution}`;
 }
@@ -192,7 +197,9 @@ async function prepareBlockThumbnail(
   const resolvedLayers = layers && layers.length > 0 ? layers : [{ stateKey }];
   const preparedParts = (
     await Promise.all(resolvedLayers.map(async (layer) => {
-      const parts = await resolveBlockParts(layer.stateKey);
+      const parts = layer.modelId
+        ? await resolveInventoryModelParts(layer.stateKey, layer.modelId)
+        : await resolveBlockParts(layer.stateKey);
       const [x, y, z] = layer.offset ?? [0, 0, 0];
       const position = new THREE.Vector3(x, y, z);
       return Promise.all(parts.map(async (part): Promise<PreparedThumbnailPart> => ({

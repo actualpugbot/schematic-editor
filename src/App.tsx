@@ -5355,6 +5355,7 @@ function normalizeThumbnailPreviewLayers(layers?: BlockThumbnailLayer[]): BlockT
   return layers.map((layer) => ({
     stateKey: layer.stateKey,
     offset: layer.offset ? [...layer.offset] as [number, number, number] : undefined,
+    modelId: layer.modelId,
   }));
 }
 
@@ -5396,6 +5397,7 @@ function thumbnailPreviewLayersEqual(left?: BlockThumbnailLayer[], right?: Block
   return left.every((layer, index) => {
     const other = right[index];
     if (!other || layer.stateKey !== other.stateKey) return false;
+    if ((layer.modelId ?? '') !== (other.modelId ?? '')) return false;
     const leftOffset = layer.offset ?? [0, 0, 0];
     const rightOffset = other.offset ?? [0, 0, 0];
     return leftOffset[0] === rightOffset[0]
@@ -6946,7 +6948,11 @@ function materialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] | unde
 }
 
 function fenceMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {
-  return [{ stateKey: fenceMaterialStateKey(stateKey) }];
+  // Show the inventory model (two posts joined by rails) like the in-game item,
+  // rather than a single placed post with stub connectors.
+  const baseState = stripBlockStateProperties(stateKey);
+  const id = baseState.replace(/^minecraft:/, '');
+  return [{ stateKey: baseState, modelId: `block/${id}_inventory` }];
 }
 
 function stairMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {

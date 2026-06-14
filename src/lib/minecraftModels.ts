@@ -106,6 +106,7 @@ const blockstateCache = new Map<string, Promise<BlockstateJson | null>>();
 const modelCache = new Map<string, Promise<ModelJson | null>>();
 const resolvedModelCache = new Map<string, Promise<ResolvedModel | null>>();
 const resolvedBlockCache = new Map<string, Promise<ResolvedBlockPart[]>>();
+const resolvedInventoryCache = new Map<string, Promise<ResolvedBlockPart[]>>();
 const defaultPlayerSkinSvg = `
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" shape-rendering="crispEdges">
   <rect width="64" height="64" fill="none"/>
@@ -1197,30 +1198,7 @@ async function resolveBlockPartsUncached(stateKey: string): Promise<ResolvedBloc
       continue;
     }
 
-    for (const [index, rawElement] of model.elements.entries()) {
-      const element = normalizeModelElementForBlock(state.id, rawElement);
-      parts.push({
-        key: `${stateKey}::${partKey(variant, element, model.textures, index)}`,
-        blockId: state.id,
-        blockProperties: state.properties,
-        from: element.from,
-        to: element.to,
-        textureSize: [16, 16],
-        shade: element.shade ?? true,
-        elementRotation: element.rotation,
-        uvLock: variant.uvlock ?? false,
-        variantRotation: {
-          x: variant.x ?? 0,
-          y: variant.y ?? 0,
-        },
-        faceTextures: faceTextures(element, model.textures),
-        faceTints: faceTints(element),
-        faceUvs: faceUvs(element),
-        faceRotations: faceRotations(element),
-        faceCullfaces: faceCullfaces(element),
-        faceTranslucencies: faceTranslucencies(element, model.textures),
-      });
-    }
+    parts.push(...modelVariantParts(stateKey, state.id, state.properties, variant, model));
   }
 
   // The bell's metal body is a block entity, not part of the block-model JSON
@@ -1230,6 +1208,64 @@ async function resolveBlockPartsUncached(stateKey: string): Promise<ResolvedBloc
   }
 
   return parts;
+}
+
+function modelVariantParts(
+  stateKey: string,
+  blockId: string,
+  properties: Record<string, string>,
+  variant: BlockstateVariant,
+  model: ResolvedModel,
+): ResolvedBlockPart[] {
+  return model.elements.map((rawElement, index) => {
+    const element = normalizeModelElementForBlock(blockId, rawElement);
+    return {
+      key: `${stateKey}::${partKey(variant, element, model.textures, index)}`,
+      blockId,
+      blockProperties: properties,
+      from: element.from,
+      to: element.to,
+      textureSize: [16, 16],
+      shade: element.shade ?? true,
+      elementRotation: element.rotation,
+      uvLock: variant.uvlock ?? false,
+      variantRotation: {
+        x: variant.x ?? 0,
+        y: variant.y ?? 0,
+      },
+      faceTextures: faceTextures(element, model.textures),
+      faceTints: faceTints(element),
+      faceUvs: faceUvs(element),
+      faceRotations: faceRotations(element),
+      faceCullfaces: faceCullfaces(element),
+      faceTranslucencies: faceTranslucencies(element, model.textures),
+    };
+  });
+}
+
+// Resolves a model file directly (bypassing the blockstate) so material-list
+// thumbnails can show item-style models such as `*_fence_inventory`, which the
+// block's placed-state blockstate never references.
+export async function resolveInventoryModelParts(stateKey: string, modelId: string): Promise<ResolvedBlockPart[]> {
+  const key = `${stateKey}::${modelId}`;
+  const cached = resolvedInventoryCache.get(key);
+  if (cached) return cached;
+
+  const promise = resolveInventoryModelPartsUncached(key, stateKey, modelId);
+  resolvedInventoryCache.set(key, promise);
+  return promise;
+}
+
+async function resolveInventoryModelPartsUncached(
+  key: string,
+  stateKey: string,
+  modelId: string,
+): Promise<ResolvedBlockPart[]> {
+  const state = parseBlockStateKey(stateKey);
+  const model = await resolveModel(modelId);
+  if (!model || model.elements.length === 0) return [];
+
+  return modelVariantParts(key, state.id, state.properties, { model: modelId }, model);
 }
 
 function syntheticBellBodyParts(id: string, properties: Record<string, string>): ResolvedBlockPart[] {
