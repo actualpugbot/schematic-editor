@@ -592,6 +592,46 @@ html[data-scrollbars-visible='true'] *::-webkit-scrollbar-thumb,
   min-height: 0;
   overflow: hidden;
 }
+/* The persistent 3D viewer fills the panel beneath the floating chrome and
+   stays mounted across mode switches; .is-hidden parks it (display:none) while
+   another full-panel view is shown so its render loop can pause. */
+.persistent-viewer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+.persistent-viewer.is-hidden {
+  display: none;
+}
+/* Floating "building" indicator shown during slow mesh rebuilds. */
+.viewer-build-status {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 14;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(12px) saturate(140%);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-float);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.viewer-build-spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent);
+  animation: load-spin 0.8s linear infinite;
+}
 .viewport-panel canvas {
   display: block;
   width: 100% !important;

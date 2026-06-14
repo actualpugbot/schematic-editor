@@ -35,6 +35,12 @@ interface Viewer3DProps {
   onTextureFaceDrag?: (deltaU: number, deltaV: number, hit: TextureFaceHit) => void;
   onAxisOrientationChange?: (orientation: AxisGizmoOrientation) => void;
   onReady?: () => void;
+  /**
+   * Whether this viewer is the visible main view. When false (e.g. while the
+   * shopping / resource / shulker panels cover the viewport) the render loop is
+   * paused so the cached scene can stay mounted cheaply and reappear instantly.
+   */
+  active?: boolean;
 }
 
 export interface CuboidBounds {
@@ -158,6 +164,7 @@ const cuboidOverlayPadding = 0.018;
 const cornerLabelOffset = 0.86;
 const defaultSchematicRotationY = -Math.PI / 2;
 const meshBuildYieldInterval = 180;
+const meshBuildIndicatorDelayMs = 220;
 const labelProjectionVector = new THREE.Vector3();
 const rotationControlProjectionVector = new THREE.Vector3();
 const stageBackgroundTransitionDurationMs = 220;
@@ -178,6 +185,8 @@ function checkWebgl2Support(): boolean {
 
 export function Viewer3D(props: InternalViewerProps) {
   const [webglError, setWebglError] = useState<'unsupported' | 'lost' | null>(null);
+  const [buildPending, setBuildPending] = useState(false);
+  const activeRef = useRef(props.active ?? true);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -272,6 +281,10 @@ export function Viewer3D(props: InternalViewerProps) {
   useEffect(() => {
     cameraModeRef.current = props.cameraMode;
   }, [props.cameraMode]);
+
+  useEffect(() => {
+    activeRef.current = props.active ?? true;
+  }, [props.active]);
 
   useEffect(() => {
     spectatorStateRef.current.baseSpeed = props.spectatorSpeed;
@@ -414,6 +427,9 @@ export function Viewer3D(props: InternalViewerProps) {
 
     const resize = () => {
       const rect = container.getBoundingClientRect();
+      // While the viewer is hidden (display:none) the container reports 0×0.
+      // Keep the last good size so it reappears at the correct resolution.
+      if (rect.width === 0 || rect.height === 0) return;
       const width = Math.max(1, rect.width);
       const height = Math.max(1, rect.height);
       renderer.setSize(width, height, false);
@@ -554,6 +570,13 @@ export function Viewer3D(props: InternalViewerProps) {
 
     let previousTime = performance.now();
     const animate = (time: number) => {
+      // Paused while another view covers the viewport: keep the scene resident
+      // but skip rendering so returning to it is instant and cheap.
+      if (activeRef.current === false) {
+        previousTime = time;
+        frameRef.current = window.requestAnimationFrame(animate);
+        return;
+      }
       const deltaTime = Math.min(0.08, Math.max(0, (time - previousTime) / 1000));
       previousTime = time;
       if (cameraModeRef.current === 'spectator') {
@@ -726,11 +749,17 @@ export function Viewer3D(props: InternalViewerProps) {
 
     if (!props.model) {
       clearGroup(group, false);
+      setBuildPending(false);
       return;
     }
 
     let cancelled = false;
     const abortController = new AbortController();
+    // Only surface the build indicator if the rebuild is slow enough to notice;
+    // fast rebuilds shouldn't flash a spinner over the existing scene.
+    const pendingTimer = window.setTimeout(() => {
+      if (!cancelled) setBuildPending(true);
+    }, meshBuildIndicatorDelayMs);
 
     void createBlockMeshes(
       filteredBlocks,
@@ -747,11 +776,15 @@ export function Viewer3D(props: InternalViewerProps) {
     }).catch((error: unknown) => {
       if (isAbortError(error)) return;
       console.error('Could not build schematic mesh.', error);
+    }).finally(() => {
+      window.clearTimeout(pendingTimer);
+      if (!cancelled) setBuildPending(false);
     });
 
     return () => {
       cancelled = true;
       abortController.abort();
+      window.clearTimeout(pendingTimer);
     };
   }, [filteredBlocks, props.model, props.playerHeadSelections, props.textureAdjustments]);
 
@@ -849,6 +882,12 @@ export function Viewer3D(props: InternalViewerProps) {
 
   return (
     <div className="viewer-canvas" data-camera-mode={props.cameraMode} data-testid="viewer-canvas" ref={containerRef}>
+      {buildPending && !webglError && (
+        <div className="viewer-build-status" role="status" aria-live="polite">
+          <span className="viewer-build-spinner" aria-hidden="true" />
+          <span>Building 3D view…</span>
+        </div>
+      )}
       {webglError && (
         <div className="viewer-webgl-fallback" role="alert">
           {webglError === 'unsupported'

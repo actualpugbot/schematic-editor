@@ -2605,6 +2605,16 @@ function App() {
 
   const thumbnailDebugActive = THUMBNAIL_DEBUG_ENABLED && appView === 'thumbnail-debug';
 
+  // The main 3D viewer stays mounted across mode switches so the built scene is
+  // cached and reappears instantly. It's only hidden (and its render loop
+  // paused) while a full-panel view covers the viewport.
+  const altPanelActive =
+    thumbnailDebugActive ||
+    (appView === 'resource' && Boolean(model)) ||
+    (appView === 'shulker' && Boolean(model)) ||
+    (appView === 'shopping' && Boolean(model));
+  const persistentViewerHidden = loadState === 'loading' || textureViewActive || altPanelActive;
+
   const setDefaultCameraView = (id: string) => {
     setSavedCameraViews((current) => current.map((view) => ({
       ...view,
@@ -3066,6 +3076,34 @@ function App() {
           className={`viewport-panel${appView === 'shopping' || appView === 'shulker' || appView === 'resource' || thumbnailDebugActive ? ' shopping-viewport' : ''}${appView === 'resource' ? ' resource-viewport' : ''}${appView === 'shulker' ? ' shulker-viewport' : ''}${thumbnailDebugActive ? ' thumbnail-debug-viewport' : ''}${selectedBlock && !textureViewActive && appView !== 'shopping' && appView !== 'shulker' && appView !== 'resource' && !thumbnailDebugActive ? ' has-selection-modal' : ''}`}
           aria-label={appView === 'resource' ? 'Resource Calculator' : appView === 'shulker' ? 'Shulker Box View' : appView === 'shopping' ? 'Shopping list' : thumbnailDebugActive ? 'Thumbnail debug' : 'Schematic 3D viewport'}
         >
+          <div className={`persistent-viewer${persistentViewerHidden ? ' is-hidden' : ''}`} aria-hidden={persistentViewerHidden}>
+            <Viewer3D
+              model={displayedModel}
+              cameraMode={cameraMode}
+              spectatorSpeed={spectatorSpeed}
+              visibleBottomLayer={renderedVisibleBottomLayer}
+              visibleTopLayer={renderedVisibleTopLayer}
+              autoRotate={false}
+              showGrid={showGrid}
+              theme={theme}
+              stageBackgroundColor={stageBackgroundColor}
+              hiddenMaterialIds={hiddenMaterialIds}
+              playerHeadSelections={playerHeadSelections}
+              selectedBlock={selectedBlock}
+              placementPreviewBlock={appView === 'edit' && selectedBuildBlock !== 'minecraft:air' ? selectedBuildBlockPreview : null}
+              cuboidBounds={cuboidBounds}
+              cuboidCorners={cuboidCorners}
+              showCuboidCornerLabels={appView === 'inspect' && inspectorTab === 'selection' && Boolean(cuboidBounds)}
+              rotationTarget={appView === 'edit' && rotateTargetLabel ? (materialsScope === 'cuboid' && cuboidBounds ? 'cuboid' : 'block') : null}
+              rotationControlRef={rotationControlsRef}
+              textureAdjustments={textureAdjustments}
+              active={!persistentViewerHidden}
+              onBlockSelect={handleBlockSelect}
+              onAxisOrientationChange={updateAxisGizmo}
+              onReady={handleViewerReady}
+              viewerRef={viewerRef}
+            />
+          </div>
           {loadState === 'loading' ? (
             <div className="load-progress" role="status" aria-live="polite">
               <div className="load-spinner" aria-hidden="true" />
@@ -4196,7 +4234,7 @@ function App() {
             Not an official Minecraft product. Not approved by or associated with Mojang or Microsoft.
           </span>
 
-          {textureViewActive ? (
+          {textureViewActive && (
             <div className="texture-compare-canvases" aria-label="Texture comparison previews">
               <div className="texture-compare-pane">
                 <span>Default</span>
@@ -4251,32 +4289,6 @@ function App() {
                 />
               </div>
             </div>
-          ) : (
-            <Viewer3D
-              model={displayedModel}
-              cameraMode={cameraMode}
-              spectatorSpeed={spectatorSpeed}
-              visibleBottomLayer={renderedVisibleBottomLayer}
-              visibleTopLayer={renderedVisibleTopLayer}
-              autoRotate={false}
-              showGrid={showGrid}
-              theme={theme}
-              stageBackgroundColor={stageBackgroundColor}
-              hiddenMaterialIds={hiddenMaterialIds}
-              playerHeadSelections={playerHeadSelections}
-              selectedBlock={selectedBlock}
-              placementPreviewBlock={appView === 'edit' && selectedBuildBlock !== 'minecraft:air' ? selectedBuildBlockPreview : null}
-              cuboidBounds={cuboidBounds}
-              cuboidCorners={cuboidCorners}
-              showCuboidCornerLabels={appView === 'inspect' && inspectorTab === 'selection' && Boolean(cuboidBounds)}
-              rotationTarget={appView === 'edit' && rotateTargetLabel ? (materialsScope === 'cuboid' && cuboidBounds ? 'cuboid' : 'block') : null}
-              rotationControlRef={rotationControlsRef}
-              textureAdjustments={textureAdjustments}
-              onBlockSelect={handleBlockSelect}
-              onAxisOrientationChange={updateAxisGizmo}
-              onReady={handleViewerReady}
-              viewerRef={viewerRef}
-            />
           )}
             </>
           )}
