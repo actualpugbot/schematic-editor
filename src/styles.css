@@ -2632,7 +2632,7 @@ html[data-theme='dark'] .shulker-slot strong {
 .craft-plan-ingredient.is-checked .plan-ing-meta strong { text-decoration: line-through; }
 .plan-ing-meta { min-width: 0; }
 .plan-ing-meta strong { display: block; font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.plan-ing-meta span { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.plan-ing-meta > span { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .plan-check {
   width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--line-strong);
@@ -2650,11 +2650,58 @@ html[data-theme='dark'] .shulker-slot strong {
 .craft-plan-group-head span { font-size: 12px; color: var(--muted); }
 .craft-plan-steps { display: flex; flex-direction: column; gap: 10px; }
 .craft-plan-step {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.1fr); align-items: center; gap: 12px;
+  display: flex; flex-direction: column; gap: 10px;
   padding: 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-soft);
   transition: border-color 0.12s, background 0.12s;
 }
+.craft-plan-step-main {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.1fr); align-items: center; gap: 12px;
+}
 .craft-plan-step.is-checked { background: var(--emerald-bg); border-color: transparent; }
+.craft-plan-step-actions {
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap;
+  border-top: 1px solid var(--line); padding-top: 9px;
+}
+.recipe-pick { display: inline-flex; align-items: center; gap: 7px; margin-right: auto; }
+.recipe-pick > span {
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--faint);
+}
+.recipe-pick select {
+  font-family: inherit; font-size: 12px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--r-sm); padding: 4px 8px; cursor: pointer;
+}
+.recipe-pick select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.base-toggle-btn {
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  font-size: 11.5px; font-weight: 600; color: var(--muted);
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-pill);
+  padding: 5px 11px; cursor: pointer; transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.base-toggle-btn:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-tint); }
+
+/* base / craft override controls */
+.resource-bases-bar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin: 14px 0 4px; padding: 10px 14px;
+  background: var(--surface-soft); border: 1px solid var(--line); border-radius: var(--r-md);
+}
+.resource-bases-hint {
+  display: flex; align-items: flex-start; gap: 8px; min-width: 0; flex: 1;
+  font-size: 12.5px; line-height: 1.45; color: var(--muted);
+}
+.resource-bases-hint svg { flex: none; margin-top: 2px; color: var(--accent); }
+.resource-bases-hint strong { color: var(--ink); font-weight: 600; }
+.resource-bases-bar .secondary-button { flex: none; }
+
+.craft-plan-ingredient-row { display: flex; align-items: center; gap: 4px; }
+.craft-plan-ingredient-row .craft-plan-ingredient { flex: 1; min-width: 0; }
+.craft-plan-ingredient-row .base-toggle-btn { padding: 4px 8px; font-size: 10.5px; }
+.base-tag {
+  margin-left: 7px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.03em; text-transform: uppercase; color: var(--accent-strong);
+  background: var(--accent-tint); padding: 1px 6px; border-radius: var(--r-pill); vertical-align: middle;
+}
 
 .craft-plan-inputs { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .craft-plan-chip {

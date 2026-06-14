@@ -22,7 +22,10 @@ export interface MaterialLike {
 }
 
 export interface BreakdownOptions {
+  /** Items the user forces to be treated as a base material even if they have a recipe. */
   rawOverrides: Set<string>;
+  /** Items the user forces to break down even if they are a base material by default. */
+  craftOverrides?: Set<string>;
   recipeChoice: Map<string, number>;
   recipeTypePreference: RecipeType[];
   integerCrafting: boolean;
@@ -55,6 +58,15 @@ let recipesByOutput: Record<string, Recipe[]> = {};
 let defaultRaw = new Set<string>();
 const unresolvedKinds = new Set<string>();
 
+// Finished blocks players almost always stock as the block itself rather than
+// re-deriving them from a recipe every time (glass is kept as glass, not smelted
+// from sand). They still have recipes, so the calculator can break them down on
+// request, but they count as a base material until the user asks otherwise.
+const defaultBaseMaterials = new Set<string>([
+  'glass',
+  'tinted_glass',
+]);
+
 export function loadRecipeBundle(): Promise<RecipeBundle> {
   recipeBundlePromise ??= import('./data/recipes.generated.json').then((module) => {
     recipeBundle = module.default as unknown as RecipeBundle;
@@ -85,23 +97,33 @@ export function getRecipes(itemId: string): Recipe[] {
 
 export function isRawByDefault(itemId: string): boolean {
   const id = normalizeRecipeItemId(itemId);
-  return defaultRaw.has(id) || isNaturallyGathered(id);
+  return defaultRaw.has(id) || defaultBaseMaterials.has(id) || isNaturallyGathered(id);
+}
+
+/** True when the calculator can break this item down into a recipe of its own. */
+export function canBreakDown(itemId: string): boolean {
+  return getRecipes(itemId).length > 0;
+}
+
+/** Index of the recipe the calculator would use for an item, honoring the user's pick. */
+export function chooseRecipeIndex(itemId: string, opts: BreakdownOptions): number {
+  const id = normalizeRecipeItemId(itemId);
+  const recipes = getRecipes(id);
+  if (recipes.length === 0) return -1;
+
+  const explicitChoice = opts.recipeChoice.get(id);
+  if (explicitChoice !== undefined && recipes[explicitChoice]) return explicitChoice;
+
+  let bestIndex = 0;
+  for (let index = 1; index < recipes.length; index += 1) {
+    if (compareRecipes(recipes[index], recipes[bestIndex], opts) < 0) bestIndex = index;
+  }
+  return bestIndex;
 }
 
 export function chooseRecipe(itemId: string, opts: BreakdownOptions): Recipe | undefined {
-  const id = normalizeRecipeItemId(itemId);
-  const recipes = getRecipes(id);
-  if (recipes.length === 0) return undefined;
-
-  const explicitChoice = opts.recipeChoice.get(id);
-  if (explicitChoice !== undefined) return recipes[explicitChoice] ?? recipes[0];
-
-  return [...recipes].sort((a, b) => (
-    recipePreferenceRank(a.type, opts.recipeTypePreference) - recipePreferenceRank(b.type, opts.recipeTypePreference)
-      || rawInputScore(b, opts) - rawInputScore(a, opts)
-      || Object.keys(a.inputs).length - Object.keys(b.inputs).length
-      || a.output - b.output
-  ))[0];
+  const index = chooseRecipeIndex(itemId, opts);
+  return index < 0 ? undefined : getRecipes(itemId)[index];
 }
 
 export function explodeMaterials(top: MaterialLike[], opts: BreakdownOptions): BreakdownResult {
@@ -114,7 +136,9 @@ export function explodeMaterials(top: MaterialLike[], opts: BreakdownOptions): B
     const owned = opts.owned?.get(id) ?? 0;
     const neededQuantity = Math.max(0, quantity - owned);
     const recipes = getRecipes(id);
-    const isRaw = opts.rawOverrides.has(id) || isRawByDefault(id) || recipes.length === 0 || visited.has(id);
+    const canCraft = recipes.length > 0 && !visited.has(id);
+    const forcedCraft = canCraft && (opts.craftOverrides?.has(id) ?? false);
+    const isRaw = !forcedCraft && (opts.rawOverrides.has(id) || isRawByDefault(id) || !canCraft);
 
     if (isRaw) {
       rawTotals.set(id, (rawTotals.get(id) ?? 0) + neededQuantity);
@@ -181,6 +205,15 @@ export function recipeTypeLabel(type: RecipeType): string {
 
 export function normalizeRecipeItemId(itemId: string): string {
   return itemId.replace(/^minecraft:/, '').split('[', 1)[0];
+}
+
+function compareRecipes(a: Recipe, b: Recipe, opts: BreakdownOptions): number {
+  return (
+    recipePreferenceRank(a.type, opts.recipeTypePreference) - recipePreferenceRank(b.type, opts.recipeTypePreference)
+      || rawInputScore(b, opts) - rawInputScore(a, opts)
+      || Object.keys(a.inputs).length - Object.keys(b.inputs).length
+      || a.output - b.output
+  );
 }
 
 function recipePreferenceRank(type: RecipeType, preference: RecipeType[]): number {

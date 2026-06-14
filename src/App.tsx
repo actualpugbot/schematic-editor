@@ -66,13 +66,18 @@ import { loadMaterialSpriteLookup, materialSpriteTintForStateKey, materialSprite
 import { parseBlockStateKey as parseMinecraftBlockStateKey, textureUrl, type ModelFaceName } from './lib/minecraftModels';
 import { writeNbt, type NbtDocument } from './lib/nbt';
 import {
+  canBreakDown,
+  chooseRecipeIndex,
   defaultRecipeTypePreference,
   explodeMaterials,
   getRecipeBundle,
+  getRecipes,
   loadRecipeBundle,
   normalizeRecipeItemId,
   recipeTypeLabel,
   type BreakdownNode,
+  type BreakdownOptions,
+  type Recipe,
   type RecipeType,
 } from './lib/recipes';
 import {
@@ -94,6 +99,11 @@ import allBlockIds from './lib/data/block_ids.generated.json';
 import defaultSchematicUrl from '../mossy_roof_house.litematic?url';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
+type MaterialBaseMode = 'base' | 'craft';
+interface MaterialBasePreferences {
+  modes: Record<string, MaterialBaseMode>;
+  recipes: Record<string, number>;
+}
 type DraggedFileKind = 'none' | 'unsupported-file' | 'unknown-file' | 'schematic-file';
 type InspectorTab = 'selection' | 'materials' | 'layers';
 type EditPanelTab = 'tools' | 'rotate' | 'replace';
@@ -299,6 +309,7 @@ const themeStorageKey = 'schematic-editor-theme';
 const leftRailCollapsedStorageKey = 'schematic-editor-left-rail-collapsed';
 const controlRailSideStorageKey = 'schematic-editor-control-rail-side';
 const stageBackgroundColorStorageKey = 'schematic-editor-stage-background-color';
+const materialBaseStorageKey = 'schematic-editor-material-bases';
 const shoppingListStoragePrefix = 'schematic-editor-shopping-list';
 const shulkerViewStoragePrefix = 'schematic-editor-shulker-view';
 const selectionStoragePrefix = 'schematic-editor-selections';
@@ -423,6 +434,27 @@ let creativeInventoryData: CreativeInventoryData | null = null;
 let creativeInventoryKeywordOrderCache: Record<CreativeCategoryId, string[]> | null = null;
 let loadedThumbnailDisplayAdjustments: ThumbnailDisplayAdjustmentMap = {};
 let appDataPromise: Promise<void> | null = null;
+
+function loadMaterialBasePreferences(): MaterialBasePreferences {
+  const empty: MaterialBasePreferences = { modes: {}, recipes: {} };
+  if (typeof window === 'undefined') return empty;
+  try {
+    const raw = window.localStorage.getItem(materialBaseStorageKey);
+    if (!raw) return empty;
+    const parsed = JSON.parse(raw) as Partial<MaterialBasePreferences>;
+    const modes: Record<string, MaterialBaseMode> = {};
+    for (const [id, mode] of Object.entries(parsed.modes ?? {})) {
+      if (mode === 'base' || mode === 'craft') modes[id] = mode;
+    }
+    const recipes: Record<string, number> = {};
+    for (const [id, index] of Object.entries(parsed.recipes ?? {})) {
+      if (typeof index === 'number' && Number.isInteger(index) && index >= 0) recipes[id] = index;
+    }
+    return { modes, recipes };
+  } catch {
+    return empty;
+  }
+}
 
 // The recipe/inventory/thumbnail data is only needed after first paint, so it is
 // code-split out of the entry chunk and fetched eagerly in the background.
@@ -752,6 +784,12 @@ function App() {
   const [thumbnailAdjustmentsCopied, setThumbnailAdjustmentsCopied] = useState(false);
   const [hiddenMaterialIds, setHiddenMaterialIds] = useState<Set<string>>(() => new Set());
   const integerCrafting = true;
+  const [materialBaseModes, setMaterialBaseModes] = useState<Map<string, MaterialBaseMode>>(
+    () => new Map(Object.entries(loadMaterialBasePreferences().modes)),
+  );
+  const [recipeChoices, setRecipeChoices] = useState<Map<string, number>>(
+    () => new Map(Object.entries(loadMaterialBasePreferences().recipes)),
+  );
   const [shoppingSearch, setShoppingSearch] = useState('');
   const [shoppingLayout, setShoppingLayout] = useState<ShoppingLayout>('grid');
   const [collapsedShoppingGroups, setCollapsedShoppingGroups] = useState<Set<string>>(() => new Set());
@@ -925,12 +963,26 @@ function App() {
     ? cuboidMaterials
     : materials;
   const resourceCalculatorUrl = useMemo(() => resourceCalculatorUrlForMaterials(activeMaterials), [activeMaterials]);
-  const recipeBreakdown = useMemo(() => explodeMaterials(activeMaterials, {
-    rawOverrides: new Set(),
-    recipeChoice: new Map(),
-    recipeTypePreference: defaultRecipeTypePreference,
-    integerCrafting,
-  }), [activeMaterials, appDataVersion, integerCrafting]);
+  const breakdownOptions = useMemo<BreakdownOptions>(() => {
+    const rawOverrides = new Set<string>();
+    const craftOverrides = new Set<string>();
+    for (const [id, mode] of materialBaseModes) {
+      if (mode === 'base') rawOverrides.add(id);
+      else if (mode === 'craft') craftOverrides.add(id);
+    }
+    return {
+      rawOverrides,
+      craftOverrides,
+      recipeChoice: recipeChoices,
+      recipeTypePreference: defaultRecipeTypePreference,
+      integerCrafting,
+    };
+  }, [integerCrafting, materialBaseModes, recipeChoices]);
+  const recipeBreakdown = useMemo(
+    () => explodeMaterials(activeMaterials, breakdownOptions),
+    [activeMaterials, appDataVersion, breakdownOptions],
+  );
+  const materialBaseOverrideCount = materialBaseModes.size + recipeChoices.size;
   const rawMaterials = useMemo<MaterialSummary[]>(() => (
     recipeBreakdown.raw.map((material) => materialSummaryForRecipeItem(material, activeMaterials))
   ), [activeMaterials, recipeBreakdown]);
@@ -1579,6 +1631,18 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
+    const preferences: MaterialBasePreferences = {
+      modes: Object.fromEntries(materialBaseModes),
+      recipes: Object.fromEntries(recipeChoices),
+    };
+    if (materialBaseModes.size === 0 && recipeChoices.size === 0) {
+      window.localStorage.removeItem(materialBaseStorageKey);
+    } else {
+      window.localStorage.setItem(materialBaseStorageKey, JSON.stringify(preferences));
+    }
+  }, [materialBaseModes, recipeChoices]);
+
+  useEffect(() => {
     setStageBackgroundColor((current) => {
       const normalized = normalizeHexColor(current);
       if (
@@ -1931,6 +1995,30 @@ function App() {
       return next;
     });
   };
+
+  const setMaterialBaseMode = useCallback((rawId: string, mode: MaterialBaseMode | 'default') => {
+    const id = normalizeRecipeItemId(rawId);
+    setMaterialBaseModes((current) => {
+      const next = new Map(current);
+      if (mode === 'default') next.delete(id);
+      else next.set(id, mode);
+      return next;
+    });
+  }, []);
+
+  const setMaterialRecipeChoice = useCallback((rawId: string, recipeIndex: number) => {
+    const id = normalizeRecipeItemId(rawId);
+    setRecipeChoices((current) => {
+      const next = new Map(current);
+      next.set(id, recipeIndex);
+      return next;
+    });
+  }, []);
+
+  const resetMaterialBases = useCallback(() => {
+    setMaterialBaseModes(new Map());
+    setRecipeChoices(new Map());
+  }, []);
 
   const choosePlayerHeadTexture = (textureId: string) => {
     if (!selectedBlockKey) return;
@@ -3461,6 +3549,27 @@ function App() {
                 </div>
               </div>
 
+              <div className="resource-bases-bar">
+                <p className="resource-bases-hint">
+                  <SlidersHorizontal size={14} aria-hidden="true" />
+                  <span>
+                    Glass and dyes count as base materials. <strong>Break down</strong> any item to expand it
+                    into its recipe, or <strong>Use as base</strong> to treat a crafted item as one you already have.
+                  </span>
+                </p>
+                {materialBaseOverrideCount > 0 && (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={resetMaterialBases}
+                    title="Restore the default base materials"
+                  >
+                    <RotateCcw size={15} aria-hidden="true" />
+                    Reset bases ({materialBaseOverrideCount})
+                  </button>
+                )}
+              </div>
+
               <div className="craft-plan" aria-label="Crafting plan">
                 <aside className="craft-plan-ingredients" aria-label="Base ingredients">
                   <div className="craft-plan-ingredients-head">
@@ -3477,25 +3586,39 @@ function App() {
                     {rawMaterials.map((material) => {
                       const key = `raw:${material.id}`;
                       const checked = checkedPlanSteps.has(key);
+                      const breakable = canBreakDown(material.id);
+                      const forcedBase = materialBaseModes.get(material.id) === 'base';
                       return (
-                        <button
-                          type="button"
-                          key={material.id}
-                          className={`craft-plan-ingredient${checked ? ' is-checked' : ''}`}
-                          onClick={() => setCheckedPlanSteps((current) => {
-                            const next = new Set(current);
-                            if (next.has(key)) next.delete(key); else next.add(key);
-                            return next;
-                          })}
-                          aria-pressed={checked}
-                        >
-                          <span className={`plan-check${checked ? ' is-on' : ''}`}>{checked && <Check size={12} strokeWidth={3} />}</span>
-                          <MaterialPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
-                          <span className="plan-ing-meta">
-                            <strong>{material.label}</strong>
-                            <span>{material.count.toLocaleString()} · {Math.ceil(material.count / 64)} stacks</span>
-                          </span>
-                        </button>
+                        <div className="craft-plan-ingredient-row" key={material.id}>
+                          <button
+                            type="button"
+                            className={`craft-plan-ingredient${checked ? ' is-checked' : ''}`}
+                            onClick={() => setCheckedPlanSteps((current) => {
+                              const next = new Set(current);
+                              if (next.has(key)) next.delete(key); else next.add(key);
+                              return next;
+                            })}
+                            aria-pressed={checked}
+                          >
+                            <span className={`plan-check${checked ? ' is-on' : ''}`}>{checked && <Check size={12} strokeWidth={3} />}</span>
+                            <MaterialPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
+                            <span className="plan-ing-meta">
+                              <strong>{material.label}{forcedBase && <span className="base-tag">base</span>}</strong>
+                              <span>{material.count.toLocaleString()} · {Math.ceil(material.count / 64)} stacks</span>
+                            </span>
+                          </button>
+                          {breakable && (
+                            <button
+                              type="button"
+                              className="base-toggle-btn"
+                              onClick={() => setMaterialBaseMode(material.id, 'craft')}
+                              title={`Break ${material.label} down into its recipe`}
+                            >
+                              <ChevronDown size={13} aria-hidden="true" />
+                              Break down
+                            </button>
+                          )}
+                        </div>
                       );
                     })}
                     {rawMaterials.length === 0 && <p className="material-empty">No base ingredients to gather.</p>}
@@ -3512,39 +3635,67 @@ function App() {
                       <div className="craft-plan-steps">
                         {group.steps.map((step) => {
                           const checked = checkedPlanSteps.has(`step:${step.id}`);
+                          const stepRecipes = getRecipes(step.id);
+                          const selectedRecipeIndex = chooseRecipeIndex(step.id, breakdownOptions);
                           return (
                             <div className={`craft-plan-step${checked ? ' is-checked' : ''}`} key={step.id}>
-                              <div className="craft-plan-inputs">
-                                {step.inputs.map((input) => (
-                                  <div className="craft-plan-chip" key={input.id}>
-                                    <MaterialPreview stateKey={input.stateKey} color={input.color} layers={input.thumbnailLayers} />
-                                    <span className="chip-label">{input.label}</span>
-                                    <span className="chip-count">{input.count.toLocaleString()}</span>
-                                  </div>
-                                ))}
+                              <div className="craft-plan-step-main">
+                                <div className="craft-plan-inputs">
+                                  {step.inputs.map((input) => (
+                                    <div className="craft-plan-chip" key={input.id}>
+                                      <MaterialPreview stateKey={input.stateKey} color={input.color} layers={input.thumbnailLayers} />
+                                      <span className="chip-label">{input.label}</span>
+                                      <span className="chip-count">{input.count.toLocaleString()}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="craft-plan-arrow" aria-hidden="true">
+                                  <span className="craft-plan-method">{recipeTypeLabel(step.method)}</span>
+                                  <ChevronRight size={18} />
+                                </div>
+                                <button
+                                  type="button"
+                                  className="craft-plan-output"
+                                  onClick={() => setCheckedPlanSteps((current) => {
+                                    const next = new Set(current);
+                                    const k = `step:${step.id}`;
+                                    if (next.has(k)) next.delete(k); else next.add(k);
+                                    return next;
+                                  })}
+                                  aria-pressed={checked}
+                                >
+                                  <span className={`plan-check${checked ? ' is-on' : ''}`}>{checked && <Check size={12} strokeWidth={3} />}</span>
+                                  <MaterialPreview stateKey={step.stateKey} color={step.color} layers={step.thumbnailLayers} />
+                                  <span className="plan-out-meta">
+                                    <strong>{step.label}</strong>
+                                    <span>{step.count.toLocaleString()} · {step.crafts.toLocaleString()} {step.crafts === 1 ? 'craft' : 'crafts'}</span>
+                                  </span>
+                                </button>
                               </div>
-                              <div className="craft-plan-arrow" aria-hidden="true">
-                                <span className="craft-plan-method">{recipeTypeLabel(step.method)}</span>
-                                <ChevronRight size={18} />
+                              <div className="craft-plan-step-actions">
+                                {stepRecipes.length > 1 && (
+                                  <label className="recipe-pick">
+                                    <span>Source</span>
+                                    <select
+                                      value={selectedRecipeIndex}
+                                      onChange={(event) => setMaterialRecipeChoice(step.id, Number(event.target.value))}
+                                    >
+                                      {stepRecipes.map((recipe, index) => (
+                                        <option key={index} value={index}>{describeRecipeSource(recipe)}</option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                )}
+                                <button
+                                  type="button"
+                                  className="base-toggle-btn"
+                                  onClick={() => setMaterialBaseMode(step.id, 'base')}
+                                  title={`Treat ${step.label} as a base material you already have`}
+                                >
+                                  <Box size={13} aria-hidden="true" />
+                                  Use as base
+                                </button>
                               </div>
-                              <button
-                                type="button"
-                                className="craft-plan-output"
-                                onClick={() => setCheckedPlanSteps((current) => {
-                                  const next = new Set(current);
-                                  const k = `step:${step.id}`;
-                                  if (next.has(k)) next.delete(k); else next.add(k);
-                                  return next;
-                                })}
-                                aria-pressed={checked}
-                              >
-                                <span className={`plan-check${checked ? ' is-on' : ''}`}>{checked && <Check size={12} strokeWidth={3} />}</span>
-                                <MaterialPreview stateKey={step.stateKey} color={step.color} layers={step.thumbnailLayers} />
-                                <span className="plan-out-meta">
-                                  <strong>{step.label}</strong>
-                                  <span>{step.count.toLocaleString()} · {step.crafts.toLocaleString()} {step.crafts === 1 ? 'craft' : 'crafts'}</span>
-                                </span>
-                              </button>
                             </div>
                           );
                         })}
@@ -7684,6 +7835,12 @@ function formatBlockName(id: string): string {
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+function describeRecipeSource(recipe: Recipe): string {
+  const inputs = Object.keys(recipe.inputs).map((id) => formatBlockName(id));
+  const label = inputs.length > 0 ? inputs.join(' + ') : 'Raw materials';
+  return `${recipeTypeLabel(recipe.type)} · ${label}`;
 }
 
 function MaterialBreakdown({ materialId, count }: { materialId: string; count: number; compact?: boolean }) {
