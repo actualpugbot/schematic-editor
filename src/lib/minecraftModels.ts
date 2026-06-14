@@ -2032,14 +2032,17 @@ function syntheticDragonHeadParts(
 }
 
 // The piglin head, straight from the piglin entity model (64x64 texture, head
-// faces -Z): a 10-wide head, the flat snout, two tusks poking forward, and two
-// ears tilted out from the sides. No synthetic geometry — every part is the
-// real model cube textured from the vanilla piglin skin.
+// faces -Z): a 10-wide head, the flat snout, two small 1x2x1 tusk nubs seated
+// at the snout's lower corners, and two ears tilted out from the sides. No
+// synthetic geometry — every part is the real model cube textured from the
+// vanilla piglin skin. (The tusk is a 1x2x1 nub; its UV unwrap occupies the
+// 4x3 block at texOffs — sizing it any deeper bleeds into neighbouring regions
+// and turns the nub into a prong poking out past the snout.)
 const PIGLIN_HEAD_CUBES: EntityModelCube[] = [
   { name: 'head', from: [-5, -8, -4], size: [10, 8, 8], texOffs: [0, 0] },
   { name: 'nose', from: [-2, -4, -5], size: [4, 4, 1], texOffs: [31, 1] },
-  { name: 'left-tusk', from: [2, -2, -7], size: [1, 2, 4], texOffs: [2, 4] },
-  { name: 'right-tusk', from: [-3, -2, -7], size: [1, 2, 4], texOffs: [2, 0] },
+  { name: 'left-tusk', from: [2, -2, -6], size: [1, 2, 1], texOffs: [2, 4] },
+  { name: 'right-tusk', from: [-3, -2, -6], size: [1, 2, 1], texOffs: [2, 0] },
   { name: 'left-ear', from: [4.5, -6, -2], size: [1, 5, 4], texOffs: [51, 6], rotation: { axis: 'z', angle: -30, pivot: [4.5, -6, 0] } },
   { name: 'right-ear', from: [-5.5, -6, -2], size: [1, 5, 4], texOffs: [39, 6], rotation: { axis: 'z', angle: 30, pivot: [-4.5, -6, 0] } },
 ];
