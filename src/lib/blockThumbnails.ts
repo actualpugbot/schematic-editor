@@ -7,6 +7,7 @@ import {
   type ModelFaceUv,
   type ResolvedBlockPart,
 } from './minecraftModels';
+import { foliageTintForTexturePath, waterTint } from './foliageTint';
 
 export const defaultBlockThumbnailResolution = 128;
 export const highDetailBlockThumbnailResolution = 256;
@@ -29,10 +30,6 @@ const thumbnailResultCache = new Map<string, string | null>();
 const textureLoader = new THREE.TextureLoader();
 textureLoader.setCrossOrigin('anonymous');
 
-const defaultFoliageTint = 0x48b518;
-const birchFoliageTint = 0x80a755;
-const spruceFoliageTint = 0x619961;
-const waterTint = 0x4f9dff;
 const hiddenMaterial = new THREE.MeshBasicMaterial({
   transparent: true,
   opacity: 0,
@@ -739,14 +736,7 @@ function tintColorForPart(textureId: string, tintIndex: number | null, part: Res
   }
 
   if (path.startsWith('block/water_')) return waterTint;
-  if (path.includes('spruce_leaves')) return spruceFoliageTint;
-  if (path.includes('birch_leaves')) return birchFoliageTint;
-  if (path.includes('leaves') || path.includes('vine') || path.includes('grass') || path.includes('fern')
-    || path.includes('bush') || path.includes('lily_pad')) {
-    return defaultFoliageTint;
-  }
-
-  return null;
+  return foliageTintForTexturePath(textureId);
 }
 
 function redstoneWireColor(powerValue: string | undefined): number {

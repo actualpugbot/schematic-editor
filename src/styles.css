@@ -1458,6 +1458,26 @@ html[data-theme='dark'] .material-pick {
   transform: none;
   transform-origin: center;
 }
+/* Grayscale foliage sprites (short grass, tall grass, ...) ship colorless and
+   rely on a biome tint. Multiply the tint over the sprite, masked to its shape
+   so transparent pixels stay transparent. */
+.block-preview[data-shape='sprite'][data-tinted='true']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-color: var(--block-preview-tint);
+  -webkit-mask-image: var(--block-thumbnail);
+  mask-image: var(--block-thumbnail);
+  -webkit-mask-size: 82% 82%;
+  mask-size: 82% 82%;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  mix-blend-mode: multiply;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
 .block-preview-face { position: absolute; inset: 0; }
 
 /* recipe breakdown chips */

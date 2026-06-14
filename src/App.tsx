@@ -62,7 +62,7 @@ import {
   type BlockThumbnailLayer,
 } from './lib/blockThumbnails';
 import { alwaysMaterialSpriteStateKey } from './lib/materialSpriteOverrides';
-import { loadMaterialSpriteLookup, materialSpriteUrlForStateKey } from './lib/materialSprites';
+import { loadMaterialSpriteLookup, materialSpriteTintForStateKey, materialSpriteUrlForStateKey } from './lib/materialSprites';
 import { parseBlockStateKey as parseMinecraftBlockStateKey, textureUrl, type ModelFaceName } from './lib/minecraftModels';
 import { writeNbt, type NbtDocument } from './lib/nbt';
 import {
@@ -5286,6 +5286,7 @@ const BlockPreview = memo(function BlockPreview({
   const resolvedRotateY = showingSprite ? 0 : (rotateY ?? defaultAdjustment.rotateY);
   const previewUrl = forcedSpriteUrl ?? thumbnailUrl ?? (showingSpriteFallback ? fallbackSpriteUrl : null);
   const previewState = forcedSpriteUrl || previewUrl ? 'ready' : thumbnailState;
+  const spriteTint = showingSprite ? materialSpriteTintForStateKey(forceSpriteStateKey ?? stateKey) : null;
 
   return (
     <span
@@ -5293,6 +5294,7 @@ const BlockPreview = memo(function BlockPreview({
       className="block-preview"
       data-shape={showingSprite ? 'sprite' : 'thumbnail'}
       data-state={previewState}
+      data-tinted={spriteTint !== null ? 'true' : undefined}
       aria-hidden="true"
       style={{
         '--block-thumbnail': previewUrl ? `url("${previewUrl}")` : 'none',
@@ -5300,6 +5302,7 @@ const BlockPreview = memo(function BlockPreview({
         '--block-preview-scale': showingSprite ? '1' : defaultAdjustment.scale.toString(),
         '--block-preview-rotate-x': `${resolvedRotateX}deg`,
         '--block-preview-rotate-y': `${resolvedRotateY}deg`,
+        '--block-preview-tint': spriteTint !== null ? `#${spriteTint.toString(16).padStart(6, '0')}` : undefined,
       } as CSSProperties}
     >
       {previewState === 'failed' && (
