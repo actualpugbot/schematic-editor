@@ -2460,6 +2460,38 @@ function bedFacingRotation(facing: string | undefined): number {
 // the head/foot block placement, this lands the pillow at the bed's head end with
 // the correct orientation. Pairing them the "obvious" way renders the bed facing
 // backwards (a 180deg error).
+//
+// The bed texture is authored for the ORIGINAL box-unwrap orientation. The shared
+// entityCubeUvs was later reoriented (commit 2183b19) so mob/player HEAD faces
+// render upright; that V-flip + up/down-region swap is correct for skulls but put
+// the bed pillow at the seam instead of the head end. Beds therefore pin their own
+// UVs (bedBoxUvs) to the original orientation rather than the head-tuned shared
+// helper, so head fixes and bed correctness stay decoupled.
+function bedBoxUvs(
+  textureOrigin: [number, number],
+  size: [number, number, number],
+): Partial<Record<ModelFaceName, ModelFaceUv>> {
+  const [width, height, depth] = size;
+  const [tx, ty] = textureOrigin;
+  const u0 = tx;
+  const u1 = tx + depth;
+  const u2 = tx + depth + width;
+  const u22 = tx + depth + width + width;
+  const u3 = tx + depth + width + depth;
+  const u4 = tx + depth + width + depth + width;
+  const v0 = ty;
+  const v1 = ty + depth;
+  const v2 = ty + depth + height;
+  return {
+    down: [u1, v0, u2, v1],
+    up: [u2, v1, u22, v0],
+    west: [u1, v2, u0, v1],
+    north: [u2, v2, u1, v1],
+    east: [u3, v2, u2, v1],
+    south: [u4, v2, u3, v1],
+  };
+}
+
 function bedCuboids(part: 'head' | 'foot'): BlockEntityCuboid[] {
   const bodyOrigin: [number, number] = part === 'head' ? [0, 22] : [0, 0];
   const legOrigins: [number, number][] =
@@ -2467,17 +2499,20 @@ function bedCuboids(part: 'head' | 'foot'): BlockEntityCuboid[] {
       ? [[50, 0], [50, 12]]
       : [[50, 6], [50, 18]];
 
+  const bodyUvs = bedBoxUvs(bodyOrigin, [16, 16, 6]);
+  if (part === 'head') bodyUvs.down = [22, 22, 38, 28];
+
   return [
     {
       name: 'body',
       from: [0, 3, 0],
       to: [16, 19, 6],
       textureOrigin: bodyOrigin,
-      faceUvs: part === 'head' ? { down: [22, 22, 38, 28] } : undefined,
+      faceUvs: bodyUvs,
       elementRotation: { origin: [8, 6, 3], axis: 'x', angle: 90 },
     },
-    { name: 'leg0', from: [0, 0, 0], to: [3, 3, 3], textureOrigin: legOrigins[0] },
-    { name: 'leg1', from: [13, 0, 0], to: [16, 3, 3], textureOrigin: legOrigins[1] },
+    { name: 'leg0', from: [0, 0, 0], to: [3, 3, 3], textureOrigin: legOrigins[0], faceUvs: bedBoxUvs(legOrigins[0], [3, 3, 3]) },
+    { name: 'leg1', from: [13, 0, 0], to: [16, 3, 3], textureOrigin: legOrigins[1], faceUvs: bedBoxUvs(legOrigins[1], [3, 3, 3]) },
   ];
 }
 
