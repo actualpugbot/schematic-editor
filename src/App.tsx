@@ -2074,7 +2074,10 @@ function App() {
 
   const openInspectorPanel = (tab: InspectorTab) => {
     setAppView('inspect');
-    revealPanel(tab);
+    // Just switch the tab — don't scrollIntoView the panel. The materials list
+    // shares the control-rail scroll container, so revealing the panel would
+    // snap the list back to the top every time you re-enter Inspect mode.
+    showPanel(tab);
   };
 
   const activateEditTool = (tool: EditTool) => {
