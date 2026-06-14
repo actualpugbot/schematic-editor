@@ -5,6 +5,7 @@ import {
   asLongArray,
   asNumber,
   asString,
+  cloneNbtCompound,
   isCompound,
   type NbtDocument,
   parseNbt,
@@ -34,6 +35,12 @@ export interface VoxelBlock {
   material: string;
   playerHeadTexture?: PlayerHeadTexture;
   decoratedPotDecorations?: DecoratedPotDecorations;
+  /**
+   * The raw block-entity (tile-entity) NBT compound for this position, when the source file
+   * carried one. Kept by reference to the parsed document so its exact tag types survive an
+   * export round-trip. Surfaced by the Audit view and re-emitted on export.
+   */
+  blockEntity?: NbtCompound;
 }
 
 export interface PlayerHeadTexture {
@@ -157,6 +164,54 @@ export function finalizeSchematicModel(model: Omit<SchematicModel, 'layerCounts'
   return finalizeModel(model);
 }
 
+function blockEntityTypeId(entity: NbtCompound): string {
+  return asString(entity.id, asString(entity.Id, ''));
+}
+
+/** Sponge stores block entities with an `Id` string and a schematic-local `Pos` int array. */
+function spongeBlockEntityEntry(block: VoxelBlock): NbtCompound | null {
+  if (!block.blockEntity) return null;
+  const id = blockEntityTypeId(block.blockEntity);
+  if (!id) return null;
+  const entry = cloneNbtCompound(block.blockEntity);
+  delete entry.id;
+  delete entry.Id;
+  delete entry.x;
+  delete entry.y;
+  delete entry.z;
+  delete entry.Pos;
+  entry.Id = id;
+  entry.Pos = new Int32Array([block.x, block.y, block.z]);
+  return entry;
+}
+
+/** Litematica and legacy store block entities with a lowercase `id` and region-local `x/y/z`. */
+function xyzBlockEntityEntry(block: VoxelBlock): NbtCompound | null {
+  if (!block.blockEntity) return null;
+  const id = blockEntityTypeId(block.blockEntity);
+  if (!id) return null;
+  const entry = cloneNbtCompound(block.blockEntity);
+  delete entry.Id;
+  delete entry.Pos;
+  entry.id = id;
+  entry.x = block.x;
+  entry.y = block.y;
+  entry.z = block.z;
+  return entry;
+}
+
+function collectBlockEntities(
+  blocks: VoxelBlock[],
+  makeEntry: (block: VoxelBlock) => NbtCompound | null,
+): NbtCompound[] {
+  const entries: NbtCompound[] = [];
+  for (const block of blocks) {
+    const entry = makeEntry(block);
+    if (entry) entries.push(entry);
+  }
+  return entries;
+}
+
 export function createSpongeSchematicDocument(model: SchematicModel, name: string): NbtDocument {
   const paletteEntries = buildModelPaletteEntries(model.blocks);
   const palette = createPaletteCompound(paletteEntries);
@@ -172,7 +227,7 @@ export function createSpongeSchematicDocument(model: SchematicModel, name: strin
     PaletteMax: paletteEntries.length,
     Palette: palette,
     BlockData: encodeVarInts(blockIds),
-    BlockEntities: [],
+    BlockEntities: collectBlockEntities(model.blocks, spongeBlockEntityEntry),
     Entities: [],
     Metadata: {
       Name: name,
@@ -233,7 +288,7 @@ export function createLitematicSchematicDocument(model: SchematicModel, name: st
           Entities: [],
           PendingBlockTicks: [],
           PendingFluidTicks: [],
-          TileEntities: [],
+          TileEntities: collectBlockEntities(model.blocks, xyzBlockEntityEntry),
         },
       },
     },
@@ -291,7 +346,7 @@ export function createLegacySchematicDocument(model: SchematicModel, name: strin
     Blocks: blocks,
     Data: data,
     Entities: [],
-    TileEntities: [],
+    TileEntities: collectBlockEntities(model.blocks, xyzBlockEntityEntry),
     Metadata: {
       Name: name,
     },
@@ -504,6 +559,7 @@ function parseSpongeSchematic(schematic: NbtCompound, fileName = 'Uploaded schem
   }
 
   const spongeDecoratedPotDecorations = readSpongeDecoratedPotDecorations(schematic);
+  const spongeBlockEntities = readSpongeBlockEntities(schematic);
 
   for (let index = 0; index < blockIds.length; index += 1) {
     const paletteIndex = blockIds[index];
@@ -526,6 +582,7 @@ function parseSpongeSchematic(schematic: NbtCompound, fileName = 'Uploaded schem
       color: appearance.color,
       material: appearance.label,
       decoratedPotDecorations,
+      blockEntity: spongeBlockEntities.get(positionKey(x, y, z)),
     });
   }
 
@@ -577,6 +634,8 @@ function parseLegacySchematic(schematic: NbtCompound, fileName = 'Uploaded schem
     warnings.push('The Blocks array is shorter than the declared dimensions.');
   }
 
+  const legacyBlockEntities = readBlockEntitiesByPosition(asList(schematic.TileEntities), readBlockEntityXyzPosition);
+
   for (let index = 0; index < Math.min(blocksArray.length, totalBlocks); index += 1) {
     const low = blocksArray[index];
     const high = addBlocksArray ? readLegacyHighBits(addBlocksArray, index) : 0;
@@ -598,6 +657,7 @@ function parseLegacySchematic(schematic: NbtCompound, fileName = 'Uploaded schem
       stateKey: name,
       color: appearance.color,
       material: appearance.label,
+      blockEntity: legacyBlockEntities.get(positionKey(x, y, z)),
     });
   }
 
@@ -819,6 +879,7 @@ function parseLitematic(root: NbtCompound, fileName = 'Uploaded litematic'): Sch
     const paletteEntries = palette.map(readLitematicPaletteEntry);
     const playerHeadTextures = readLitematicPlayerHeadTextures(rawRegion);
     const decoratedPotDecorations = readLitematicDecoratedPotDecorations(rawRegion);
+    const regionBlockEntities = readBlockEntitiesByPosition(asList(rawRegion.TileEntities), readBlockEntityXyzPosition);
     mergeExtraMaterials(extraMaterialCounts, readPaintingExtraMaterials(asList(rawRegion.Entities)));
     const totalBlocks = dimensions.width * dimensions.height * dimensions.length;
     const bitsPerEntry = Math.max(2, Math.ceil(Math.log2(Math.max(1, paletteEntries.length))));
@@ -849,6 +910,7 @@ function parseLitematic(root: NbtCompound, fileName = 'Uploaded litematic'): Sch
         material: appearance.label,
         playerHeadTexture: playerHeadTextures.get(positionKey(worldX, worldY, worldZ)),
         decoratedPotDecorations: decoratedPotDecorations.get(positionKey(worldX, worldY, worldZ)),
+        blockEntity: regionBlockEntities.get(positionKey(worldX, worldY, worldZ)),
       });
     }
   }
@@ -1209,6 +1271,36 @@ function readBlockEntityPosArrayPosition(tileEntity: NbtCompound): SchematicOrig
   const pos = asIntArray(tileEntity.Pos);
   if (pos && pos.length >= 3) return { x: pos[0], y: pos[1], z: pos[2] };
   return readBlockEntityXyzPosition(tileEntity);
+}
+
+/**
+ * Indexes every block-entity (tile-entity) compound by its position so it can be attached to the
+ * matching VoxelBlock. The raw compound is kept by reference so its exact NBT tag types survive an
+ * export round-trip.
+ */
+function readBlockEntitiesByPosition(
+  tileEntities: unknown[] | null,
+  readPosition: (tileEntity: NbtCompound) => SchematicOrigin | null,
+): Map<string, NbtCompound> {
+  const byPosition = new Map<string, NbtCompound>();
+  if (!tileEntities) return byPosition;
+
+  for (const rawTileEntity of tileEntities) {
+    if (!isCompound(rawTileEntity)) continue;
+    const position = readPosition(rawTileEntity);
+    if (!position) continue;
+    byPosition.set(positionKey(position.x, position.y, position.z), rawTileEntity);
+  }
+
+  return byPosition;
+}
+
+function readSpongeBlockEntities(schematic: NbtCompound): Map<string, NbtCompound> {
+  const blocks = isCompound(schematic.Blocks) ? schematic.Blocks : null;
+  return readBlockEntitiesByPosition(
+    asList(schematic.BlockEntities) ?? asList(blocks?.BlockEntities) ?? asList(schematic.TileEntities),
+    readBlockEntityPosArrayPosition,
+  );
 }
 
 function isDecoratedPotBlockEntityId(id: string): boolean {

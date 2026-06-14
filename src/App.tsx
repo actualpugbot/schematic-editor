@@ -1,7 +1,10 @@
 import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   Box,
+  Boxes,
+  Braces,
   Brush,
+  Bug,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -10,14 +13,18 @@ import {
   ChevronUp,
   ClipboardList,
   Cuboid,
+  DoorOpen,
   Download,
   Eraser,
   ExternalLink,
+  EyeOff,
   FileUp,
+  Flame,
   Focus,
   Grid2X2,
   ImageIcon,
   Layers,
+  Lightbulb,
   List,
   MousePointer2,
   Moon,
@@ -33,9 +40,16 @@ import {
   Rotate3D,
   ScanSearch,
   Search,
+  ShieldAlert,
   ShoppingCart,
+  Siren,
+  Skull,
   SlidersHorizontal,
+  Sparkles,
   Sun,
+  Terminal,
+  Trash2,
+  Waves,
   X,
 } from 'lucide-react';
 import {
@@ -95,6 +109,13 @@ import {
   type SchematicModel,
   type VoxelBlock,
 } from './lib/schematic';
+import {
+  describeNbt,
+  runAudit,
+  type AuditCategory,
+  type AuditFinding,
+  type NbtDisplayNode,
+} from './lib/audit';
 import allBlockIds from './lib/data/block_ids.generated.json';
 import defaultSchematicUrl from '../mossy_roof_house.litematic?url';
 
@@ -107,7 +128,7 @@ interface MaterialBasePreferences {
 type DraggedFileKind = 'none' | 'unsupported-file' | 'unknown-file' | 'schematic-file';
 type InspectorTab = 'selection' | 'materials' | 'layers';
 type EditPanelTab = 'tools' | 'rotate' | 'replace';
-type AppView = 'inspect' | 'edit' | 'texture' | 'shopping' | 'shulker' | 'resource' | 'thumbnail-debug';
+type AppView = 'inspect' | 'edit' | 'texture' | 'shopping' | 'shulker' | 'resource' | 'audit' | 'thumbnail-debug';
 type EditTool = 'select' | 'build';
 type Theme = 'light' | 'dark';
 type SchematicOrigin = 'default' | 'uploaded' | 'new';
@@ -122,6 +143,49 @@ type ControlRailSide = 'left' | 'right';
 
 const UV_VIEW_ENABLED = false;
 const THUMBNAIL_DEBUG_ENABLED = false;
+
+/** Sentinel picker value meaning "use each occurrence's recommended replacement". */
+const AUDIT_RECOMMENDED = '__recommended__';
+
+type AuditIcon = typeof ScanSearch;
+
+/** Section icon per audit category id; falls back to a generic block icon. */
+const auditCategoryIcons: Record<string, AuditIcon> = {
+  command_block: Terminal,
+  structure_block: Boxes,
+  spawner: Skull,
+  beacon: Sparkles,
+  light: Lightbulb,
+  barrier: EyeOff,
+  infested: Bug,
+  bubble_column: Waves,
+  nether_portal: Flame,
+  end_portal: DoorOpen,
+  jigsaw: Cuboid,
+  sculk_shrieker: Siren,
+  piston: Move3d,
+  structure_void: EyeOff,
+};
+
+function auditCategoryIcon(category: AuditCategory): AuditIcon {
+  return auditCategoryIcons[category.id] ?? Cuboid;
+}
+
+/** Renders a parsed block-entity NBT compound as an indented, read-only tree. */
+function NbtTree({ nodes, depth = 0 }: { nodes: NbtDisplayNode[]; depth?: number }) {
+  return (
+    <>
+      {nodes.map((node, index) => (
+        <div key={`${depth}-${node.key}-${index}`} className="audit-nbt-row" style={{ paddingLeft: depth * 12 }}>
+          <span className="audit-nbt-key">{node.key}</span>
+          <span className="audit-nbt-type">{node.type}</span>
+          {node.value !== undefined && <span className="audit-nbt-value">{node.value}</span>}
+          {node.children && node.children.length > 0 && <NbtTree nodes={node.children} depth={depth + 1} />}
+        </div>
+      ))}
+    </>
+  );
+}
 const defaultExportFormat: SchematicExportFormat = '.litematic';
 const defaultSchematicFileName = 'mossy_roof_house.litematic';
 const defaultSchematicName = 'Mossy Roof House';
@@ -742,6 +806,9 @@ function App() {
   const [model, setModel] = useState<SchematicModel | null>(null);
   const [schematicOrigin, setSchematicOrigin] = useState<SchematicOrigin>('default');
   const [appView, setAppView] = useState<AppView>('inspect');
+  const [auditReplaceChoice, setAuditReplaceChoice] = useState<Record<string, string>>({});
+  const [expandedAuditGroups, setExpandedAuditGroups] = useState<Set<string>>(() => new Set());
+  const [openAuditNbt, setOpenAuditNbt] = useState<Set<string>>(() => new Set());
   const [schematicName, setSchematicName] = useState('');
   const [isEditingSchematicName, setIsEditingSchematicName] = useState(false);
   const [schematicDocument, setSchematicDocument] = useState<NbtDocument | null>(null);
@@ -1148,6 +1215,12 @@ function App() {
 
     return Array.from(allBlocks).sort(compareBlockLibraryItems);
   }, [appDataVersion, model]);
+
+  const auditFindings = useMemo<AuditFinding[]>(() => (model ? runAudit(model) : []), [model]);
+  const auditFlaggedCount = useMemo(
+    () => auditFindings.reduce((total, finding) => total + finding.occurrences.length, 0),
+    [auditFindings],
+  );
 
   const blockLibraryItems = useMemo<BlockLibraryItem[]>(() => (
     allBuildBlocks.map((stateKey) => {
@@ -2666,6 +2739,56 @@ function App() {
     setAppView('resource');
   };
 
+  const openAuditView = () => {
+    if (!model) return;
+    setAppView('audit');
+  };
+
+  const toggleAuditGroup = (categoryId: string) => {
+    setExpandedAuditGroups((current) => {
+      const next = new Set(current);
+      if (next.has(categoryId)) next.delete(categoryId);
+      else next.add(categoryId);
+      return next;
+    });
+  };
+
+  const toggleAuditNbt = (key: string) => {
+    setOpenAuditNbt((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const jumpToAuditBlock = (block: VoxelBlock) => {
+    setSelectedBlock(block);
+    openInspectorPanel('selection');
+  };
+
+  // Applies a replace/delete to every occurrence in one audit category. `target` is either a
+  // concrete state key, AUDIT_RECOMMENDED (per-occurrence recommendation), or 'minecraft:air'
+  // to delete. Reuses updateModelBlocks so the change is undoable and re-renders the model.
+  const applyAuditCategory = (finding: AuditFinding, target: string) => {
+    if (!model) return;
+    const targetKeys = new Set(finding.occurrences.map((block) => blockPositionKey(block)));
+    if (targetKeys.size === 0) return;
+
+    updateModelBlocks((blocks) => blocks.flatMap((block) => {
+      if (!targetKeys.has(blockPositionKey(block))) return [block];
+      const resolved = target === AUDIT_RECOMMENDED
+        ? finding.category.recommendedReplacement(block)
+        : target;
+      if (resolved === 'minecraft:air') return [];
+      return [createVoxelBlock(block.x, block.y, block.z, resolved)];
+    }));
+
+    const count = targetKeys.size;
+    const verb = target === 'minecraft:air' ? 'removed' : 'replaced';
+    setEditNotice(`${count.toLocaleString()} ${finding.category.label.toLowerCase()} ${verb}.`);
+  };
+
   const openThumbnailDebug = () => {
     if (!THUMBNAIL_DEBUG_ENABLED) return;
     setThumbnailDebugSearch('');
@@ -3012,7 +3135,7 @@ function App() {
         </div>
       </header>
 
-      <div className={`workspace${leftRailCollapsed ? ' is-left-rail-collapsed' : ''}${controlRailSide === 'left' ? ' is-control-rail-left' : ''}${appView === 'shopping' || appView === 'shulker' ? ' is-shopping' : ''}${appView === 'resource' ? ' is-resource' : ''}${thumbnailDebugActive ? ' is-thumbnail-debug' : ''}`}>
+      <div className={`workspace${leftRailCollapsed ? ' is-left-rail-collapsed' : ''}${controlRailSide === 'left' ? ' is-control-rail-left' : ''}${appView === 'shopping' || appView === 'shulker' || appView === 'audit' ? ' is-shopping' : ''}${appView === 'resource' ? ' is-resource' : ''}${appView === 'audit' ? ' is-audit' : ''}${thumbnailDebugActive ? ' is-thumbnail-debug' : ''}`}>
         <aside className="left-rail" aria-label="Primary navigation">
           <div className="rail-head">
             <span className="rail-head-title">Tools</span>
@@ -3096,6 +3219,19 @@ function App() {
               <Box size={19} />
               <span>Shulker Box View</span>
             </button>
+            <button
+              type="button"
+              role="tab"
+              className={appView === 'audit' ? 'is-active' : ''}
+              onClick={openAuditView}
+              aria-selected={appView === 'audit'}
+              aria-label="Audit"
+              title="Audit"
+              disabled={!model}
+            >
+              <ShieldAlert size={19} />
+              <span>Audit</span>
+            </button>
             {THUMBNAIL_DEBUG_ENABLED ? (
               <button
                 type="button"
@@ -3161,8 +3297,8 @@ function App() {
         </aside>
 
         <section
-          className={`viewport-panel${appView === 'shopping' || appView === 'shulker' || appView === 'resource' || thumbnailDebugActive ? ' shopping-viewport' : ''}${appView === 'resource' ? ' resource-viewport' : ''}${appView === 'shulker' ? ' shulker-viewport' : ''}${thumbnailDebugActive ? ' thumbnail-debug-viewport' : ''}${selectedBlock && !textureViewActive && appView !== 'shopping' && appView !== 'shulker' && appView !== 'resource' && !thumbnailDebugActive ? ' has-selection-modal' : ''}`}
-          aria-label={appView === 'resource' ? 'Resource Calculator' : appView === 'shulker' ? 'Shulker Box View' : appView === 'shopping' ? 'Shopping list' : thumbnailDebugActive ? 'Thumbnail debug' : 'Schematic 3D viewport'}
+          className={`viewport-panel${appView === 'shopping' || appView === 'shulker' || appView === 'resource' || appView === 'audit' || thumbnailDebugActive ? ' shopping-viewport' : ''}${appView === 'resource' ? ' resource-viewport' : ''}${appView === 'shulker' ? ' shulker-viewport' : ''}${appView === 'audit' ? ' audit-viewport' : ''}${thumbnailDebugActive ? ' thumbnail-debug-viewport' : ''}${selectedBlock && !textureViewActive && appView !== 'shopping' && appView !== 'shulker' && appView !== 'resource' && appView !== 'audit' && !thumbnailDebugActive ? ' has-selection-modal' : ''}`}
+          aria-label={appView === 'resource' ? 'Resource Calculator' : appView === 'shulker' ? 'Shulker Box View' : appView === 'shopping' ? 'Shopping list' : appView === 'audit' ? 'Schematic audit' : thumbnailDebugActive ? 'Thumbnail debug' : 'Schematic 3D viewport'}
         >
           <div className={`persistent-viewer${persistentViewerHidden ? ' is-hidden' : ''}`} aria-hidden={persistentViewerHidden}>
             <Viewer3D
@@ -4147,6 +4283,162 @@ function App() {
                   </p>
                 )}
               </div>
+            </section>
+          ) : appView === 'audit' && model ? (
+            <section className="shopping-board audit-board" aria-label="Schematic audit report">
+              <div className="shopping-header">
+                <div className="shopping-title-block">
+                  <p className="eyebrow">Audit</p>
+                  <h2>Technical &amp; Hidden Blocks</h2>
+                </div>
+              </div>
+
+              <div className="shopping-toolbar audit-toolbar">
+                <p className="audit-summary">
+                  {auditFlaggedCount === 0
+                    ? 'No flagged blocks found.'
+                    : `${auditFlaggedCount.toLocaleString()} flagged block${auditFlaggedCount === 1 ? '' : 's'} across ${auditFindings.length} type${auditFindings.length === 1 ? '' : 's'}.`}
+                </p>
+              </div>
+
+              {auditFindings.length === 0 ? (
+                <p className="material-empty">
+                  This schematic contains no light blocks, barriers, command blocks, or other technical or hidden blocks.
+                </p>
+              ) : (
+                <div className="audit-list">
+                  {auditFindings.map((finding) => {
+                    const category = finding.category;
+                    const Icon = auditCategoryIcon(category);
+                    const isExpanded = expandedAuditGroups.has(category.id);
+                    const choice = auditReplaceChoice[category.id] ?? AUDIT_RECOMMENDED;
+                    const itemsId = `audit-items-${category.id}`;
+
+                    return (
+                      <section className="shopping-group audit-group" key={category.id}>
+                        <div className="audit-group-head">
+                          <button
+                            type="button"
+                            className="audit-group-toggle"
+                            onClick={() => toggleAuditGroup(category.id)}
+                            aria-expanded={isExpanded}
+                            aria-controls={itemsId}
+                          >
+                            <span className="audit-group-icon"><Icon size={18} /></span>
+                            <span className="audit-group-title">{category.label}</span>
+                            <span className="audit-count">{finding.occurrences.length.toLocaleString()}</span>
+                            <ChevronDown size={16} className={`audit-chevron${isExpanded ? ' is-open' : ''}`} />
+                          </button>
+                          <p className="audit-desc">
+                            {category.description}
+                            {category.note ? ` ${category.note}` : ''}
+                          </p>
+                          <div className="audit-controls">
+                            <label className="audit-replace-pick">
+                              <span>Replace with</span>
+                              <select
+                                value={choice}
+                                onChange={(event) =>
+                                  setAuditReplaceChoice((current) => ({ ...current, [category.id]: event.target.value }))}
+                              >
+                                <option value={AUDIT_RECOMMENDED}>{`Recommended — ${category.recommendedLabel}`}</option>
+                                {allBuildBlocks.map((stateKey) => (
+                                  <option key={stateKey} value={stateKey}>{formatBlockName(stateKey)}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => applyAuditCategory(finding, choice)}
+                            >
+                              <Replace size={15} />
+                              Replace all
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button audit-danger"
+                              onClick={() => applyAuditCategory(finding, 'minecraft:air')}
+                            >
+                              <Trash2 size={15} />
+                              Delete all
+                            </button>
+                          </div>
+                        </div>
+
+                        {isExpanded && (
+                          <ul className="audit-occurrences" id={itemsId}>
+                            {finding.occurrences.map((block) => {
+                              const key = blockPositionKey(block);
+                              const meta = category.metadata(block);
+                              const nbtOpen = openAuditNbt.has(key);
+
+                              return (
+                                <li className="audit-item" key={key}>
+                                  <div className="audit-item-row">
+                                    <code className="audit-coord">
+                                      {model.origin.x + block.x}, {model.origin.y + block.y}, {model.origin.z + block.z}
+                                    </code>
+                                    <div className="audit-meta">
+                                      {meta.length === 0 ? (
+                                        <span className="audit-chip is-muted">No extra data</span>
+                                      ) : (
+                                        meta.map((entry, index) => (
+                                          <span className="audit-chip" key={index}>
+                                            <span className="audit-chip-label">{entry.label}</span>
+                                            <span className="audit-chip-value">{entry.value}</span>
+                                          </span>
+                                        ))
+                                      )}
+                                    </div>
+                                    <div className="audit-item-actions">
+                                      <button
+                                        type="button"
+                                        className="audit-link"
+                                        onClick={() => jumpToAuditBlock(block)}
+                                        title="Show in 3D view"
+                                      >
+                                        <Focus size={14} />
+                                        <span>Jump</span>
+                                      </button>
+                                      {block.blockEntity && (
+                                        <button
+                                          type="button"
+                                          className="audit-link"
+                                          onClick={() => toggleAuditNbt(key)}
+                                          aria-expanded={nbtOpen}
+                                          title="Show raw block-entity NBT"
+                                        >
+                                          <Braces size={14} />
+                                          <span>NBT</span>
+                                        </button>
+                                      )}
+                                      <button
+                                        type="button"
+                                        className="audit-link audit-danger"
+                                        onClick={() => eraseBlock(block)}
+                                        title="Delete this block"
+                                        aria-label="Delete this block"
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                    </div>
+                                  </div>
+                                  {nbtOpen && block.blockEntity && (
+                                    <div className="audit-nbt">
+                                      <NbtTree nodes={describeNbt(block.blockEntity)} />
+                                    </div>
+                                  )}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </section>
+                    );
+                  })}
+                </div>
+              )}
             </section>
           ) : (
             <>

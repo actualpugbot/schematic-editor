@@ -468,6 +468,23 @@ export function isCompound(value: unknown): value is NbtCompound {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value) && !ArrayBuffer.isView(value));
 }
 
+/**
+ * Shallow-clones a compound while carrying over the recorded tag-type information for
+ * its fields. This lets callers rewrite a few keys (e.g. block-entity positions) without
+ * losing the exact byte/short/int/long/float distinctions of the remaining fields when the
+ * clone is written back out. Keys that are added or changed on the clone fall back to type
+ * inference, and nested compounds/lists keep their own recorded types because they are reused
+ * by reference.
+ */
+export function cloneNbtCompound(source: NbtCompound): NbtCompound {
+  const clone: NbtCompound = { ...source };
+  const types = compoundTagTypes.get(source);
+  if (types) {
+    compoundTagTypes.set(clone, new Map(types));
+  }
+  return clone;
+}
+
 export function asNumber(value: unknown, fallback = 0): number {
   if (typeof value === 'number') {
     return value;
