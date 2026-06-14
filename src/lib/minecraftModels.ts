@@ -2777,13 +2777,21 @@ function entityCubeUvs(
   const v1 = textureY + depth;
   const v2 = textureY + depth + height;
 
+  // Standard Minecraft box unwrap, oriented to match the renderer's vertex
+  // convention (uvToCorners + modelFacePositions). The geometric TOP of each
+  // side face must take the SMALLER v (v1, the top of the side strip); putting
+  // v2 first flips every face upside-down — invisible on vertically symmetric
+  // textures (chest planks) but obvious on faces (skulls render inverted).
+  // up uses the scalp region (u1..u2); down uses the underside (u2..u22).
+  // Swapping those two reads the head's blank underside onto the visible top
+  // (e.g. the skeleton skull's white crown).
   const uvs: Record<ModelFaceName, ModelFaceUv> = {
-    down: [u1, v0, u2, v1],
-    up: [u2, v1, u22, v0],
-    west: [u1, v2, u0, v1],
-    north: [u2, v2, u1, v1],
-    east: [u3, v2, u2, v1],
-    south: [u4, v2, u3, v1],
+    down: [u2, v1, u22, v0],
+    up: [u1, v0, u2, v1],
+    west: [u1, v1, u0, v2],
+    north: [u2, v1, u1, v2],
+    east: [u3, v1, u2, v2],
+    south: [u4, v1, u3, v2],
   };
 
   return {
