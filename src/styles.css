@@ -1111,12 +1111,6 @@ html[data-theme='dark'] .featured-builder::before {
   border: none; background: var(--surface-sunken); color: var(--muted); flex: none;
 }
 .selection-inspector-close:hover { background: var(--danger-bg); color: var(--danger); }
-.selection-coordinates { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0 0; }
-.selection-coordinates div {
-  background: var(--surface-sunken); border-radius: var(--r-sm); padding: 8px; text-align: center;
-}
-.selection-coordinates dt { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; color: var(--faint); }
-.selection-coordinates dd { margin: 2px 0 0; font-family: var(--font-mono); font-size: 15px; font-weight: 600; color: var(--ink); }
 
 .player-head-picker { margin-top: 14px; }
 .player-head-picker label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }

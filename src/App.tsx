@@ -971,9 +971,6 @@ function App() {
   const pendingVisibleLayerRangeRef = useRef<{ bottomLayer: number; topLayer: number; singleLayer: number } | null>(null);
   const visibleBottomWorldY = model ? model.origin.y + visibleBottomLayer : visibleBottomLayer;
   const visibleTopWorldY = model ? model.origin.y + visibleTopLayer : visibleTopLayer;
-  const selectedBlockWorldX = selectedBlock && model ? model.origin.x + selectedBlock.x : null;
-  const selectedBlockWorldY = selectedBlock && model ? model.origin.y + selectedBlock.y : null;
-  const selectedBlockWorldZ = selectedBlock && model ? model.origin.z + selectedBlock.z : null;
   const spectatorSpeed = 11;
   const showUploadOverlay = isDraggingFile;
   const currentExportFormatOption = exportFormatOptions.find((option) => option.value === exportFormat) ?? exportFormatOptions[0];
@@ -4610,21 +4607,6 @@ function App() {
                   <X size={15} />
                 </button>
               </div>
-
-              <dl className="selection-coordinates">
-                <div>
-                  <dt>X</dt>
-                  <dd>{selectedBlockWorldX}</dd>
-                </div>
-                <div>
-                  <dt>Y</dt>
-                  <dd>{selectedBlockWorldY}</dd>
-                </div>
-                <div>
-                  <dt>Z</dt>
-                  <dd>{selectedBlockWorldZ}</dd>
-                </div>
-              </dl>
 
               {isPlayerHeadBlock(selectedBlock) && playerHeadOptions.length > 0 && (
                 <div className="player-head-picker">
