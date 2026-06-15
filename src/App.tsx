@@ -281,6 +281,18 @@ interface MaterialSummary {
   thumbnailLayers?: BlockThumbnailLayer[];
 }
 
+// A block the user adds by hand (creative-mode style) to the shared materials
+// list that powers the Resource Calculator, Shopping List, and Shulker views —
+// independent of, or on top of, any loaded schematic. `id` is normalized the
+// same way placed-block materials are so the two merge by id.
+interface ManualMaterial {
+  stateKey: string;
+  id: string;
+  count: number;
+}
+
+type MaterialQuantityUnit = 'items' | 'stacks';
+
 interface ShoppingMaterialGroup {
   id: string;
   label: string;
@@ -383,6 +395,7 @@ const leftRailCollapsedStorageKey = 'build-planner-left-rail-collapsed';
 const controlRailSideStorageKey = 'build-planner-control-rail-side';
 const stageBackgroundColorStorageKey = 'build-planner-stage-background-color';
 const materialBaseStorageKey = 'build-planner-material-bases';
+const manualMaterialsStorageKey = 'build-planner-material-list';
 const shoppingListStoragePrefix = 'build-planner-shopping-list';
 const shulkerViewStoragePrefix = 'build-planner-shulker-view';
 const selectionStoragePrefix = 'build-planner-selections';
@@ -567,6 +580,37 @@ function loadMaterialBasePreferences(): MaterialBasePreferences {
   } catch {
     return empty;
   }
+}
+
+const maxManualMaterialCount = 1_000_000;
+
+function loadManualMaterials(): ManualMaterial[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(manualMaterialsStorageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const byId = new Map<string, ManualMaterial>();
+    for (const entry of parsed) {
+      if (!entry || typeof entry !== 'object') continue;
+      const stateKey = (entry as { stateKey?: unknown }).stateKey;
+      const count = (entry as { count?: unknown }).count;
+      if (typeof stateKey !== 'string' || typeof count !== 'number' || !Number.isFinite(count)) continue;
+      const id = materialIdForStateKey(stateKey);
+      const normalizedCount = clampManualMaterialCount(count);
+      const existing = byId.get(id);
+      if (existing) existing.count = clampManualMaterialCount(existing.count + normalizedCount);
+      else byId.set(id, { stateKey, id, count: normalizedCount });
+    }
+    return Array.from(byId.values());
+  } catch {
+    return [];
+  }
+}
+
+function clampManualMaterialCount(count: number): number {
+  return Math.min(maxManualMaterialCount, Math.max(1, Math.round(count)));
 }
 
 // The recipe/inventory/thumbnail data is only needed after first paint, so it is
@@ -908,6 +952,11 @@ function App() {
   );
   const [basesConfigOpen, setBasesConfigOpen] = useState(false);
   const [basesConfigSearch, setBasesConfigSearch] = useState('');
+  const [manualMaterials, setManualMaterials] = useState<ManualMaterial[]>(() => loadManualMaterials());
+  const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
+  const [materialPickerSearch, setMaterialPickerSearch] = useState('');
+  const [materialPickerQuantity, setMaterialPickerQuantity] = useState(1);
+  const [materialPickerUnit, setMaterialPickerUnit] = useState<MaterialQuantityUnit>('items');
   const [shoppingSearch, setShoppingSearch] = useState('');
   const [shoppingLayout, setShoppingLayout] = useState<ShoppingLayout>('grid');
   const [collapsedShoppingGroups, setCollapsedShoppingGroups] = useState<Set<string>>(() => new Set());
@@ -1039,13 +1088,13 @@ function App() {
   }, [hiddenMaterialIds, model, renderedVisibleBottomLayer, renderedVisibleTopLayer]);
 
   const materials = useMemo<MaterialSummary[]>(() => {
-    if (!model) return [];
+    const base = model
+      ? [...summarizeMaterials(model.blocks), ...summarizeExtraMaterials(model.extraMaterials)]
+      : [];
 
-    return [
-      ...summarizeMaterials(model.blocks),
-      ...summarizeExtraMaterials(model.extraMaterials),
-    ].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-  }, [model]);
+    return mergeManualMaterials(base, manualMaterials)
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  }, [manualMaterials, model]);
 
   const cuboidBounds = useMemo(() => {
     if (!model || !cuboidCorners.a || !cuboidCorners.b) return null;
@@ -1074,9 +1123,10 @@ function App() {
     ));
   }, [model, renderedVisibleBottomLayer, renderedVisibleTopLayer]);
 
-  const activeMaterials = materialsScope === 'cuboid'
+  const activeMaterials = model && materialsScope === 'cuboid'
     ? cuboidMaterials
     : materials;
+  const hasMaterials = Boolean(model) || manualMaterials.length > 0;
   const resourceCalculatorUrl = useMemo(() => resourceCalculatorUrlForMaterials(activeMaterials), [activeMaterials]);
   const breakdownOptions = useMemo<BreakdownOptions>(() => {
     const rawOverrides = new Set<string>();
@@ -1189,11 +1239,11 @@ function App() {
   }, [recipeBreakdown, activeMaterials]);
   const visibleMaterials = activeMaterials;
   const shoppingScope = useMemo(() => (
-    model ? shoppingScopeKey(model, materialsScope, cuboidBounds) : 'none'
+    shoppingScopeKey(model, materialsScope, cuboidBounds)
   ), [cuboidBoundsKey, materialsScope, model]);
   const shoppingStorage = useMemo(() => (
-    model ? shoppingStorageKey(model, shoppingScope, activeMaterials) : ''
-  ), [activeMaterials, model, shoppingScope]);
+    hasMaterials ? shoppingStorageKey(model, shoppingScope, activeMaterials) : ''
+  ), [activeMaterials, hasMaterials, model, shoppingScope]);
   const shoppingItemKeys = useMemo(() => (
     new Set(activeMaterials.map((material) => shoppingItemKey(shoppingScope, material)))
   ), [activeMaterials, shoppingScope]);
@@ -1224,8 +1274,8 @@ function App() {
     ? 'type-consolidated'
     : shulkerViewMode;
   const shulkerStorage = useMemo(() => (
-    model ? shulkerStorageKey(model, shoppingScope, shulkerStorageMode, activeMaterials) : ''
-  ), [activeMaterials, model, shoppingScope, shulkerStorageMode]);
+    hasMaterials ? shulkerStorageKey(model, shoppingScope, shulkerStorageMode, activeMaterials) : ''
+  ), [activeMaterials, hasMaterials, model, shoppingScope, shulkerStorageMode]);
   const shulkerSlotKeys = useMemo(() => (
     new Set(
       shulkerBoxes.flatMap((box) => box.filledSlotKeys),
@@ -1478,6 +1528,21 @@ function App() {
   ), [filteredBlockLibraryItems]);
 
   const visibleBlockLibraryCount = filteredBlockLibraryItems.length;
+  const materialPickerGroups = useMemo<BlockLibraryGroup[]>(() => {
+    const query = materialPickerSearch.trim().toLocaleLowerCase();
+    const items = query
+      ? blockLibraryItems.filter((item) => (
+        item.stateKey.toLocaleLowerCase().includes(query) || item.label.toLocaleLowerCase().includes(query)
+      ))
+      : blockLibraryItems;
+    return groupBlocksByCreativeCategory(items);
+  }, [blockLibraryItems, materialPickerSearch]);
+  const manualMaterialRows = useMemo<MaterialSummary[]>(() => (
+    manualMaterials.map(manualMaterialSummary)
+  ), [manualMaterials]);
+  const manualMaterialTotal = useMemo(() => (
+    manualMaterials.reduce((sum, entry) => sum + entry.count, 0)
+  ), [manualMaterials]);
   const textureLibraryItems = useMemo(() => {
     const query = textureBlockSearch.trim().toLocaleLowerCase();
     return blockLibraryItems.filter((item) => {
@@ -1796,6 +1861,23 @@ function App() {
       window.localStorage.setItem(materialBaseStorageKey, JSON.stringify(preferences));
     }
   }, [materialBaseModes, recipeChoices]);
+
+  useEffect(() => {
+    if (manualMaterials.length === 0) {
+      window.localStorage.removeItem(manualMaterialsStorageKey);
+    } else {
+      window.localStorage.setItem(manualMaterialsStorageKey, JSON.stringify(manualMaterials));
+    }
+  }, [manualMaterials]);
+
+  useEffect(() => {
+    if (!materialPickerOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMaterialPickerOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [materialPickerOpen]);
 
   useEffect(() => {
     setStageBackgroundColor((current) => {
@@ -2908,21 +2990,59 @@ function App() {
   };
 
   const openShoppingList = () => {
-    if (!model) return;
+    if (!model && manualMaterials.length === 0) return;
     setShoppingSearch('');
     setAppView('shopping');
   };
 
   const openShulkerView = () => {
-    if (!model) return;
+    if (!model && manualMaterials.length === 0) return;
     setAppView('shulker');
   };
 
   const openResourceCalculator = () => {
-    if (!model) return;
+    // The Resource Calculator doubles as the entry point for hand-built material
+    // lists, so it opens even with no schematic loaded.
     setShoppingSearch('');
     setAppView('resource');
   };
+
+  const openMaterialPicker = () => {
+    setMaterialPickerSearch('');
+    setMaterialPickerOpen(true);
+  };
+
+  const addManualMaterial = (stateKey: string, count: number) => {
+    if (count <= 0) return;
+    const id = materialIdForStateKey(stateKey);
+    setManualMaterials((current) => {
+      const next = current.map((entry) => ({ ...entry }));
+      const existing = next.find((entry) => entry.id === id);
+      if (existing) {
+        existing.count = clampManualMaterialCount(existing.count + count);
+        existing.stateKey = stateKey;
+      } else {
+        next.push({ stateKey, id, count: clampManualMaterialCount(count) });
+      }
+      return next;
+    });
+  };
+
+  const setManualMaterialCount = (id: string, count: number) => {
+    if (!Number.isFinite(count) || count <= 0) {
+      removeManualMaterial(id);
+      return;
+    }
+    setManualMaterials((current) => (
+      current.map((entry) => (entry.id === id ? { ...entry, count: clampManualMaterialCount(count) } : entry))
+    ));
+  };
+
+  const removeManualMaterial = (id: string) => {
+    setManualMaterials((current) => current.filter((entry) => entry.id !== id));
+  };
+
+  const clearManualMaterials = () => setManualMaterials([]);
 
   const openAuditView = () => {
     if (!model) return;
@@ -3006,9 +3126,9 @@ function App() {
   // paused) while a full-panel view covers the viewport.
   const altPanelActive =
     thumbnailDebugActive ||
-    (appView === 'resource' && Boolean(model)) ||
-    (appView === 'shulker' && Boolean(model)) ||
-    (appView === 'shopping' && Boolean(model)) ||
+    appView === 'resource' ||
+    (appView === 'shulker' && hasMaterials) ||
+    (appView === 'shopping' && hasMaterials) ||
     (appView === 'audit' && Boolean(model));
   const persistentViewerHidden = loadState === 'loading' || textureViewActive || altPanelActive;
 
@@ -3258,7 +3378,7 @@ function App() {
             type="button"
             className="topbar-secondary"
             onClick={createNewSchematic}
-            title="Create a new schematic"
+            title="Start a new build to place blocks like creative mode"
           >
             <Plus size={16} />
             <span>New</span>
@@ -3374,7 +3494,6 @@ function App() {
               aria-selected={appView === 'resource'}
               aria-label="Resource Calculator"
               title="Resource Calculator"
-              disabled={!model}
             >
               <ClipboardList size={19} />
               <span>Resource Calculator</span>
@@ -3387,7 +3506,7 @@ function App() {
               aria-selected={appView === 'shopping'}
               aria-label="Shopping List"
               title="Shopping List"
-              disabled={!model}
+              disabled={!hasMaterials}
             >
               <ShoppingCart size={19} />
               <span>Shopping List</span>
@@ -3400,7 +3519,7 @@ function App() {
               aria-selected={appView === 'shulker'}
               aria-label="Shulker Box View"
               title="Shulker Box View"
-              disabled={!model}
+              disabled={!hasMaterials}
             >
               <Box size={19} />
               <span>Shulker Box View</span>
@@ -3826,51 +3945,81 @@ function App() {
                 </aside>
               </div>
             </section>
-          ) : appView === 'resource' && model ? (
+          ) : appView === 'resource' ? (
             <section className="shopping-board resource-board" aria-label="Resource Calculator">
               <div className="shopping-header">
                 <div className="shopping-title-block">
                   <p className="eyebrow">Crafting Plan</p>
-                  <h2>{schematicName}</h2>
+                  <h2>{model ? schematicName : 'Materials list'}</h2>
                 </div>
                 <div className="shopping-actions">
-                  <a
-                    className="primary-button resource-calculator-link"
-                    href={resourceCalculatorUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    title={`Open ${activeMaterials.length.toLocaleString()} material types in ResourceCalculator.com`}
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={openMaterialPicker}
+                    title="Add blocks to your materials list"
                   >
-                    <ExternalLink size={16} />
-                    Open in ResourceCalculator
-                  </a>
-                  <div className="segmented-control shopping-scope" role="group" aria-label="Crafting plan scope">
-                    <button
-                      type="button"
-                      className={materialsScope === 'build' ? 'is-active' : ''}
-                      onClick={() => setMaterialsScope('build')}
+                    <Plus size={16} aria-hidden="true" />
+                    Add materials
+                  </button>
+                  {activeMaterials.length > 0 && (
+                    <a
+                      className="secondary-button resource-calculator-link"
+                      href={resourceCalculatorUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={`Open ${activeMaterials.length.toLocaleString()} material types in ResourceCalculator.com`}
                     >
-                      Entire Build
-                    </button>
-                    <button
-                      type="button"
-                      className={materialsScope === 'cuboid' ? 'is-active' : ''}
-                      onClick={() => {
-                        if (cuboidBounds) {
-                          setMaterialsScope('cuboid');
-                        } else {
-                          beginCuboidSelection();
-                          setAppView('inspect');
-                          setInspectorTab('selection');
-                        }
-                      }}
-                    >
-                      Selected Area
-                    </button>
-                  </div>
+                      <ExternalLink size={16} />
+                      Open in ResourceCalculator
+                    </a>
+                  )}
+                  {model && (
+                    <div className="segmented-control shopping-scope" role="group" aria-label="Crafting plan scope">
+                      <button
+                        type="button"
+                        className={materialsScope === 'build' ? 'is-active' : ''}
+                        onClick={() => setMaterialsScope('build')}
+                      >
+                        Entire Build
+                      </button>
+                      <button
+                        type="button"
+                        className={materialsScope === 'cuboid' ? 'is-active' : ''}
+                        onClick={() => {
+                          if (cuboidBounds) {
+                            setMaterialsScope('cuboid');
+                          } else {
+                            beginCuboidSelection();
+                            setAppView('inspect');
+                            setInspectorTab('selection');
+                          }
+                        }}
+                      >
+                        Selected Area
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
+              {!hasMaterials ? (
+                <div className="materials-empty-state">
+                  <div className="materials-empty-icon" aria-hidden="true">
+                    <ClipboardList size={30} />
+                  </div>
+                  <h3>Start your materials list</h3>
+                  <p>
+                    Add any block with a quantity — just like creative mode — and we'll break it down into
+                    base ingredients, a shopping list, and shulker boxes. No schematic required.
+                  </p>
+                  <button type="button" className="primary-button" onClick={openMaterialPicker}>
+                    <Plus size={16} aria-hidden="true" />
+                    Add materials
+                  </button>
+                </div>
+              ) : (
+                <>
               <div className="resource-bases-bar">
                 <p className="resource-bases-hint">
                   <SlidersHorizontal size={14} aria-hidden="true" />
@@ -4197,15 +4346,26 @@ function App() {
                   </div>
                 </aside>
               </div>
+                </>
+              )}
             </section>
-          ) : appView === 'shulker' && model ? (
+          ) : appView === 'shulker' && hasMaterials ? (
             <section className="shopping-board shulker-board" aria-label="Shulker Box View">
               <div className="shopping-header">
                 <div className="shopping-title-block">
                   <p className="eyebrow">Shulker Box View</p>
-                  <h2>{schematicName}</h2>
+                  <h2>{model ? schematicName : 'Materials list'}</h2>
                 </div>
                 <div className="shopping-actions">
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={openMaterialPicker}
+                    title="Add blocks to your materials list"
+                  >
+                    <Plus size={16} aria-hidden="true" />
+                    Add materials
+                  </button>
                   <button
                     type="button"
                     className="secondary-button"
@@ -4220,30 +4380,32 @@ function App() {
               </div>
 
               <div className="shopping-toolbar shulker-toolbar">
-                <div className="segmented-control shopping-scope" role="group" aria-label="Shulker box scope">
-                  <button
-                    type="button"
-                    className={materialsScope === 'build' ? 'is-active' : ''}
-                    onClick={() => setMaterialsScope('build')}
-                  >
-                    Entire Build
-                  </button>
-                  <button
-                    type="button"
-                    className={materialsScope === 'cuboid' ? 'is-active' : ''}
-                    onClick={() => {
-                      if (cuboidBounds) {
-                        setMaterialsScope('cuboid');
-                      } else {
-                        beginCuboidSelection();
-                        setAppView('inspect');
-                        setInspectorTab('selection');
-                      }
-                    }}
-                  >
-                    Selected Area
-                  </button>
-                </div>
+                {model ? (
+                  <div className="segmented-control shopping-scope" role="group" aria-label="Shulker box scope">
+                    <button
+                      type="button"
+                      className={materialsScope === 'build' ? 'is-active' : ''}
+                      onClick={() => setMaterialsScope('build')}
+                    >
+                      Entire Build
+                    </button>
+                    <button
+                      type="button"
+                      className={materialsScope === 'cuboid' ? 'is-active' : ''}
+                      onClick={() => {
+                        if (cuboidBounds) {
+                          setMaterialsScope('cuboid');
+                        } else {
+                          beginCuboidSelection();
+                          setAppView('inspect');
+                          setInspectorTab('selection');
+                        }
+                      }}
+                    >
+                      Selected Area
+                    </button>
+                  </div>
+                ) : <span />}
                 <div className="shulker-toolbar-right">
                   {shulkerViewMode === 'type' && (
                     <button
@@ -4407,14 +4569,23 @@ function App() {
                 )}
               </div>
             </section>
-          ) : appView === 'shopping' && model ? (
+          ) : appView === 'shopping' && hasMaterials ? (
             <section className="shopping-board" aria-label="Required resources shopping list">
               <div className="shopping-header">
                 <div className="shopping-title-block">
                   <p className="eyebrow">Shopping List</p>
-                  <h2>{schematicName}</h2>
+                  <h2>{model ? schematicName : 'Materials list'}</h2>
                 </div>
                 <div className="shopping-actions">
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={openMaterialPicker}
+                    title="Add blocks to your materials list"
+                  >
+                    <Plus size={16} aria-hidden="true" />
+                    Add materials
+                  </button>
                   <button
                     type="button"
                     className="secondary-button"
@@ -4451,30 +4622,32 @@ function App() {
               </div>
 
               <div className="shopping-toolbar">
-                <div className="segmented-control shopping-scope" role="group" aria-label="Shopping list scope">
-                  <button
-                    type="button"
-                    className={materialsScope === 'build' ? 'is-active' : ''}
-                    onClick={() => setMaterialsScope('build')}
-                  >
-                    Entire Build
-                  </button>
-                  <button
-                    type="button"
-                    className={materialsScope === 'cuboid' ? 'is-active' : ''}
-                    onClick={() => {
-                      if (cuboidBounds) {
-                        setMaterialsScope('cuboid');
-                      } else {
-                        beginCuboidSelection();
-                        setAppView('inspect');
-                        setInspectorTab('selection');
-                      }
-                    }}
-                  >
-                    Selected Area
-                  </button>
-                </div>
+                {model ? (
+                  <div className="segmented-control shopping-scope" role="group" aria-label="Shopping list scope">
+                    <button
+                      type="button"
+                      className={materialsScope === 'build' ? 'is-active' : ''}
+                      onClick={() => setMaterialsScope('build')}
+                    >
+                      Entire Build
+                    </button>
+                    <button
+                      type="button"
+                      className={materialsScope === 'cuboid' ? 'is-active' : ''}
+                      onClick={() => {
+                        if (cuboidBounds) {
+                          setMaterialsScope('cuboid');
+                        } else {
+                          beginCuboidSelection();
+                          setAppView('inspect');
+                          setInspectorTab('selection');
+                        }
+                      }}
+                    >
+                      Selected Area
+                    </button>
+                  </div>
+                ) : <span />}
                 <label className="material-search shopping-search">
                   <Search size={16} aria-hidden="true" />
                   <input
@@ -5886,6 +6059,162 @@ function App() {
       </aside>
       )}
       </div>
+      {materialPickerOpen && (
+        <div
+          className="material-picker-overlay"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setMaterialPickerOpen(false);
+          }}
+        >
+          <div className="material-picker" role="dialog" aria-modal="true" aria-label="Add materials">
+            <div className="material-picker-head">
+              <div className="shopping-title-block">
+                <p className="eyebrow">Add materials</p>
+                <h2>Pick any block</h2>
+              </div>
+              <button
+                type="button"
+                className="material-picker-close"
+                onClick={() => setMaterialPickerOpen(false)}
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="material-picker-controls">
+              <label className="material-picker-qty">
+                <span>Quantity</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={materialPickerQuantity}
+                  onChange={(event) => setMaterialPickerQuantity(Math.max(1, Math.floor(Number(event.target.value) || 1)))}
+                />
+              </label>
+              <div className="segmented-control" role="group" aria-label="Quantity unit">
+                <button
+                  type="button"
+                  className={materialPickerUnit === 'items' ? 'is-active' : ''}
+                  onClick={() => setMaterialPickerUnit('items')}
+                  aria-pressed={materialPickerUnit === 'items'}
+                >
+                  Items
+                </button>
+                <button
+                  type="button"
+                  className={materialPickerUnit === 'stacks' ? 'is-active' : ''}
+                  onClick={() => setMaterialPickerUnit('stacks')}
+                  aria-pressed={materialPickerUnit === 'stacks'}
+                >
+                  Stacks
+                </button>
+              </div>
+              <label className="material-search material-picker-search">
+                <Search size={16} aria-hidden="true" />
+                <input
+                  type="search"
+                  value={materialPickerSearch}
+                  onChange={(event) => setMaterialPickerSearch(event.target.value)}
+                  placeholder="Find any block"
+                  aria-label="Find any block"
+                />
+              </label>
+            </div>
+
+            <div className="material-picker-body">
+              <div className="material-picker-grid-pane">
+                <div className="block-library-grid" aria-label="Creative block grid">
+                  {materialPickerGroups.map((group) => (
+                    <section className="block-library-group" key={group.id} aria-label={group.label}>
+                      <div className="block-library-group-heading">
+                        <span>{group.label}</span>
+                        <strong>{group.items.length.toLocaleString()}</strong>
+                      </div>
+                      <div className="block-library-tile-grid">
+                        {group.items.map((item) => (
+                          <div className="block-library-tile" key={item.stateKey} data-tooltip={item.label}>
+                            <button
+                              type="button"
+                              className="block-library-pick"
+                              onClick={() => addManualMaterial(
+                                item.stateKey,
+                                materialPickerQuantity * (materialPickerUnit === 'stacks' ? maxStackSize : 1),
+                              )}
+                              aria-label={`Add ${item.label}`}
+                            >
+                              <BlockPreview stateKey={item.stateKey} color={item.color} layers={materialThumbnailLayers(item.stateKey)} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                  {materialPickerGroups.length === 0 && (
+                    <p className="material-empty">No blocks match that search.</p>
+                  )}
+                </div>
+              </div>
+
+              <aside className="material-picker-list-pane" aria-label="Your materials list">
+                <div className="material-picker-list-head">
+                  <h3>Your list</h3>
+                  <span>{manualMaterials.length.toLocaleString()} {manualMaterials.length === 1 ? 'type' : 'types'}</span>
+                </div>
+                <div className="material-picker-list">
+                  {manualMaterialRows.map((material) => (
+                    <div className="material-picker-row" key={material.id}>
+                      <MaterialPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
+                      <span className="material-picker-row-meta">
+                        <strong>{material.label}</strong>
+                        <span>{Math.ceil(material.count / maxStackSize).toLocaleString()} {Math.ceil(material.count / maxStackSize) === 1 ? 'stack' : 'stacks'}</span>
+                      </span>
+                      <input
+                        type="number"
+                        min={1}
+                        className="material-picker-row-count"
+                        value={material.count}
+                        onChange={(event) => setManualMaterialCount(material.id, Math.floor(Number(event.target.value)))}
+                        aria-label={`Quantity of ${material.label}`}
+                      />
+                      <button
+                        type="button"
+                        className="material-picker-row-remove"
+                        onClick={() => removeManualMaterial(material.id)}
+                        aria-label={`Remove ${material.label}`}
+                      >
+                        <X size={15} />
+                      </button>
+                    </div>
+                  ))}
+                  {manualMaterials.length === 0 && (
+                    <p className="material-empty">Click any block to add it to your list.</p>
+                  )}
+                </div>
+                <div className="material-picker-list-foot">
+                  <span>{manualMaterialTotal.toLocaleString()} items total</span>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={clearManualMaterials}
+                    disabled={manualMaterials.length === 0}
+                  >
+                    <Trash2 size={15} aria-hidden="true" />
+                    Clear list
+                  </button>
+                </div>
+              </aside>
+            </div>
+
+            <div className="material-picker-foot">
+              <button type="button" className="primary-button" onClick={() => setMaterialPickerOpen(false)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {celebrationView === 'shopping' && appView === 'shopping' && (
         <ShoppingCelebration
           materials={visibleMaterials}
@@ -7071,6 +7400,36 @@ function summarizeExtraMaterials(extraMaterials: SchematicModel['extraMaterials'
     });
 }
 
+function manualMaterialSummary(entry: ManualMaterial): MaterialSummary {
+  const preview = createVoxelBlock(0, 0, 0, entry.stateKey);
+  const displayStateKey = materialDisplayStateKey(entry.stateKey);
+  return {
+    id: entry.id,
+    label: formatBlockName(entry.id),
+    count: entry.count,
+    color: preview.color,
+    stateKey: entry.stateKey,
+    displayStateKey,
+    thumbnailLayers: materialThumbnailLayers(displayStateKey),
+  };
+}
+
+// Fold the hand-picked materials into a placed-block summary, combining counts
+// for blocks that appear in both (e.g. a build needs 500 stone and the user
+// adds 64 more). Manual ids are normalized like placed materials, so equal ids
+// merge cleanly.
+function mergeManualMaterials(base: MaterialSummary[], manual: ManualMaterial[]): MaterialSummary[] {
+  if (manual.length === 0) return base.slice();
+  const byId = new Map<string, MaterialSummary>();
+  for (const material of base) byId.set(material.id, { ...material });
+  for (const entry of manual) {
+    const existing = byId.get(entry.id);
+    if (existing) existing.count += entry.count;
+    else byId.set(entry.id, manualMaterialSummary(entry));
+  }
+  return Array.from(byId.values());
+}
+
 function materialEntriesForBlock(block: VoxelBlock): Array<{ id: string; quantity: number; stateKey: string }> {
   const quantity = materialQuantityForBlock(block);
   if (quantity === 0) return [];
@@ -7360,27 +7719,34 @@ function resourceCalculatorSimpleName(materialId: string): string {
   return displayName.toLocaleLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-function shoppingScopeKey(model: SchematicModel, scope: MaterialsScope, bounds: CuboidBounds | null): string {
-  if (scope === 'cuboid' && bounds) return `cuboid:${boundsKey(bounds)}`;
+// Identity seed shared by the check-off storage keys. With no schematic loaded
+// the list is a standalone manual cart, so it gets a stable synthetic identity.
+function materialsListIdentitySeed(model: SchematicModel | null): string {
+  if (!model) return 'manual';
+  const dimensions = `${model.dimensions.width}x${model.dimensions.height}x${model.dimensions.length}`;
+  return `${model.name}|${model.source}|${dimensions}`;
+}
+
+function shoppingScopeKey(model: SchematicModel | null, scope: MaterialsScope, bounds: CuboidBounds | null): string {
+  if (model && scope === 'cuboid' && bounds) return `cuboid:${boundsKey(bounds)}`;
+  if (!model) return 'build:manual';
   return `build:${model.dimensions.width}x${model.dimensions.height}x${model.dimensions.length}`;
 }
 
-function shoppingStorageKey(model: SchematicModel, scopeKey: string, materials: MaterialSummary[]): string {
-  const dimensions = `${model.dimensions.width}x${model.dimensions.height}x${model.dimensions.length}`;
+function shoppingStorageKey(model: SchematicModel | null, scopeKey: string, materials: MaterialSummary[]): string {
   const materialHash = hashText(materials.map((material) => `${material.id}:${material.count}`).join('|'));
-  const identity = hashText(`${model.name}|${model.source}|${dimensions}|${scopeKey}|${materialHash}`);
+  const identity = hashText(`${materialsListIdentitySeed(model)}|${scopeKey}|${materialHash}`);
   return `${shoppingListStoragePrefix}:${identity}`;
 }
 
 function shulkerStorageKey(
-  model: SchematicModel,
+  model: SchematicModel | null,
   scopeKey: string,
   mode: string,
   materials: MaterialSummary[],
 ): string {
-  const dimensions = `${model.dimensions.width}x${model.dimensions.height}x${model.dimensions.length}`;
   const materialHash = hashText(materials.map((material) => `${material.id}:${material.count}`).join('|'));
-  const identity = hashText(`${model.name}|${model.source}|${dimensions}|${scopeKey}|${mode}|${materialHash}`);
+  const identity = hashText(`${materialsListIdentitySeed(model)}|${scopeKey}|${mode}|${materialHash}`);
   return `${shulkerViewStoragePrefix}:${identity}`;
 }
 
