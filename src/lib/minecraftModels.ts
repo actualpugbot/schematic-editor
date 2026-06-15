@@ -1762,17 +1762,25 @@ function syntheticBannerParts(
 
   const wallMounted = id.replace(/^minecraft:/, '').endsWith('_wall_banner');
   const bannerTexture = solidColorTexture(bannerColor(id));
-  const poleTexture = 'minecraft:block/oak_planks';
+  // Smooth debarked wood for the pole/crossbar reads as a banner "stick" far
+  // better than plank seams, and matches vanilla's light banner_base wood.
+  const poleTexture = 'minecraft:block/stripped_oak_log';
   const rotation = {
     x: variantRotation.x,
-    y: variantRotation.y + (wallMounted ? horizontalFacingRotation(properties.facing) : headRotationFromProperty(properties.rotation)),
+    y: variantRotation.y + (wallMounted
+      ? horizontalFacingRotation(properties.facing)
+      // Like a floor skull, the standing cloth is authored on the model's −Z
+      // (north) face, so add 180° to make rotation=0 face south — the direction
+      // the banner was placed toward — instead of away from it.
+      : 180 + headRotationFromProperty(properties.rotation)),
   };
   // Vanilla banners stand roughly two blocks tall (the cloth is a 20x40 entity
-  // flag scaled 2/3). The standing cloth hangs flush against the front (−Z) face
-  // of the pole rather than slicing through its centre, just like the vanilla
-  // flag. A wall banner's cloth hangs in front of a short wooden bracket that
-  // reaches back to the +Z (south) support wall (authored for facing=north); the
-  // cloth covers the bracket from the front and drops down into the block below.
+  // flag scaled 2/3). The standing cloth hangs flush against the −Z face of the
+  // pole rather than slicing through its centre, just like the vanilla flag (the
+  // +180° above rotates it round to face the placement direction). A wall
+  // banner's cloth hangs in front of a short wooden bracket that reaches back to
+  // the +Z (south) support wall (authored for facing=north); the cloth covers
+  // the bracket from the front and drops down into the block below.
   const cloth = wallMounted
     ? syntheticCuboidPart(id, properties, `banner:wall:${bannerTexture}`, [1.5, -11, 14], [14.5, 14, 15], bannerTexture, rotation)
     : syntheticCuboidPart(id, properties, `banner:standing:${bannerTexture}`, [1.5, 1, 6.7], [14.5, 28.5, 7.25], bannerTexture, rotation);
