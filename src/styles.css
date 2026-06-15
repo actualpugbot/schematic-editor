@@ -2638,7 +2638,7 @@ html[data-theme='dark'] .shulker-slot strong {
 .craft-plan-ingredient.is-checked { opacity: 0.55; }
 .craft-plan-ingredient.is-checked .plan-ing-meta strong { text-decoration: line-through; }
 .plan-ing-meta { min-width: 0; }
-.plan-ing-meta strong { display: block; font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plan-ing-meta strong { display: block; font-size: 13px; font-weight: 600; color: var(--ink); white-space: normal; overflow-wrap: anywhere; }
 .plan-ing-meta > span { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .plan-check {
@@ -2699,12 +2699,77 @@ html[data-theme='dark'] .shulker-slot strong {
 }
 .resource-bases-hint svg { flex: none; margin-top: 2px; color: var(--accent); }
 .resource-bases-hint strong { color: var(--ink); font-weight: 600; }
-.resource-bases-bar .secondary-button { flex: none; }
+.resource-bases-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.resource-bases-actions .secondary-button { height: 36px; padding: 0 13px; font-size: 12.5px; }
+
+/* base materials configurator */
+.resource-bases-config {
+  margin: 8px 0 4px; padding: 16px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
+  box-shadow: var(--shadow-card);
+  display: flex; flex-direction: column; gap: 16px;
+}
+.bases-config-add { position: relative; }
+.bases-config-search {
+  display: flex; align-items: center; gap: 9px; height: 40px; padding: 0 13px;
+  background: var(--surface-soft); border: 1px solid var(--line-strong); border-radius: var(--r-md);
+}
+.bases-config-search:focus-within { border-color: var(--accent); }
+.bases-config-search svg { flex: none; color: var(--muted); }
+.bases-config-search input {
+  flex: 1; min-width: 0; border: none; background: transparent; outline: none;
+  font-family: inherit; font-size: 13.5px; color: var(--ink);
+}
+.bases-config-results {
+  display: flex; flex-direction: column; gap: 2px; margin-top: 8px;
+  max-height: 280px; overflow-y: auto;
+}
+.bases-config-result {
+  display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; gap: 11px;
+  padding: 6px 9px; border: 1px solid transparent; border-radius: var(--r-sm);
+  background: transparent; text-align: left; cursor: pointer; color: var(--muted);
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.bases-config-result:hover:not(:disabled) { background: var(--accent-tint); border-color: var(--accent); color: var(--accent); }
+.bases-config-result:disabled { cursor: default; opacity: 0.6; }
+.bases-config-result-label {
+  min-width: 0; font-size: 13px; font-weight: 500; color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bases-config-result svg { flex: none; }
+.bases-config-tag {
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.03em;
+  text-transform: uppercase; color: var(--accent-strong); background: var(--accent-tint);
+  padding: 1px 6px; border-radius: var(--r-pill);
+}
+.bases-config-empty { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+
+.bases-config-lists { display: flex; flex-direction: column; gap: 14px; }
+.bases-config-group h4 {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--faint); margin-bottom: 8px;
+}
+.bases-config-note { font-size: 12.5px; line-height: 1.5; color: var(--muted); max-width: 60ch; }
+.bases-config-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.bases-config-chip {
+  display: inline-flex; align-items: center; gap: 7px; padding: 4px 5px 4px 7px;
+  background: var(--surface-soft); border: 1px solid var(--line); border-radius: var(--r-pill);
+}
+.bases-config-chip-label { font-size: 12.5px; font-weight: 500; color: var(--ink); }
+.bases-config-chip-remove {
+  display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+  border: none; background: transparent; color: var(--muted); cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.bases-config-chip-remove:hover { background: var(--danger-bg); color: var(--danger); }
 
 .craft-plan-ingredient-item { display: flex; flex-direction: column; }
 .craft-plan-ingredient-row { display: flex; align-items: center; gap: 4px; }
 .craft-plan-ingredient-row .craft-plan-ingredient { flex: 1; min-width: 0; }
-.craft-plan-ingredient-row .base-toggle-btn { padding: 4px 8px; font-size: 10.5px; }
+.craft-plan-ingredient-row .ingredient-breakdown-btn {
+  flex: none; padding: 0; width: 28px; height: 28px; justify-content: center; gap: 0;
+}
+.craft-plan-ingredient-row .ingredient-breakdown-btn svg { flex: none; }
 .plan-ing-disclosure {
   display: inline-flex; align-items: center; justify-content: center; flex: none;
   width: 28px; height: 28px; padding: 0; border: none; background: transparent;

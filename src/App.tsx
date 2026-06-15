@@ -86,6 +86,7 @@ import {
   explodeMaterials,
   getRecipeBundle,
   getRecipes,
+  isRawByDefault,
   loadRecipeBundle,
   normalizeRecipeItemId,
   recipeTypeLabel,
@@ -905,6 +906,8 @@ function App() {
   const [recipeChoices, setRecipeChoices] = useState<Map<string, number>>(
     () => new Map(Object.entries(loadMaterialBasePreferences().recipes)),
   );
+  const [basesConfigOpen, setBasesConfigOpen] = useState(false);
+  const [basesConfigSearch, setBasesConfigSearch] = useState('');
   const [shoppingSearch, setShoppingSearch] = useState('');
   const [shoppingLayout, setShoppingLayout] = useState<ShoppingLayout>('grid');
   const [collapsedShoppingGroups, setCollapsedShoppingGroups] = useState<Set<string>>(() => new Set());
@@ -1098,6 +1101,40 @@ function App() {
   const rawMaterials = useMemo<MaterialSummary[]>(() => (
     recipeBreakdown.raw.map((material) => materialSummaryForRecipeItem(material, activeMaterials))
   ), [activeMaterials, recipeBreakdown]);
+  const describeBaseItem = useCallback(
+    (id: string): MaterialSummary => materialSummaryForRecipeItem({ id, count: 0 }, activeMaterials),
+    [activeMaterials],
+  );
+  const forcedBaseItems = useMemo<MaterialSummary[]>(() => (
+    Array.from(materialBaseModes.entries())
+      .filter(([, mode]) => mode === 'base')
+      .map(([id]) => describeBaseItem(id))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  ), [materialBaseModes, describeBaseItem]);
+  const forcedCraftItems = useMemo<MaterialSummary[]>(() => (
+    Array.from(materialBaseModes.entries())
+      .filter(([, mode]) => mode === 'craft')
+      .map(([id]) => describeBaseItem(id))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  ), [materialBaseModes, describeBaseItem]);
+  const baseConfigMatches = useMemo<MaterialSummary[]>(() => {
+    const query = basesConfigSearch.trim().toLocaleLowerCase();
+    if (!query) return [];
+    const bundle = getRecipeBundle();
+    if (!bundle) return [];
+    const seen = new Set<string>();
+    const matches: string[] = [];
+    for (const outputId of Object.keys(bundle.recipes)) {
+      const id = normalizeRecipeItemId(outputId);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      if (id.includes(query) || formatBlockName(id).toLocaleLowerCase().includes(query)) matches.push(id);
+    }
+    return matches
+      .sort((a, b) => formatBlockName(a).localeCompare(formatBlockName(b)))
+      .slice(0, 8)
+      .map((id) => describeBaseItem(id));
+  }, [basesConfigSearch, appDataVersion, describeBaseItem]);
   const craftPlan = useMemo(() => {
     const stepMap = new Map<string, { id: string; method: RecipeType; output: number; outputCount: number; inputs: Map<string, number> }>();
     const depthCache = new Map<string, number>();
@@ -3838,22 +3875,130 @@ function App() {
                 <p className="resource-bases-hint">
                   <SlidersHorizontal size={14} aria-hidden="true" />
                   <span>
-                    Glass and dyes count as base materials. <strong>Break down</strong> any item to expand it
-                    into its recipe, or <strong>Use as base</strong> to treat a crafted item as one you already have.
+                    Glass, dyes, ores and other gathered blocks count as base materials. <strong>Break down</strong> any
+                    item to expand it into its recipe, or <strong>Use as base</strong> to treat a crafted item as one you
+                    already have.
                   </span>
                 </p>
-                {materialBaseOverrideCount > 0 && (
+                <div className="resource-bases-actions">
                   <button
                     type="button"
-                    className="secondary-button"
-                    onClick={resetMaterialBases}
-                    title="Restore the default base materials"
+                    className={`secondary-button${basesConfigOpen ? ' is-active' : ''}`}
+                    onClick={() => setBasesConfigOpen((open) => !open)}
+                    aria-expanded={basesConfigOpen}
+                    title="Choose which items always count as base materials"
                   >
-                    <RotateCcw size={15} aria-hidden="true" />
-                    Reset bases ({materialBaseOverrideCount})
+                    <SlidersHorizontal size={15} aria-hidden="true" />
+                    Configure bases{materialBaseOverrideCount > 0 ? ` (${materialBaseOverrideCount})` : ''}
                   </button>
-                )}
+                  {materialBaseOverrideCount > 0 && (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={resetMaterialBases}
+                      title="Restore the default base materials"
+                    >
+                      <RotateCcw size={15} aria-hidden="true" />
+                      Reset
+                    </button>
+                  )}
+                </div>
               </div>
+
+              {basesConfigOpen && (
+                <div className="resource-bases-config" aria-label="Base material configuration">
+                  <div className="bases-config-add">
+                    <label className="bases-config-search">
+                      <Search size={15} aria-hidden="true" />
+                      <input
+                        type="search"
+                        value={basesConfigSearch}
+                        onChange={(event) => setBasesConfigSearch(event.target.value)}
+                        placeholder="Add an item you keep in stock (e.g. glass, iron block)…"
+                        aria-label="Search for an item to treat as a base material"
+                      />
+                    </label>
+                    {basesConfigSearch.trim() && (
+                      <div className="bases-config-results" role="listbox">
+                        {baseConfigMatches.map((item) => {
+                          const already = materialBaseModes.get(item.id) === 'base' || isRawByDefault(item.id);
+                          return (
+                            <button
+                              type="button"
+                              key={item.id}
+                              className="bases-config-result"
+                              onClick={() => {
+                                setMaterialBaseMode(item.id, 'base');
+                                setBasesConfigSearch('');
+                              }}
+                              disabled={already}
+                              title={already ? `${item.label} is already a base material` : `Treat ${item.label} as a base material`}
+                            >
+                              <MaterialPreview stateKey={item.stateKey} color={item.color} layers={item.thumbnailLayers} size={26} />
+                              <span className="bases-config-result-label">{item.label}</span>
+                              {already ? <span className="bases-config-tag">base</span> : <Plus size={14} aria-hidden="true" />}
+                            </button>
+                          );
+                        })}
+                        {baseConfigMatches.length === 0 && (
+                          <p className="bases-config-empty">No craftable items match “{basesConfigSearch.trim()}”.</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="bases-config-lists">
+                    <div className="bases-config-group">
+                      <h4>Treated as base</h4>
+                      {forcedBaseItems.length === 0 ? (
+                        <p className="bases-config-note">Glass, dyes, ores, logs and other gathered blocks are already
+                          treated as base by default. Add your own above to keep more items out of the crafting plan.</p>
+                      ) : (
+                        <div className="bases-config-chips">
+                          {forcedBaseItems.map((item) => (
+                            <span className="bases-config-chip" key={item.id}>
+                              <MaterialPreview stateKey={item.stateKey} color={item.color} layers={item.thumbnailLayers} size={22} />
+                              <span className="bases-config-chip-label">{item.label}</span>
+                              <button
+                                type="button"
+                                className="bases-config-chip-remove"
+                                onClick={() => setMaterialBaseMode(item.id, 'default')}
+                                title={`Stop treating ${item.label} as a base material`}
+                                aria-label={`Stop treating ${item.label} as a base material`}
+                              >
+                                <X size={13} aria-hidden="true" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {forcedCraftItems.length > 0 && (
+                      <div className="bases-config-group">
+                        <h4>Always broken down</h4>
+                        <div className="bases-config-chips">
+                          {forcedCraftItems.map((item) => (
+                            <span className="bases-config-chip" key={item.id}>
+                              <MaterialPreview stateKey={item.stateKey} color={item.color} layers={item.thumbnailLayers} size={22} />
+                              <span className="bases-config-chip-label">{item.label}</span>
+                              <button
+                                type="button"
+                                className="bases-config-chip-remove"
+                                onClick={() => setMaterialBaseMode(item.id, 'default')}
+                                title={`Stop forcing ${item.label} to break down`}
+                                aria-label={`Stop forcing ${item.label} to break down`}
+                              >
+                                <X size={13} aria-hidden="true" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="craft-plan" aria-label="Crafting plan">
                 <aside className="craft-plan-ingredients" aria-label="Base ingredients">
@@ -3912,12 +4057,12 @@ function App() {
                             {breakable && (
                               <button
                                 type="button"
-                                className="base-toggle-btn"
+                                className="base-toggle-btn ingredient-breakdown-btn"
                                 onClick={() => setMaterialBaseMode(material.id, 'craft')}
                                 title={`Break ${material.label} down into its recipe`}
+                                aria-label={`Break ${material.label} down into its recipe`}
                               >
-                                <ChevronDown size={13} aria-hidden="true" />
-                                Break down
+                                <Boxes size={15} aria-hidden="true" />
                               </button>
                             )}
                           </div>
