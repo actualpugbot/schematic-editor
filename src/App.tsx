@@ -7682,6 +7682,7 @@ function materialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] | unde
   if (isPaneStateKey(stateKey)) return paneMaterialThumbnailLayers(stateKey);
   if (isBedStateKey(stateKey)) return bedMaterialThumbnailLayers(stateKey);
   if (isDoorStateKey(stateKey)) return doorMaterialThumbnailLayers(stateKey);
+  if (isSeaPickleStateKey(stateKey)) return seaPickleMaterialThumbnailLayers(stateKey);
   if (isTallPlantStateKey(stateKey)) return tallPlantMaterialThumbnailLayers(stateKey);
   if (isPitcherCropStateKey(stateKey)) return pitcherCropMaterialThumbnailLayers(stateKey);
   return undefined;
@@ -7761,6 +7762,13 @@ function tallPlantMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer
     { stateKey: withBlockStateProperties(baseState, { half: 'lower' }) },
     { stateKey: withBlockStateProperties(baseState, { half: 'upper' }), offset: [0, 1, 0] },
   ];
+}
+
+function seaPickleMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {
+  // Sea pickles default to waterlogged when placed; show them dry in the
+  // materials list so the preview isn't submerged behind a water source.
+  const baseState = stripBlockStateProperties(stateKey);
+  return [{ stateKey: withBlockStateProperties(baseState, { waterlogged: 'false' }) }];
 }
 
 function isPitcherCropStateKey(stateKey: string): boolean {
