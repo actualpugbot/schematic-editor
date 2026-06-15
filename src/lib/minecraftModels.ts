@@ -1933,16 +1933,22 @@ function syntheticStandingOrWallSignParts(
     x: variantRotation.x,
     y: variantRotation.y + (wallMounted ? horizontalFacingRotation(properties.facing) : headRotationFromProperty(properties.rotation)),
   };
+  // Vanilla signs are rendered from the SignModel (board 24x12x2, post 2x14x2)
+  // scaled by 0.6667. Worked into 0..16 block space the board spans the FULL
+  // block width and sits high — its top pokes ~1px above the block — on a post
+  // that runs to the ground. Wall signs drop the post and sit flush against the
+  // support wall (authored on the +Z half for facing=north, per the convention
+  // used by other wall block entities).
   const board: [number, number, number][] = wallMounted
-    ? [[2, 5, 14], [14, 13, 16]]
-    : [[2, 6, 7], [14, 14, 9]];
+    ? [[0, 4, 14], [16, 12, 16]]
+    : [[0, 9, 7], [16, 17, 9]];
   const parts = [
     syntheticCuboidPart(id, properties, `sign:${wallMounted ? 'wall' : 'standing'}:board:${texture}`, board[0], board[1], texture, rotation),
   ];
 
   if (!wallMounted) {
     parts.push(
-      syntheticCuboidPart(id, properties, `sign:standing:post:${texture}`, [7, 0, 7], [9, 7, 9], texture, rotation),
+      syntheticCuboidPart(id, properties, `sign:standing:post:${texture}`, [7, 0, 7], [9, 9, 9], texture, rotation),
     );
   }
 
