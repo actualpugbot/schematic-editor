@@ -6188,8 +6188,12 @@ function materialIdForStateKey(stateKey: string): string {
   if (path === 'soul_wall_torch') return 'minecraft:soul_torch';
   if (path === 'redstone_wall_torch') return 'minecraft:redstone_torch';
   if (path === 'copper_wall_torch') return 'minecraft:copper_torch';
-  if (path === 'player_wall_head') return 'minecraft:player_head';
-  if (path === 'piglin_wall_head') return 'minecraft:piglin_head';
+  // Wall-mounted variants share an item with their standing/floor counterpart, so
+  // tally them together in the materials list (heads, skulls, banners, coral fans).
+  if (path.endsWith('_wall_head')) return id.replace(/_wall_head$/, '_head');
+  if (path.endsWith('_wall_skull')) return id.replace(/_wall_skull$/, '_skull');
+  if (path.endsWith('_wall_banner')) return id.replace(/_wall_banner$/, '_banner');
+  if (path.endsWith('_coral_wall_fan')) return id.replace(/_coral_wall_fan$/, '_coral_fan');
   return id;
 }
 
@@ -6799,6 +6803,8 @@ function materialStateKeyForBlock(block: VoxelBlock): string {
   if (isCampfireStateKey(block.stateKey)) return campfireMaterialStateKey(block.stateKey);
   if (isWallTorchStateKey(block.stateKey)) return wallTorchMaterialStateKey(block.stateKey);
   if (isDisplayHeadStateKey(block.stateKey)) return headMaterialStateKey(block);
+  if (isBannerStateKey(block.stateKey)) return bannerMaterialStateKey(block.stateKey);
+  if (isCoralFanStateKey(block.stateKey)) return coralFanMaterialStateKey(block.stateKey);
   return block.stateKey;
 }
 
@@ -6903,6 +6909,17 @@ function headMaterialStateKey(block: VoxelBlock): string {
   }
 
   return formatStateKey(id, properties, ['rotation', 'SchematicEditor_head']);
+}
+
+function bannerMaterialStateKey(stateKey: string): string {
+  // Collapse wall banners onto the standing banner so the combined entry previews
+  // the upright item; rotation is fixed so all banners of a color share one preview.
+  return withBlockStateProperties(materialIdForStateKey(stateKey), { rotation: '0' });
+}
+
+function coralFanMaterialStateKey(stateKey: string): string {
+  // Collapse wall coral fans onto the floor fan (and drop waterlogged) for the preview.
+  return materialIdForStateKey(stateKey);
 }
 
 function wallMaterialStateKey(stateKey: string): string {
@@ -7649,12 +7666,27 @@ function isWallTorchStateKey(stateKey: string): boolean {
   return id === 'wall_torch' || id === 'soul_wall_torch' || id === 'redstone_wall_torch' || id === 'copper_wall_torch';
 }
 
+function isBannerStateKey(stateKey: string): boolean {
+  // Matches both standing (`*_banner`) and wall (`*_wall_banner`) banners.
+  return stripBlockStateProperties(stateKey).replace(/^minecraft:/, '').endsWith('_banner');
+}
+
+function isCoralFanStateKey(stateKey: string): boolean {
+  const id = stripBlockStateProperties(stateKey).replace(/^minecraft:/, '');
+  return id.endsWith('_coral_fan') || id.endsWith('_coral_wall_fan');
+}
+
 function isDisplayHeadStateKey(stateKey: string): boolean {
-  const id = stripBlockStateProperties(stateKey);
-  return id === 'minecraft:player_head'
-    || id === 'minecraft:player_wall_head'
-    || id === 'minecraft:piglin_head'
-    || id === 'minecraft:piglin_wall_head';
+  // Match standing and wall variants alike; materialIdForStateKey collapses the
+  // wall variants onto these floor ids, which we exclude piston_head from.
+  const base = materialIdForStateKey(stateKey).replace(/^minecraft:/, '');
+  return base === 'player_head'
+    || base === 'piglin_head'
+    || base === 'zombie_head'
+    || base === 'creeper_head'
+    || base === 'dragon_head'
+    || base === 'skeleton_skull'
+    || base === 'wither_skeleton_skull';
 }
 
 function isWheatCropStateKey(stateKey: string): boolean {
