@@ -2863,7 +2863,8 @@ function App() {
     thumbnailDebugActive ||
     (appView === 'resource' && Boolean(model)) ||
     (appView === 'shulker' && Boolean(model)) ||
-    (appView === 'shopping' && Boolean(model));
+    (appView === 'shopping' && Boolean(model)) ||
+    (appView === 'audit' && Boolean(model));
   const persistentViewerHidden = loadState === 'loading' || textureViewActive || altPanelActive;
 
   const setDefaultCameraView = (id: string) => {
