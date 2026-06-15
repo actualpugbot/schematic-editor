@@ -144,11 +144,6 @@ type ControlRailSide = 'left' | 'right';
 
 const UV_VIEW_ENABLED = false;
 const THUMBNAIL_DEBUG_ENABLED = false;
-// TEMPORARY: in-list thumbnail tuning tools (per-row rotate, floating "copy
-// adjustments JSON", and an all-blocks test loader). Flip to false (or delete the
-// gated blocks) once the captured adjustments are baked into
-// thumbnail_display_adjustments.json.
-const TEMP_THUMBNAIL_TOOLS = true;
 
 /** Sentinel picker value meaning "use each occurrence's recommended replacement". */
 const AUDIT_RECOMMENDED = '__recommended__';
@@ -2891,104 +2886,6 @@ function App() {
     });
   };
 
-  // --- TEMPORARY thumbnail tuning tools (gated by TEMP_THUMBNAIL_TOOLS) ---
-  // Cycle how a material's thumbnail faces in the list. Stores the chosen
-  // orientation as a previewStateKey/previewLayers override in the same
-  // thumbnailDisplayAdjustments map the lists already read from, so the change is
-  // visible immediately and captured by the Copy JSON export.
-  const rotateMaterialThumbnail = (material: MaterialListItem) => {
-    const adjustmentKey = material.displayStateKey ?? materialDisplayStateKey(material.stateKey);
-    const layers = material.thumbnailLayers ?? materialThumbnailLayers(adjustmentKey);
-    setThumbnailDisplayAdjustments((current) => {
-      const previous = current[adjustmentKey] ?? defaultThumbnailDisplayAdjustment;
-      const baseRequest = baseThumbnailPreviewRequest(adjustmentKey, layers);
-      const currentRequest = resolveThumbnailPreviewRequest(adjustmentKey, layers, previous);
-      const nextRequest = cycleThumbnailPreviewRequestFacing(currentRequest);
-      if (thumbnailPreviewRequestsEqual(nextRequest, currentRequest)) return current;
-
-      const matchesBase = thumbnailPreviewRequestsEqual(nextRequest, baseRequest);
-      const next = normalizeThumbnailDisplayAdjustment({
-        ...previous,
-        previewStateKey: matchesBase ? undefined : nextRequest.stateKey,
-        previewLayers: matchesBase ? undefined : nextRequest.layers,
-      });
-
-      if (isDefaultThumbnailDisplayAdjustment(next)) {
-        const updated = { ...current };
-        delete updated[adjustmentKey];
-        return updated;
-      }
-      return { ...current, [adjustmentKey]: next };
-    });
-  };
-
-  // Copies a paste-ready adjustments map plus a human-readable was/now list so the
-  // captured orientations can be baked into thumbnail_display_adjustments.json.
-  const copyMaterialThumbnailAdjustments = () => {
-    const adjustments = exportedThumbnailDisplayAdjustments;
-    const changes = Object.entries(adjustments).map(([block, adjustment]) => {
-      const layers = materialThumbnailLayers(block);
-      const baseRequest = baseThumbnailPreviewRequest(block, layers);
-      const adjustedRequest = resolveThumbnailPreviewRequest(block, layers, adjustment);
-      return {
-        block,
-        label: formatBlockName(block),
-        was: summarizeThumbnailOrientation(baseRequest).label ?? 'default',
-        now: summarizeThumbnailOrientation(adjustedRequest).label ?? 'default',
-        scale: adjustment.scale,
-      };
-    });
-    const text = JSON.stringify({
-      _comment: 'Replace src/lib/data/thumbnail_display_adjustments.json with `adjustments` to make these permanent.',
-      adjustments,
-      changes,
-    }, null, 2);
-
-    const copyOperation = navigator.clipboard?.writeText(text);
-    if (!copyOperation) {
-      setThumbnailAdjustmentsCopied(false);
-      setEditNotice('Clipboard copy is not available in this browser.');
-      return;
-    }
-    void copyOperation.then(() => {
-      if (thumbnailAdjustmentsCopiedTimeoutRef.current !== null) {
-        window.clearTimeout(thumbnailAdjustmentsCopiedTimeoutRef.current);
-      }
-      setThumbnailAdjustmentsCopied(true);
-      thumbnailAdjustmentsCopiedTimeoutRef.current = window.setTimeout(() => {
-        setThumbnailAdjustmentsCopied(false);
-        thumbnailAdjustmentsCopiedTimeoutRef.current = null;
-      }, 1800);
-    }).catch(() => {
-      setThumbnailAdjustmentsCopied(false);
-      setEditNotice('Could not copy the thumbnail adjustment JSON.');
-    });
-  };
-
-  // Builds and loads an in-memory schematic with one of every known block so the
-  // materials list shows them all for orientation tuning.
-  const loadAllBlocksTestSchematic = () => {
-    beginSchematicLoad('Generating an all-blocks test schematic...');
-    const stateKeys = allBuildBlocks.filter((key) => materialDisplayStateKey(key) !== 'minecraft:air');
-    const columns = Math.max(1, Math.ceil(Math.sqrt(stateKeys.length)));
-    const rows = Math.max(1, Math.ceil(stateKeys.length / columns));
-    const blocks = stateKeys.map((stateKey, index) => (
-      createVoxelBlock(index % columns, 0, Math.floor(index / columns), stateKey)
-    ));
-    const allBlocksModel = finalizeSchematicModel({
-      name: 'All Blocks (test)',
-      source: 'Sample',
-      dimensions: { width: columns, height: 1, length: rows },
-      origin: { x: 0, y: 0, z: 0 },
-      blocks,
-      paletteSize: new Set(blocks.map((block) => block.stateKey)).size,
-      warnings: [],
-    });
-    applySchematic(allBlocksModel, null, defaultExportFormat, 'new');
-    setAppView('inspect');
-    setInspectorTab('materials');
-  };
-
   const openShoppingList = () => {
     if (!model && manualMaterials.length === 0) return;
     setShoppingSearch('');
@@ -5579,7 +5476,6 @@ function App() {
                   renderBreakdown={(material) => (
                     <MaterialBreakdown materialId={material.id} count={material.count} />
                   )}
-                  onRotateMaterial={TEMP_THUMBNAIL_TOOLS ? rotateMaterialThumbnail : undefined}
                   emptyText={cuboidBounds ? 'No non-air blocks in this selection.' : 'Select an area to preview its materials.'}
                   searchValue={selectionMaterialSearch}
                   onSearchChange={setSelectionMaterialSearch}
@@ -5716,7 +5612,6 @@ function App() {
                   renderBreakdown={(material) => (
                     <MaterialBreakdown materialId={material.id} count={material.count} />
                   )}
-                  onRotateMaterial={TEMP_THUMBNAIL_TOOLS ? rotateMaterialThumbnail : undefined}
                   emptyText="No visible non-air blocks in this layer range."
                   searchValue={layerMaterialSearch}
                   onSearchChange={setLayerMaterialSearch}
@@ -5768,7 +5663,6 @@ function App() {
                 renderBreakdown={(material) => (
                   <MaterialBreakdown materialId={material.id} count={material.count} />
                 )}
-                onRotateMaterial={TEMP_THUMBNAIL_TOOLS ? rotateMaterialThumbnail : undefined}
                 emptyText={materialsScope === 'cuboid' && !cuboidBounds
                   ? 'Select an area to list materials for that region.'
                   : 'No non-air blocks in this area.'}
@@ -6227,30 +6121,6 @@ function App() {
           onDone={() => setCelebrationView(null)}
         />
       )}
-      {/* TEMPORARY: in-list thumbnail tuning tools — see TEMP_THUMBNAIL_TOOLS. */}
-      {TEMP_THUMBNAIL_TOOLS && loadState === 'ready' && (
-        <div className="temp-thumb-tools" aria-label="Temporary thumbnail tuning tools">
-          <span className="temp-thumb-tools-tag">Temp thumbnail tools</span>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={loadAllBlocksTestSchematic}
-            title="Replace the current build with one of every block (for thumbnail tuning)"
-          >
-            <Boxes size={16} aria-hidden="true" />
-            Load all blocks
-          </button>
-          <button
-            type="button"
-            className="primary-button"
-            onClick={copyMaterialThumbnailAdjustments}
-            title="Copy the adjusted-block JSON to the clipboard"
-          >
-            {thumbnailAdjustmentsCopied ? <Check size={15} aria-hidden="true" /> : <ClipboardList size={15} aria-hidden="true" />}
-            {thumbnailAdjustmentsCopied ? 'Copied JSON' : `Copy adjustments (${adjustedThumbnailItemCount})`}
-          </button>
-        </div>
-      )}
       </main>
     </ThumbnailDisplayAdjustmentsContext.Provider>
   );
@@ -6635,48 +6505,6 @@ function setThumbnailPreviewRequestAxis(request: ThumbnailPreviewRequest, axis: 
       offset: layer.offset ? [...layer.offset] as [number, number, number] : undefined,
     })),
   });
-}
-
-// TEMPORARY: advance a thumbnail preview to the "next" facing for the in-list
-// rotate control. Cycles full facing including up/down where supported, horizontal
-// facing (N→E→S→W), or axis (X→Y→Z); falls back to a Y rotation for
-// connection/shape-driven blocks (fences, walls, rails). Returns the request
-// unchanged when the block exposes no directional state we can advance.
-function cycleThumbnailPreviewRequestFacing(request: ThumbnailPreviewRequest): ThumbnailPreviewRequest {
-  const orientation = summarizeThumbnailOrientation(request);
-
-  if (orientation.mode === 'facing') {
-    const order: Direction[] = ['north', 'east', 'south', 'west', 'up', 'down'];
-    const start = orientation.value ? order.indexOf(orientation.value as Direction) : -1;
-    for (let step = 1; step <= order.length; step += 1) {
-      const candidate = order[(start + step + order.length) % order.length];
-      const next = setThumbnailPreviewRequestDirection(request, candidate);
-      if (!thumbnailPreviewRequestsEqual(next, request)) return next;
-    }
-  }
-
-  if (orientation.mode === 'horizontal_facing' || orientation.mode === 'rotation') {
-    const order: Direction[] = ['north', 'east', 'south', 'west'];
-    const current = thumbnailPreviewHorizontalDirection(request);
-    const start = current ? order.indexOf(current) : -1;
-    for (let step = 1; step <= order.length; step += 1) {
-      const candidate = order[(start + step + order.length) % order.length];
-      const next = setThumbnailPreviewRequestDirection(request, candidate);
-      if (!thumbnailPreviewRequestsEqual(next, request)) return next;
-    }
-  }
-
-  if (orientation.mode === 'axis') {
-    const order: Array<'x' | 'y' | 'z'> = ['x', 'y', 'z'];
-    const start = orientation.value ? order.indexOf(orientation.value as 'x' | 'y' | 'z') : -1;
-    for (let step = 1; step <= order.length; step += 1) {
-      const candidate = order[(start + step + order.length) % order.length];
-      const next = setThumbnailPreviewRequestAxis(request, candidate);
-      if (!thumbnailPreviewRequestsEqual(next, request)) return next;
-    }
-  }
-
-  return rotateThumbnailPreviewRequestY(request, 'clockwise');
 }
 
 function thumbnailPreviewHorizontalDirection(

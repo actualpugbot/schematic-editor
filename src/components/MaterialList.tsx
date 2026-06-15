@@ -1,4 +1,4 @@
-import { ChevronDown, Eye, EyeOff, RotateCw, Search } from 'lucide-react';
+import { ChevronDown, Eye, EyeOff, Search } from 'lucide-react';
 import type { KeyboardEvent, ReactNode } from 'react';
 
 import type { BlockThumbnailLayer } from '../lib/blockThumbnails';
@@ -26,9 +26,6 @@ interface MaterialListProps {
   onToggleVisibility: (id: string) => void;
   renderPreview: (material: MaterialListItem) => ReactNode;
   renderBreakdown: (material: MaterialListItem) => ReactNode;
-  // TEMPORARY: when provided, renders a per-row rotate button that cycles how the
-  // material's thumbnail faces in the list. Used for tuning thumbnail defaults.
-  onRotateMaterial?: (material: MaterialListItem) => void;
   emptyText: string;
   searchValue?: string;
   onSearchChange?: (value: string) => void;
@@ -49,7 +46,6 @@ export function MaterialList({
   onToggleVisibility,
   renderPreview,
   renderBreakdown,
-  onRotateMaterial,
   emptyText,
   searchValue,
   onSearchChange,
@@ -94,7 +90,7 @@ export function MaterialList({
               key={material.id}
               ref={(node) => onItemRef?.(material.id, node)}
             >
-              <div className={`material-row${isExpanded ? ' is-expanded' : ''}${isSelected ? ' is-selected' : ''}${onRotateMaterial ? ' has-rotate' : ''}`}>
+              <div className={`material-row${isExpanded ? ' is-expanded' : ''}${isSelected ? ' is-selected' : ''}`}>
                 <div
                   className={`material-pick${canExpand ? '' : ' is-static'}`}
                   role={canExpand ? 'button' : undefined}
@@ -111,17 +107,6 @@ export function MaterialList({
                     <strong className="material-count-badge">{material.count.toLocaleString()}</strong>
                   </span>
                 </div>
-                {onRotateMaterial && (
-                  <button
-                    type="button"
-                    className="material-rotate"
-                    aria-label={`Rotate ${material.label} thumbnail facing`}
-                    title="Rotate thumbnail facing (temporary)"
-                    onClick={() => onRotateMaterial(material)}
-                  >
-                    <RotateCw size={16} />
-                  </button>
-                )}
                 <button
                   type="button"
                   className="material-visibility"

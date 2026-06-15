@@ -1454,16 +1454,6 @@ html[data-theme='dark'] .material-pick {
 .material-visibility:hover { background: var(--surface-sunken); color: var(--ink); }
 .material-visibility:disabled { opacity: 0.3; cursor: not-allowed; }
 
-/* TEMPORARY: in-list thumbnail rotate control (see TEMP_THUMBNAIL_TOOLS). */
-.material-row.has-rotate { grid-template-columns: minmax(0, 1fr) 32px 32px; }
-.material-rotate {
-  align-self: center;
-  display: grid; place-items: center; width: 32px; height: 32px; border: none; background: transparent;
-  border-radius: 8px; color: var(--faint); flex: none; transition: background 0.14s, color 0.14s, transform 0.14s;
-}
-.material-rotate:hover { background: var(--surface-sunken); color: var(--accent); }
-.material-rotate:active { transform: rotate(90deg); }
-
 .material-count, .material-raw {
   font-family: var(--font-mono); font-size: 13px; font-weight: 500; text-align: right; min-width: 56px;
 }
@@ -3252,21 +3242,6 @@ input:focus-visible, button:focus-visible, a.primary-button:focus-visible { outl
 .audit-nbt-key { color: var(--accent); font-weight: 600; }
 .audit-nbt-type { color: var(--muted); font-size: 10.5px; }
 .audit-nbt-value { color: var(--ink); word-break: break-word; }
-
-/* TEMPORARY: floating cluster for the in-list thumbnail tuning tools. */
-.temp-thumb-tools {
-  position: fixed; right: 18px; bottom: 18px; z-index: 60;
-  display: flex; flex-direction: column; align-items: stretch; gap: 8px;
-  padding: 10px; border-radius: var(--r-sm);
-  background: var(--surface); border: 1px dashed var(--accent);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
-}
-.temp-thumb-tools-tag {
-  font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--accent); text-align: center;
-}
-.temp-thumb-tools .primary-button,
-.temp-thumb-tools .secondary-button { justify-content: center; white-space: nowrap; }
 
 /* Manual materials list — empty-state CTA + block picker */
 .materials-empty-state {
