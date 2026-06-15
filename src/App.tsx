@@ -2302,7 +2302,12 @@ function App() {
         ...cuboidCorners,
         [corner]: pointFromBlock(block),
       }, { saveArea: Boolean(otherCorner) });
-      if (otherCorner) setMaterialsScope('cuboid');
+      if (otherCorner) {
+        // Both corners are now placed — the selection is complete, so leave
+        // create-selection mode and let the `+` button return to inactive.
+        setMaterialsScope('cuboid');
+        setCuboidSelectionMode(false);
+      }
       return;
     }
 
@@ -4987,9 +4992,9 @@ function App() {
                   <button
                     type="button"
                     className={`icon-button${cuboidSelectionMode ? ' is-active' : ''}`}
-                    onClick={() => beginCuboidSelection(hasCuboidSelection)}
-                    title={hasCuboidSelection ? 'Create new selected area' : 'Create selected area'}
-                    aria-label={hasCuboidSelection ? 'Create new selected area' : 'Create selected area'}
+                    onClick={() => (cuboidSelectionMode ? setCuboidSelectionMode(false) : beginCuboidSelection(hasCuboidSelection))}
+                    title={cuboidSelectionMode ? 'Cancel area selection' : hasCuboidSelection ? 'Create new selected area' : 'Create selected area'}
+                    aria-label={cuboidSelectionMode ? 'Cancel area selection' : hasCuboidSelection ? 'Create new selected area' : 'Create selected area'}
                     aria-pressed={cuboidSelectionMode}
                   >
                     <Plus size={16} />
