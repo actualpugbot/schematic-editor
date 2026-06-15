@@ -2702,9 +2702,18 @@ html[data-theme='dark'] .shulker-slot strong {
 .resource-bases-hint strong { color: var(--ink); font-weight: 600; }
 .resource-bases-bar .secondary-button { flex: none; }
 
+.craft-plan-ingredient-item { display: flex; flex-direction: column; }
 .craft-plan-ingredient-row { display: flex; align-items: center; gap: 4px; }
 .craft-plan-ingredient-row .craft-plan-ingredient { flex: 1; min-width: 0; }
 .craft-plan-ingredient-row .base-toggle-btn { padding: 4px 8px; font-size: 10.5px; }
+.plan-ing-disclosure {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 28px; height: 28px; padding: 0; border: none; background: transparent;
+  border-radius: var(--r-sm); cursor: pointer; transition: background 0.12s;
+}
+.plan-ing-disclosure:hover { background: var(--surface-soft); }
+.craft-plan-ingredient-row.is-expanded .material-disclosure { transform: rotate(180deg); color: var(--accent); }
+.craft-plan-breakdown { padding: 2px 0 8px; }
 .base-tag {
   margin-left: 7px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
   letter-spacing: 0.03em; text-transform: uppercase; color: var(--accent-strong);

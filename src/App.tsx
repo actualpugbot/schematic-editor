@@ -3873,35 +3873,58 @@ function App() {
                       const checked = checkedPlanSteps.has(key);
                       const breakable = canBreakDown(material.id);
                       const forcedBase = materialBaseModes.get(material.id) === 'base';
+                      const expandable = shouldShowCompactMaterialBreakdown(material.id, material.count);
+                      const expanded = expandable && expandedMaterialIds.has(material.id);
+                      const breakdownId = `plan-breakdown-${material.id}`;
                       return (
-                        <div className="craft-plan-ingredient-row" key={material.id}>
-                          <button
-                            type="button"
-                            className={`craft-plan-ingredient${checked ? ' is-checked' : ''}`}
-                            onClick={() => setCheckedPlanSteps((current) => {
-                              const next = new Set(current);
-                              if (next.has(key)) next.delete(key); else next.add(key);
-                              return next;
-                            })}
-                            aria-pressed={checked}
-                          >
-                            <span className={`plan-check${checked ? ' is-on' : ''}`}>{checked && <Check size={12} strokeWidth={3} />}</span>
-                            <MaterialPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
-                            <span className="plan-ing-meta">
-                              <strong>{material.label}{forcedBase && <span className="base-tag">base</span>}</strong>
-                              <span>{material.count.toLocaleString()} · {Math.ceil(material.count / 64)} stacks</span>
-                            </span>
-                          </button>
-                          {breakable && (
+                        <div className="craft-plan-ingredient-item" key={material.id}>
+                          <div className={`craft-plan-ingredient-row${expanded ? ' is-expanded' : ''}`}>
                             <button
                               type="button"
-                              className="base-toggle-btn"
-                              onClick={() => setMaterialBaseMode(material.id, 'craft')}
-                              title={`Break ${material.label} down into its recipe`}
+                              className={`craft-plan-ingredient${checked ? ' is-checked' : ''}`}
+                              onClick={() => setCheckedPlanSteps((current) => {
+                                const next = new Set(current);
+                                if (next.has(key)) next.delete(key); else next.add(key);
+                                return next;
+                              })}
+                              aria-pressed={checked}
                             >
-                              <ChevronDown size={13} aria-hidden="true" />
-                              Break down
+                              <span className={`plan-check${checked ? ' is-on' : ''}`}>{checked && <Check size={12} strokeWidth={3} />}</span>
+                              <MaterialPreview stateKey={material.stateKey} color={material.color} layers={material.thumbnailLayers} />
+                              <span className="plan-ing-meta">
+                                <strong>{material.label}{forcedBase && <span className="base-tag">base</span>}</strong>
+                                <span>{material.count.toLocaleString()}</span>
+                              </span>
                             </button>
+                            {expandable && (
+                              <button
+                                type="button"
+                                className="plan-ing-disclosure"
+                                onClick={() => toggleMaterialBreakdown(material.id)}
+                                aria-expanded={expanded}
+                                aria-controls={breakdownId}
+                                aria-label={`${expanded ? 'Hide' : 'Show'} ${material.label} stack breakdown`}
+                                title="Stack breakdown"
+                              >
+                                <ChevronDown className="material-disclosure" size={15} aria-hidden="true" />
+                              </button>
+                            )}
+                            {breakable && (
+                              <button
+                                type="button"
+                                className="base-toggle-btn"
+                                onClick={() => setMaterialBaseMode(material.id, 'craft')}
+                                title={`Break ${material.label} down into its recipe`}
+                              >
+                                <ChevronDown size={13} aria-hidden="true" />
+                                Break down
+                              </button>
+                            )}
+                          </div>
+                          {expanded && (
+                            <div id={breakdownId} className="material-breakdown craft-plan-breakdown">
+                              <MaterialBreakdown materialId={material.id} count={material.count} />
+                            </div>
                           )}
                         </div>
                       );
