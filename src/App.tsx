@@ -7679,6 +7679,7 @@ function materialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] | unde
   if (isFenceStateKey(stateKey)) return fenceMaterialThumbnailLayers(stateKey);
   if (isStairsStateKey(stateKey)) return stairMaterialThumbnailLayers(stateKey);
   if (isWallStateKey(stateKey)) return wallMaterialThumbnailLayers(stateKey);
+  if (isPaneStateKey(stateKey)) return paneMaterialThumbnailLayers(stateKey);
   if (isBedStateKey(stateKey)) return bedMaterialThumbnailLayers(stateKey);
   if (isDoorStateKey(stateKey)) return doorMaterialThumbnailLayers(stateKey);
   if (isTallPlantStateKey(stateKey)) return tallPlantMaterialThumbnailLayers(stateKey);
@@ -7700,6 +7701,13 @@ function stairMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {
 
 function wallMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {
   return [{ stateKey: wallMaterialStateKey(stateKey) }];
+}
+
+function paneMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {
+  // Show the pane connected along one axis (east<->west) so the preview reads as
+  // the in-game pane with connectors on two opposing sides, rather than a single
+  // isolated center post (the "long skinny" version).
+  return [{ stateKey: paneMaterialStateKey(stateKey) }];
 }
 
 function doorMaterialThumbnailLayers(stateKey: string): BlockThumbnailLayer[] {
