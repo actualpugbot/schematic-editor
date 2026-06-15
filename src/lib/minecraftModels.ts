@@ -2615,7 +2615,7 @@ function chestBlockEntityParts(
   const texture = chestTexture(id, chestType);
 
   return chestCuboids(chestType).map((cuboid) =>
-    blockEntityCuboidPart(id, properties, `chest:${chestType}:${cuboid.name}:${texture}`, cuboid, texture, chestRotation),
+    blockEntityCuboidPart(id, properties, `chest:${chestType}:${cuboid.name}:${texture}`, cuboid, texture, chestRotation, [64, 64], true),
   );
 }
 
@@ -2840,6 +2840,7 @@ function blockEntityCuboidPart(
   texture: string,
   variantRotation: { x: number; y: number },
   textureSize: [number, number] = [64, 64],
+  flipV = false,
 ): ResolvedBlockPart {
   const width = cuboid.to[0] - cuboid.from[0];
   const height = cuboid.to[1] - cuboid.from[1];
@@ -2847,7 +2848,7 @@ function blockEntityCuboidPart(
   const [uvWidth, uvHeight, uvDepth] = cuboid.uvSize ?? [width, height, depth];
   const hiddenFaces = new Set(cuboid.hiddenFaces ?? []);
   const faceTextures = cubeTextures(texture);
-  const faceUvs = entityCubeUvs(cuboid.textureOrigin[0], cuboid.textureOrigin[1], uvWidth, uvHeight, uvDepth, hiddenFaces);
+  const faceUvs = entityCubeUvs(cuboid.textureOrigin[0], cuboid.textureOrigin[1], uvWidth, uvHeight, uvDepth, hiddenFaces, flipV);
 
   for (const face of hiddenFaces) {
     faceTextures[face] = null;
@@ -2995,6 +2996,7 @@ function entityCubeUvs(
   height: number,
   depth: number,
   hiddenFaces: Set<ModelFaceName>,
+  flipV = false,
 ): Record<ModelFaceName, ModelFaceUv | null> {
   const u0 = textureX;
   const u1 = textureX + depth;
@@ -3014,14 +3016,31 @@ function entityCubeUvs(
   // up uses the scalp region (u1..u2); down uses the underside (u2..u22).
   // Swapping those two reads the head's blank underside onto the visible top
   // (e.g. the skeleton skull's white crown).
-  const uvs: Record<ModelFaceName, ModelFaceUv> = {
-    down: [u2, v1, u22, v0],
-    up: [u1, v0, u2, v1],
-    west: [u1, v1, u0, v2],
-    north: [u2, v1, u1, v2],
-    east: [u3, v1, u2, v2],
-    south: [u4, v1, u3, v2],
-  };
+  //
+  // flipV selects the vertically-mirrored unwrap (side faces read bottom-up and
+  // up/down swap their regions). Chest entity textures (entity/chest/*.png) are
+  // authored with the opposite vertical convention to the skull/head/bed
+  // textures, so they need this mirror — without it the lid top samples the
+  // darker underside region and every chest reads upside-down. (This is the
+  // pre-2183b19 orientation; that commit standardised the helper for heads but
+  // didn't account for the chest textures' layout.)
+  const uvs: Record<ModelFaceName, ModelFaceUv> = flipV
+    ? {
+        down: [u1, v0, u2, v1],
+        up: [u2, v1, u22, v0],
+        west: [u1, v2, u0, v1],
+        north: [u2, v2, u1, v1],
+        east: [u3, v2, u2, v1],
+        south: [u4, v2, u3, v1],
+      }
+    : {
+        down: [u2, v1, u22, v0],
+        up: [u1, v0, u2, v1],
+        west: [u1, v1, u0, v2],
+        north: [u2, v1, u1, v2],
+        east: [u3, v1, u2, v2],
+        south: [u4, v1, u3, v2],
+      };
 
   return {
     down: hiddenFaces.has('down') ? null : uvs.down,
