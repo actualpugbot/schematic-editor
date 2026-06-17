@@ -8,3 +8,8 @@ vite.config.js
 .env.*
 *.local
 .gstack/
+
+# Scratch schematic exports (local test outputs)
+/all_blocks.litematic
+/player_head_test.litematic
+/schematic_test.litematic
