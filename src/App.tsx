@@ -912,7 +912,6 @@ function App() {
   const [singleVisibleLayer, setSingleVisibleLayer] = useState(0);
   const [renderedVisibleBottomLayer, setRenderedVisibleBottomLayer] = useState(0);
   const [renderedVisibleTopLayer, setRenderedVisibleTopLayer] = useState(model?.dimensions.height ? model.dimensions.height - 1 : 0);
-  const [showGrid, setShowGrid] = useState(true);
   const [selectedBlock, setSelectedBlock] = useState<VoxelBlock | null>(null);
   const [expandedMaterialIds, setExpandedMaterialIds] = useState<Set<string>>(() => new Set());
   const [materialSearch, setMaterialSearch] = useState('');
@@ -3510,7 +3509,6 @@ function App() {
               visibleBottomLayer={renderedVisibleBottomLayer}
               visibleTopLayer={renderedVisibleTopLayer}
               autoRotate={false}
-              showGrid={showGrid}
               theme={theme}
               stageBackgroundColor={stageBackgroundColor}
               hiddenMaterialIds={hiddenMaterialIds}
@@ -5060,7 +5058,6 @@ function App() {
                   visibleBottomLayer={0}
                   visibleTopLayer={0}
                   autoRotate={false}
-                  showGrid={false}
                   theme={theme}
                   stageBackgroundColor={stageBackgroundColor}
                   hiddenMaterialIds={displayedHiddenMaterialIds}
@@ -5085,7 +5082,6 @@ function App() {
                   visibleBottomLayer={0}
                   visibleTopLayer={0}
                   autoRotate={false}
-                  showGrid={false}
                   theme={theme}
                   stageBackgroundColor={stageBackgroundColor}
                   hiddenMaterialIds={displayedHiddenMaterialIds}

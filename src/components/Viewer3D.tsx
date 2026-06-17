@@ -18,7 +18,6 @@ interface Viewer3DProps {
   hiddenMaterialIds: Set<string>;
   playerHeadSelections: Record<string, string>;
   autoRotate: boolean;
-  showGrid: boolean;
   theme: 'light' | 'dark';
   stageBackgroundColor?: string;
   selectedBlock: VoxelBlock | null;
@@ -194,7 +193,6 @@ export function Viewer3D(props: InternalViewerProps) {
   const controlsRef = useRef<OrbitControls | null>(null);
   const displayGroupRef = useRef<THREE.Group | null>(null);
   const modelGroupRef = useRef<THREE.Group | null>(null);
-  const gridRef = useRef<THREE.Group | null>(null);
   const floorRef = useRef<THREE.Mesh | null>(null);
   const floorShadowRef = useRef<THREE.Mesh | null>(null);
   const selectionBoxRef = useRef<THREE.LineSegments | null>(null);
@@ -408,10 +406,6 @@ export function Viewer3D(props: InternalViewerProps) {
     const modelGroup = new THREE.Group();
     modelGroupRef.current = modelGroup;
     displayGroup.add(modelGroup);
-
-    const gridGroup = new THREE.Group();
-    gridRef.current = gridGroup;
-    displayGroup.add(gridGroup);
 
     const selectionBox = createSelectionBox();
     selectionBoxRef.current = selectionBox;
@@ -787,19 +781,6 @@ export function Viewer3D(props: InternalViewerProps) {
       window.clearTimeout(pendingTimer);
     };
   }, [filteredBlocks, props.model, props.playerHeadSelections, props.textureAdjustments]);
-
-  useEffect(() => {
-    const gridGroup = gridRef.current;
-    if (!gridGroup) return;
-
-    clearGroup(gridGroup);
-
-    if (!props.model || !props.showGrid) return;
-
-    const helper = createFootprintGrid(props.model.dimensions, props.theme);
-    gridGroup.add(helper);
-    centerGroup(gridGroup, props.model.dimensions);
-  }, [props.model, props.showGrid, props.theme]);
 
   useEffect(() => {
     const selectionBox = selectionBoxRef.current;
@@ -2691,8 +2672,8 @@ function centerGroup(group: THREE.Group, dimensions: SchematicDimensions) {
 
 function sceneThemeColors(theme: 'light' | 'dark') {
   return theme === 'dark'
-    ? { background: 0x25303a, floor: 0x303c45, grid: 0x6f8987, cuboidFill: 0x28c4bd, cuboidEdge: 0x62e4df }
-    : { background: 0xf1f5f8, floor: 0xf1f5f8, grid: 0x4d5b54, cuboidFill: 0x0f7f80, cuboidEdge: 0x086f74 };
+    ? { background: 0x25303a, floor: 0x303c45, cuboidFill: 0x28c4bd, cuboidEdge: 0x62e4df }
+    : { background: 0xf1f5f8, floor: 0xf1f5f8, cuboidFill: 0x0f7f80, cuboidEdge: 0x086f74 };
 }
 
 function floorShadowOpacity(theme: 'light' | 'dark') {
@@ -2745,28 +2726,6 @@ function updateStageBackgroundTransition(
     scene.background = transition.to.clone();
     transitionRef.current = null;
   }
-}
-
-function createFootprintGrid(dimensions: SchematicDimensions, theme: 'light' | 'dark'): THREE.LineSegments {
-  const vertices: number[] = [];
-  const material = new THREE.LineBasicMaterial({
-    color: sceneThemeColors(theme).grid,
-    transparent: true,
-    opacity: theme === 'dark' ? 0.34 : 0.28,
-  });
-  const y = -0.55;
-
-  for (let x = -0.5; x <= dimensions.width - 0.5; x += 1) {
-    vertices.push(x, y, -0.5, x, y, dimensions.length - 0.5);
-  }
-
-  for (let z = -0.5; z <= dimensions.length - 0.5; z += 1) {
-    vertices.push(-0.5, y, z, dimensions.width - 0.5, y, z);
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-  return new THREE.LineSegments(geometry, material);
 }
 
 function clearGroup(group: THREE.Group, dispose = true) {
