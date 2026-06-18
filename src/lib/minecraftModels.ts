@@ -909,6 +909,29 @@ function defaultBlockProperties(id: string, properties: Record<string, string>):
     };
   }
 
+  if (id === 'minecraft:crafter') {
+    return {
+      crafting: 'false',
+      orientation: 'north_up',
+      triggered: 'false',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:sniffer_egg') {
+    return {
+      hatch: '0',
+      ...properties,
+    };
+  }
+
+  if (id === 'minecraft:item_frame' || id === 'minecraft:glow_item_frame') {
+    return {
+      map: 'false',
+      ...properties,
+    };
+  }
+
   return properties;
 }
 
